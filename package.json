@@ -1,0 +1,21 @@
+{
+  "name": "studyconnect",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n API,WEB -c cyan,blue \"npm run dev -w backend\" \"npm run dev -w web\"",
+    "build": "npm run build -w backend && npm run build -w web",
+    "test": "npm run test -w backend && npm run test -w web",
+    "lint": "npm run lint -w backend && npm run lint -w web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
