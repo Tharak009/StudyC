@@ -18,7 +18,7 @@ const communityMemberSchema = new Schema<ICommunityMember, CommunityMemberModel>
     role: { type: String, enum: Object.values(COMMUNITY_ROLES), default: COMMUNITY_ROLES.MEMBER },
     joinedAt: { type: Date, default: Date.now }
   },
-  { versionKey: false }
+  { timestamps: true, versionKey: false }
 );
 
 communityMemberSchema.index({ communityId: 1, userId: 1 }, { unique: true });

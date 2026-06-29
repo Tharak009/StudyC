@@ -13,6 +13,25 @@ const sanitizeValue = (value: unknown): unknown => {
 };
 
 export const sanitizeInput = (request: Request, _response: Response, next: NextFunction): void => {
-  request.body = sanitizeValue(request.body);
+  if (request.body) {
+    request.body = sanitizeValue(request.body);
+  }
+  if (request.query) {
+    Object.defineProperty(request, "query", {
+      value: sanitizeValue(request.query),
+      writable: true,
+      configurable: true,
+      enumerable: true
+    });
+  }
+  if (request.params) {
+    Object.defineProperty(request, "params", {
+      value: sanitizeValue(request.params),
+      writable: true,
+      configurable: true,
+      enumerable: true
+    });
+  }
   next();
 };
+

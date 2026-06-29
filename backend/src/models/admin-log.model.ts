@@ -24,7 +24,7 @@ const adminLogSchema = new Schema<IAdminLog, AdminLogModel>(
 );
 
 adminLogSchema.index({ adminId: 1, createdAt: -1 });
-adminLogSchema.index({ createdAt: -1 });
+adminLogSchema.index({ createdAt: -1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 adminLogSchema.index({ action: 1, createdAt: -1 });
 
 export const AdminLog = model<IAdminLog, AdminLogModel>("AdminLog", adminLogSchema);

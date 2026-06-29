@@ -1,5 +1,6 @@
 import type { UpdateQuery } from "mongoose";
 import { DirectMessage, type IDirectMessage, type DirectMessageDocument } from "../models/direct-message.model.js";
+import { Conversation } from "../models/conversation.model.js";
 
 export interface CreateDirectMessageData {
   conversationId: string;
@@ -81,7 +82,14 @@ export class DirectMessageRepository {
   }
 
   async countUnreadByUser(userId: string): Promise<number> {
+    const conversations = await Conversation.find(
+      { participants: userId },
+      { _id: 1 }
+    ).lean().exec();
+    const conversationIds = conversations.map((c) => c._id);
+    if (conversationIds.length === 0) return 0;
     return DirectMessage.countDocuments({
+      conversationId: { $in: conversationIds },
       senderId: { $ne: userId },
       read: false,
       deleted: { $ne: true }

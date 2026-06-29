@@ -17,9 +17,13 @@ type ConversationModel = Model<IConversation>;
 
 const conversationSchema = new Schema<IConversation, ConversationModel>(
   {
-    participants: [
-      { type: Schema.Types.ObjectId, ref: "User", required: true }
-    ],
+    participants: {
+      type: [{ type: Schema.Types.ObjectId, ref: "User", required: true }],
+      validate: [
+        (value: unknown[]) => value.length === 2,
+        "A conversation must have exactly 2 participants"
+      ]
+    },
     lastMessage: {
       type: new Schema(
         {

@@ -25,9 +25,11 @@ import { UploadResourcePage } from "./pages/upload-resource.page";
 import { UsersManagementPage } from "./pages/users-management.page";
 import { ProtectedRoute } from "./routes/protected-route";
 import { PublicRoute } from "./routes/public-route";
+import { ErrorBoundary } from "./components/error-boundary";
 
 export function App() {
   return (
+    <ErrorBoundary>
     <Routes>
       <Route element={<PublicRoute />}>
         <Route element={<AuthLayout />}>
@@ -65,5 +67,6 @@ export function App() {
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    </ErrorBoundary>
   );
 }

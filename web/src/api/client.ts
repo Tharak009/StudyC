@@ -31,8 +31,10 @@ const refreshAccessToken = (): Promise<string> => {
         { withCredentials: true }
       )
       .then(({ data }) => {
-        tokenService.set(data.data.accessToken);
-        return data.data.accessToken;
+        const token = data?.data?.accessToken;
+        if (!token) throw new Error("Invalid refresh response");
+        tokenService.set(token);
+        return token;
       })
       .finally(() => {
         refreshRequest = null;

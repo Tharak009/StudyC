@@ -74,7 +74,6 @@ export class PresenceService {
     socket.join(`user:${userId}`);
     this.setOnline(userId, socket.id);
 
-    io.emit("userOnline", { userId });
     socket.broadcast.emit("friendOnline", { userId });
 
     socket.on("presencePing", () => {
@@ -85,7 +84,6 @@ export class PresenceService {
       this.removeSocket(userId, socket.id);
       if (!this.isOnline(userId)) {
         const lastSeen = new Date().toISOString();
-        io.emit("userOffline", { userId, lastSeen });
         socket.broadcast.emit("friendOffline", { userId, lastSeen });
       }
     });

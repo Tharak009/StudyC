@@ -27,6 +27,21 @@ import {
 } from "../validators/direct-message.validator.js";
 import { notificationIdParamsSchema } from "../validators/notification.validator.js";
 
+const RATE_LIMIT_WINDOW_MS = 1000;
+const RATE_LIMIT_MAX_EVENTS = 10;
+const socketRateLimits = new Map<string, { count: number; resetAt: number }>();
+
+const isRateLimited = (socketId: string): boolean => {
+  const now = Date.now();
+  const entry = socketRateLimits.get(socketId);
+  if (!entry || now >= entry.resetAt) {
+    socketRateLimits.set(socketId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_LIMIT_MAX_EVENTS;
+};
+
 interface ChatSocketData {
   userId: string;
   role: string;
@@ -95,7 +110,8 @@ export const initializeSockets = (server: HttpServer) => {
     cors: {
       origin: env.CLIENT_URL.split(",").map((url) => url.trim()),
       credentials: true
-    }
+    },
+    maxHttpBufferSize: 1e6
   });
 
   io.use(async (socket, next) => {
@@ -126,6 +142,10 @@ export const initializeSockets = (server: HttpServer) => {
     registerDirectMessageHandlers(io, chatSocket);
     registerTypingHandler(io, chatSocket);
     registerNotificationHandlers(io, chatSocket);
+
+    chatSocket.on("disconnect", () => {
+      socketRateLimits.delete(socket.id);
+    });
   });
 
   chatBus.onCreated((communityId, message) => {
@@ -321,7 +341,6 @@ const registerDirectMessageHandlers = (io: ChatServer, socket: ChatSocket) => {
   });
 };
 
-// Combined typing handler for both community chat and DM
 const registerTypingHandler = (io: ChatServer, socket: ChatSocket) => {
   socket.on("typingStart", async (payload: unknown) => {
     const payloadObj = payload as Record<string, unknown> | undefined;
@@ -377,10 +396,6 @@ const registerTypingHandler = (io: ChatServer, socket: ChatSocket) => {
     }
   });
 };
-// The DM typing handlers above will shadow the community ones on the same socket.
-// To support both, we wrap them: if the payload has communityId, use community path;
-// if it has conversationId, use DM path. Since both emit different event names,
-// the typingStart/typingStop socket events should check payload shape.
 
 const registerNotificationHandlers = (_io: ChatServer, socket: ChatSocket) => {
   socket.on("subscribeNotifications", async (acknowledge: unknown) => {
@@ -412,6 +427,12 @@ const handleSocketAction = async (
   action: () => Promise<unknown>
 ) => {
   try {
+    if (isRateLimited(socket.id)) {
+      const msg = "Rate limit exceeded. Please slow down.";
+      if (typeof acknowledge === "function") acknowledge({ success: false, message: msg });
+      socket.emit("chatError", { message: msg });
+      return;
+    }
     const result = await action();
     if (typeof acknowledge === "function") acknowledge({ success: true, data: result });
   } catch (error) {

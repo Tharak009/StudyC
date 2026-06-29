@@ -1,8 +1,10 @@
 import { AdminLog } from "../models/admin-log.model.js";
 import { Community } from "../models/community.model.js";
 import { CommunityMember } from "../models/community-member.model.js";
+import { Conversation } from "../models/conversation.model.js";
 import { Message } from "../models/message.model.js";
 import { Notification } from "../models/notification.model.js";
+import { RefreshToken } from "../models/refresh-token.model.js";
 import { Report, type IReport } from "../models/report.model.js";
 import { Resource } from "../models/resource.model.js";
 import { User } from "../models/user.model.js";
@@ -10,6 +12,8 @@ import { DirectMessage } from "../models/direct-message.model.js";
 import { reportRepository } from "../repositories/report.repository.js";
 import { USER_STATUS } from "../constants/user-status.js";
 import { ApiError } from "../utils/api-error.js";
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export class AdminService {
   // --- Users ---
@@ -20,10 +24,11 @@ export class AdminService {
     const filter: Record<string, unknown> = {};
 
     if (query.search) {
+      const escaped = escapeRegExp(query.search);
       filter.$or = [
-        { fullName: { $regex: query.search, $options: "i" } },
-        { email: { $regex: query.search, $options: "i" } },
-        { rollNumber: { $regex: query.search, $options: "i" } }
+        { fullName: { $regex: escaped, $options: "i" } },
+        { email: { $regex: escaped, $options: "i" } },
+        { rollNumber: { $regex: escaped, $options: "i" } }
       ];
     }
     if (query.role) filter.role = query.role;
@@ -52,10 +57,13 @@ export class AdminService {
   }
 
   async banUser(adminId: string, userId: string) {
+    this.assertNotSelf(adminId, userId);
     const user = await this.getUser(userId);
+    this.assertTargetNotAdmin(user);
+    const previousStatus = user.status;
     user.status = USER_STATUS.DEACTIVATED;
     await user.save();
-    await this.log(adminId, "BAN_USER", "User", userId, { previousStatus: user.status });
+    await this.log(adminId, "BAN_USER", "User", userId, { previousStatus });
     return user;
   }
 
@@ -68,7 +76,9 @@ export class AdminService {
   }
 
   async suspendUser(adminId: string, userId: string) {
+    this.assertNotSelf(adminId, userId);
     const user = await this.getUser(userId);
+    this.assertTargetNotAdmin(user);
     user.status = USER_STATUS.SUSPENDED;
     await user.save();
     await this.log(adminId, "SUSPEND_USER", "User", userId, {});
@@ -84,10 +94,19 @@ export class AdminService {
   }
 
   async deleteUser(adminId: string, userId: string) {
+    this.assertNotSelf(adminId, userId);
     const user = await this.getUser(userId);
+    this.assertTargetNotAdmin(user);
     const userData = { fullName: user.fullName, email: user.email, rollNumber: user.rollNumber };
-    await CommunityMember.deleteMany({ userId }).exec();
-    await Notification.deleteMany({ userId }).exec();
+    await Promise.all([
+      CommunityMember.deleteMany({ userId }).exec(),
+      Notification.deleteMany({ userId }).exec(),
+      Message.updateMany({ senderId: userId }, { $set: { content: "[deleted user]", deleted: true, deletedAt: new Date() } }).exec(),
+      DirectMessage.updateMany({ senderId: userId }, { $set: { content: "[deleted user]", deleted: true, deletedAt: new Date() } }).exec(),
+      Resource.deleteMany({ uploadedBy: userId }).exec(),
+      Report.deleteMany({ reporterId: userId }).exec(),
+      RefreshToken.deleteMany({ user: userId }).exec()
+    ]);
     await User.findByIdAndDelete(userId).exec();
     await this.log(adminId, "DELETE_USER", "User", userId, userData);
   }
@@ -99,9 +118,10 @@ export class AdminService {
     const limit = Math.min(query.limit ?? 20, 100);
     const filter: Record<string, unknown> = {};
     if (query.search) {
+      const escaped = escapeRegExp(query.search);
       filter.$or = [
-        { name: { $regex: query.search, $options: "i" } },
-        { description: { $regex: query.search, $options: "i" } }
+        { name: { $regex: escaped, $options: "i" } },
+        { description: { $regex: escaped, $options: "i" } }
       ];
     }
     const skip = (page - 1) * limit;
@@ -148,7 +168,7 @@ export class AdminService {
     const limit = Math.min(query.limit ?? 20, 100);
     const filter: Record<string, unknown> = {};
     if (query.search) {
-      filter.title = { $regex: query.search, $options: "i" };
+      filter.title = { $regex: escapeRegExp(query.search), $options: "i" };
     }
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
@@ -254,6 +274,17 @@ export class AdminService {
   }
 
   // --- Audit Log ---
+  private assertNotSelf(adminId: string, targetId: string) {
+    if (adminId === targetId) {
+      throw new ApiError(400, "Cannot perform this action on your own account", [], "SELF_ACTION_FORBIDDEN");
+    }
+  }
+
+  private assertTargetNotAdmin(user: { role: string }) {
+    if (user.role === "ADMIN") {
+      throw new ApiError(403, "Cannot perform this action on another admin", [], "ADMIN_PROTECTED");
+    }
+  }
 
   private async log(adminId: string, action: string, targetType: string, targetId: string | null, details: Record<string, unknown>) {
     await AdminLog.create({ adminId, action, targetType, targetId, details });

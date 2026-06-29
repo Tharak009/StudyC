@@ -36,7 +36,7 @@ export class MessageRepository {
   async list({ communityId, page, limit, order }: MessageListOptions) {
     const sortDirection = order === "latest" ? -1 : 1;
     const skip = (page - 1) * limit;
-    const filter = { communityId };
+    const filter = { communityId, deleted: { $ne: true } };
     const [items, total] = await Promise.all([
       Message.find(filter)
         .sort({ createdAt: sortDirection, _id: sortDirection })
