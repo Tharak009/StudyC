@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { ApiResponse, User } from "../types/auth";
+import type { ApiResponse, User, StudentDashboard } from "../types/auth";
 
 export interface UpdateProfilePayload {
   fullName?: string;
@@ -24,5 +24,7 @@ export const usersApi = {
     ).data.data;
   },
   search: async (query: string) =>
-    (await apiClient.get<ApiResponse<User[]>>("/api/users/search", { params: { q: query } })).data.data
+    (await apiClient.get<ApiResponse<User[]>>("/api/users/search", { params: { q: query } })).data.data,
+  dashboard: async () =>
+    (await apiClient.get<ApiResponse<StudentDashboard>>("/api/users/dashboard")).data.data
 };

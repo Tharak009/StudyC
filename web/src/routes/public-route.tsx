@@ -3,5 +3,5 @@ import { useAuthStore } from "../store/auth.store";
 
 export function PublicRoute() {
   const user = useAuthStore((state) => state.user);
-  return user ? <Navigate to="/dashboard" replace /> : <Outlet />;
+  return user ? <Navigate to={user.role === "ADMIN" ? "/admin" : "/dashboard"} replace /> : <Outlet />;
 }

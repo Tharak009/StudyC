@@ -1,0 +1,9 @@
+spring:
+  data:
+    mongodb:
+      database: studyconnect
+
+logging:
+  level:
+    root: INFO
+    com.studyconnect.backend: INFO

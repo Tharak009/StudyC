@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "concurrently -n API,WEB -c cyan,blue \"npm run dev -w backend\" \"npm run dev -w web\"",
+    "dev:java": "concurrently -n API,WEB -c green,blue \"cd backend-java && mvn spring-boot:run\" \"npm run dev -w web\"",
     "build": "npm run build -w backend && npm run build -w web",
     "test": "npm run test -w backend && npm run test -w web",
     "lint": "npm run lint -w backend && npm run lint -w web"

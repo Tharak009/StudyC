@@ -12,7 +12,8 @@ export const useLogin = () => {
     mutationFn: authApi.login,
     onSuccess: (result) => {
       setSession(result.user, result.accessToken);
-      navigate("/dashboard", { replace: true });
+      const destination = result.user.role === "ADMIN" ? "/admin" : "/dashboard";
+      navigate(destination, { replace: true });
     }
   });
 };
@@ -25,7 +26,8 @@ export const useRegister = () => {
     mutationFn: (payload: RegisterPayload) => authApi.register(payload),
     onSuccess: (result) => {
       setSession(result.user, result.accessToken);
-      navigate("/dashboard", { replace: true });
+      const destination = result.user.role === "ADMIN" ? "/admin" : "/dashboard";
+      navigate(destination, { replace: true });
     }
   });
 };

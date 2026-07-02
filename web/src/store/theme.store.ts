@@ -8,8 +8,7 @@ interface ThemeState {
   toggle: () => void;
 }
 
-const preferredTheme = (): Theme =>
-  window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+const preferredTheme = (): Theme => "light";
 
 export const useThemeStore = create<ThemeState>()(
   persist(

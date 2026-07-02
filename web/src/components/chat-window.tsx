@@ -17,6 +17,7 @@ interface ChatWindowProps {
   currentUserId: string;
   onReply: (message: DirectMessage) => void;
   onEdit: (message: DirectMessage) => void;
+  onDelete: (message: DirectMessage) => void;
 }
 
 export function ChatWindow({
@@ -29,7 +30,8 @@ export function ChatWindow({
   participantName,
   currentUserId,
   onReply,
-  onEdit
+  onEdit,
+  onDelete
 }: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -171,7 +173,7 @@ export function ChatWindow({
 
                 {!message.deleted && (
                   <div
-                    className={`mt-0.5 flex gap-1 opacity-0 transition group-hover:opacity-100 ${
+                    className={`mt-0.5 flex gap-1.5 opacity-0 transition group-hover:opacity-100 ${
                       isOwn ? "justify-end" : ""
                     }`}
                   >
@@ -181,17 +183,27 @@ export function ChatWindow({
                       onClick={() => onReply(message)}
                       aria-label="Reply"
                     >
-                      <span className="text-xs font-medium text-slate-400">Reply</span>
+                      <span className="text-xs font-medium text-slate-450 hover:text-indigo-600">Reply</span>
                     </button>
                     {isOwn && (
-                      <button
-                        className="icon-button size-7"
-                        type="button"
-                        onClick={() => onEdit(message)}
-                        aria-label="Edit"
-                      >
-                        <span className="text-xs font-medium text-slate-400">Edit</span>
-                      </button>
+                      <>
+                        <button
+                          className="icon-button size-7"
+                          type="button"
+                          onClick={() => onEdit(message)}
+                          aria-label="Edit"
+                        >
+                          <span className="text-xs font-medium text-slate-450 hover:text-indigo-650">Edit</span>
+                        </button>
+                        <button
+                          className="icon-button size-7"
+                          type="button"
+                          onClick={() => onDelete(message)}
+                          aria-label="Delete"
+                        >
+                          <span className="text-xs font-medium text-rose-500 hover:text-rose-650">Delete</span>
+                        </button>
+                      </>
                     )}
                   </div>
                 )}

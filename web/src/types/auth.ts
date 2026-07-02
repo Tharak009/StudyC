@@ -35,3 +35,24 @@ export interface ApiErrorBody {
   code: string;
   errors?: Array<{ field: string; message: string }>;
 }
+
+export interface StudentStats {
+  communitiesJoined: number;
+  upcomingEvents: number;
+  unreadMessages: number;
+  unreadNotifications: number;
+  projectsShared: number;
+}
+
+export interface Activity {
+  id: string;
+  type: string;
+  content: string;
+  timestamp: string;
+}
+
+export interface StudentDashboard {
+  profileCompletion: number;
+  stats: StudentStats;
+  recentActivity: Activity[];
+}

@@ -23,9 +23,27 @@ import { ResourceDetailsPage } from "./pages/resource-details.page";
 import { ResourcesManagementPage } from "./pages/resources-management.page";
 import { UploadResourcePage } from "./pages/upload-resource.page";
 import { UsersManagementPage } from "./pages/users-management.page";
+import { EventsManagementPage } from "./pages/events-management.page";
+import { StudentEventsPage } from "./pages/student-events.page";
+import { ModerationManagementPage } from "./pages/moderation-management.page";
+import { AnnouncementsManagementPage } from "./pages/announcements-management.page";
+import { AnalyticsDashboardPage } from "./pages/analytics-dashboard.page";
+import { SystemSettingsPage } from "./pages/settings.page";
+import { AdminProfilePage } from "./pages/admin-profile.page";
 import { ProtectedRoute } from "./routes/protected-route";
 import { PublicRoute } from "./routes/public-route";
 import { ErrorBoundary } from "./components/error-boundary";
+import { useAuthStore } from "./store/auth.store";
+
+import { ToastContainer } from "./components/toast-container";
+
+function RootRedirect() {
+  const user = useAuthStore((state) => state.user);
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  return <Navigate to={user.role === "ADMIN" ? "/admin" : "/dashboard"} replace />;
+}
 
 export function App() {
   return (
@@ -49,24 +67,33 @@ export function App() {
           <Route path="/communities/:id/members" element={<CommunityMembersPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/direct-messages" element={<DirectMessagesPage />} />
-          <Route path="/direct-messages/:conversationId" element={<ConversationPage />} />
+          <Route path="/direct-messages/:conversationId" element={<DirectMessagesPage />} />
           <Route path="/communities/:id/resources" element={<CommunityResourcesPage />} />
           <Route path="/communities/:id/resources/upload" element={<UploadResourcePage />} />
           <Route path="/communities/:id/resources/:resourceId" element={<ResourceDetailsPage />} />
+          <Route path="/events" element={<StudentEventsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<AdminDashboard />} />
-            <Route path="users" element={<UsersManagementPage />} />
-            <Route path="communities" element={<CommunitiesManagementPage />} />
-            <Route path="resources" element={<ResourcesManagementPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-          </Route>
+        </Route>
+
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminDashboard />} />
+          <Route path="users" element={<UsersManagementPage />} />
+          <Route path="communities" element={<CommunitiesManagementPage />} />
+          <Route path="resources" element={<ResourcesManagementPage />} />
+          <Route path="reports" element={<ReportsPage />} />
+          <Route path="events" element={<EventsManagementPage />} />
+          <Route path="moderation" element={<ModerationManagementPage />} />
+          <Route path="announcements" element={<AnnouncementsManagementPage />} />
+          <Route path="analytics" element={<AnalyticsDashboardPage />} />
+          <Route path="settings" element={<SystemSettingsPage />} />
+          <Route path="profile" element={<AdminProfilePage />} />
         </Route>
       </Route>
 
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    <ToastContainer />
     </ErrorBoundary>
   );
 }

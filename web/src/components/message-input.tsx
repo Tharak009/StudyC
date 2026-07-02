@@ -1,5 +1,7 @@
-import { FileUp, Send, X } from "lucide-react";
+import { FileUp, Send, Smile, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+
+const EMOJIS = ["😀", "😂", "🥰", "👍", "🔥", "🎉", "🚀", "❤️", "🤔", "📝", "📚", "💻"];
 
 interface MessageContext {
   _id: string;
@@ -32,6 +34,7 @@ export function MessageInput({
 }: MessageInputProps) {
   const [content, setContent] = useState(editing?.content ?? "");
   const [files, setFiles] = useState<File[]>([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -81,6 +84,36 @@ export function MessageInput({
         >
           <FileUp size={18} />
         </button>
+
+        <div className="relative">
+          <button
+            className={`icon-button ${showEmojiPicker ? "text-indigo-650" : ""}`}
+            type="button"
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            disabled={disabled}
+            aria-label="Add emoji"
+          >
+            <Smile size={18} />
+          </button>
+
+          {showEmojiPicker && (
+            <div className="absolute bottom-12 left-0 z-50 grid grid-cols-4 gap-1.5 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-ink-900 w-44">
+              {EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => {
+                    setContent((prev) => prev + emoji);
+                    setShowEmojiPicker(false);
+                  }}
+                  className="flex size-8 items-center justify-center rounded-lg hover:bg-slate-50 text-base transition-colors dark:hover:bg-white/[0.04] cursor-pointer"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <textarea
           className="field max-h-36 min-h-11 resize-none"
           placeholder={editing ? "Edit your message" : placeholder}

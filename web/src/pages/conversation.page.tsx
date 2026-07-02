@@ -222,6 +222,12 @@ export function ConversationPage() {
             setEditing(message);
             setReplyTo(null);
           }}
+          onDelete={(message) => {
+            const activeSocket = socketService.get();
+            if (activeSocket && window.confirm("Delete this message?")) {
+              activeSocket.emit("deleteDirectMessage", { conversationId, messageId: message._id });
+            }
+          }}
         />
 
         {(socketError || attachmentMutation.isError) && (

@@ -8,10 +8,11 @@ import {
   Settings,
   ShieldCheck,
   UsersRound,
-  X
+  X,
+  Calendar
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, Navigate } from "react-router";
 import { Avatar } from "../components/avatar";
 import { Brand } from "../components/brand";
 import { NotificationBell } from "../components/notification-bell";
@@ -27,6 +28,7 @@ const navigation = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { to: "/communities", label: "Communities", icon: UsersRound },
   { to: "/direct-messages", label: "Messages", icon: Mail },
+  { to: "/events", label: "Events", icon: Calendar },
   { to: "/profile", label: "Profile", icon: CircleUserRound }
 ];
 
@@ -35,6 +37,11 @@ export function AppLayout() {
   const [notifOpen, setNotifOpen] = useState(false);
   const user = useAuthStore((state) => state.user)!;
   const logout = useLogout();
+
+  // Role Access Control Safeguard: Redirect administrators to their dedicated workspace
+  if (user.role === "ADMIN") {
+    return <Navigate to="/admin" replace />;
+  }
 
   useSocketNotifications();
   const { data: unreadData } = useUnreadCount();
@@ -45,12 +52,7 @@ export function AppLayout() {
     }
   }, [unreadData?.count, setUnreadCount]);
 
-  const navItems = [
-    ...navigation,
-    ...(user.role === "ADMIN"
-      ? [{ to: "/admin", label: "Admin", icon: ShieldCheck }]
-      : [])
-  ];
+  const navItems = navigation;
 
   const nav = (
     <nav className="mt-9 space-y-1">
