@@ -53,6 +53,18 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(false, "Resource not found", "NOT_FOUND", List.of()));
     }
 
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthentication(org.springframework.security.core.AuthenticationException exception) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new ErrorResponse(false, exception.getMessage(), "INVALID_CREDENTIALS", List.of()));
+    }
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(org.springframework.security.access.AccessDeniedException exception) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse(false, "You do not have permission for this action", "FORBIDDEN", List.of()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception exception, WebRequest request) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
