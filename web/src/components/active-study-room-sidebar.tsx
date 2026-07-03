@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { HostWaitingPanel, type JoinRequest } from "./active-study-room-waiting-room";
 
-export type SidebarTab = "participants" | "chat" | "notes";
+export type SidebarTab = "participants" | "chat" | "notes" | "studypilot";
 
 interface Participant {
   id: string;
@@ -765,6 +765,66 @@ export function ActiveStudyRoomSidebar({
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: STUDYPILOT AI */}
+          {activeTab === "studypilot" && (
+            <div className="flex flex-col h-full animate-fade-in p-4 space-y-4">
+              {/* Header card with Beta Badges */}
+              <div className="rounded-2xl border border-indigo-250/80 bg-gradient-to-br from-indigo-500/10 via-violet-500/[0.02] to-cyan-500/5 p-4 space-y-2 relative overflow-hidden dark:border-indigo-500/20 shadow-sm">
+                <div className="absolute -right-12 -top-12 size-28 rounded-full bg-indigo-500/5 blur-xl pointer-events-none" />
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-indigo-650 px-2.5 py-0.5 text-[9px] font-bold text-white uppercase tracking-wider shadow-sm">
+                    Beta
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-white/10 px-2.5 py-0.5 text-[9px] font-bold text-slate-600 dark:text-slate-350 uppercase tracking-wider">
+                    Coming Soon
+                  </span>
+                </div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wide">
+                  StudyPilot AI Companion
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Unlock advanced room insights, real-time transcription notes, and automated reference materials search.
+                </p>
+              </div>
+
+              {/* Capabilities list */}
+              <div className="space-y-2 border-b border-slate-100 dark:border-white/5 pb-3">
+                <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Planned Capabilities</span>
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="rounded-xl border border-slate-100 bg-white p-2.5 dark:border-white/5 dark:bg-white/[0.01] shadow-sm text-left">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-250">📝 Automated Minutes</p>
+                    <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-0.5">Generate bullet-point outlines of decisions and topics.</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 bg-white p-2.5 dark:border-white/5 dark:bg-white/[0.01] shadow-sm text-left">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-250">📚 Reference Finder</p>
+                    <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-0.5">Surfaces online academic resources based on active speech topics.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chat preview placeholder */}
+              <div className="flex-1 flex flex-col justify-end space-y-3 opacity-60">
+                <div className="space-y-2.5 pr-2 max-h-[30vh] overflow-y-auto">
+                  <div className="rounded-2xl rounded-tl-none border border-slate-100 bg-slate-50 p-3 text-xs leading-relaxed text-slate-700 dark:border-white/5 dark:bg-white/[0.02] dark:text-slate-350 max-w-[85%] text-left">
+                    Hello! I'm your StudyPilot assistant. In the next release, you can ask me to compile study summaries or define jargon words mentioned during your session.
+                  </div>
+                </div>
+
+                <div className="flex gap-2 items-center pt-2 border-t border-slate-100 dark:border-white/5">
+                  <input
+                    type="text"
+                    placeholder="StudyPilot Chat is disabled in Beta..."
+                    disabled
+                    className="field py-2 text-xs flex-1 bg-slate-100 dark:bg-white/[0.02] cursor-not-allowed"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-455 text-center mt-1">
+                  StudyPilot AI will be available in a future update.
+                </p>
               </div>
             </div>
           )}

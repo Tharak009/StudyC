@@ -28,6 +28,9 @@ import { ActiveStudyRoomSidebar, type SidebarTab } from "../components/active-st
 import { GuestWaitingScreen, type JoinRequest } from "../components/active-study-room-waiting-room";
 import { StartVoteDialog, VotePopup, VoteResultDialog, type VoteRecord } from "../components/active-study-room-voting";
 import { ConfirmationDialog } from "../components/confirmation-dialog";
+import { ActiveStudyRoomSettings } from "../components/active-study-room-settings";
+import { ReconnectingOverlay, RoomEndedScreen, RemovedScreen } from "../components/active-study-room-states";
+import { Sparkles } from "lucide-react";
 
 type RoomState = "loading" | "empty" | "active";
 type ParticipantCount = 1 | 2 | 4 | 6 | 9 | 16;
@@ -308,6 +311,14 @@ export function ActiveStudyRoomPage() {
   const [reactionOpen, setReactionOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>("participants");
+
+  // Phase 4 states
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [isRoomEnded, setIsRoomEnded] = useState(false);
+  const [isKicked, setIsKicked] = useState(false);
+  const [isBanned, setIsBanned] = useState(false);
+  const [floatingReactions, setFloatingReactions] = useState<{ id: number; emoji: string; left: number }[]>([]);
 
   // Phase 3 Waiting Room State
   const [isApproved, setIsApproved] = useState(true);
@@ -595,11 +606,21 @@ export function ActiveStudyRoomPage() {
     );
     setReactionOpen(false);
 
+    // Floating reaction item
+    const reactionId = Date.now() + Math.random();
+    const newFloating = {
+      id: reactionId,
+      emoji,
+      left: Math.floor(Math.random() * 60) + 20, // 20% to 80%
+    };
+    setFloatingReactions((prev) => [...prev, newFloating]);
+
     // Ephemeral reaction disappears after 3 seconds
     setTimeout(() => {
       setParticipants((prev) =>
         prev.map((p) => (p.id === "1" ? { ...p, reaction: undefined } : p))
       );
+      setFloatingReactions((prev) => prev.filter((r) => r.id !== reactionId));
     }, 3000);
   };
 
@@ -691,6 +712,18 @@ export function ActiveStudyRoomPage() {
     );
   }
 
+  if (isRoomEnded) {
+    return <RoomEndedScreen roomName="Advanced Mathematics Group Study" onExit={handleLeave} />;
+  }
+
+  if (isKicked) {
+    return <RemovedScreen isBanned={false} onExit={handleLeave} />;
+  }
+
+  if (isBanned) {
+    return <RemovedScreen isBanned={true} onExit={handleLeave} />;
+  }
+
   if (!isApproved) {
     return (
       <GuestWaitingScreen
@@ -704,6 +737,7 @@ export function ActiveStudyRoomPage() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-slate-50 text-slate-950 dark:bg-ink-950 dark:text-white">
+      {isReconnecting && <ReconnectingOverlay />}
       {/* Sticky Header */}
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 dark:border-white/10 dark:bg-ink-900/90 backdrop-blur-lg">
         <div className="flex items-center justify-between px-6 py-3">
@@ -780,7 +814,57 @@ export function ActiveStudyRoomPage() {
       {/* Main Workspace split screen */}
       <div className="flex flex-1 h-[calc(100vh-70px-80px)] w-full overflow-hidden">
         <main className="flex-1 overflow-hidden bg-gradient-to-b from-slate-50 to-white dark:from-ink-950 dark:to-ink-900 flex items-center justify-center">
-          <ParticipantGrid participants={participants} />
+          {isScreenSharing ? (
+            <div className="flex flex-col md:flex-row h-full w-full p-4 gap-4 overflow-hidden">
+              {/* Presentation canvas */}
+              <div className="flex-[3] relative rounded-2xl overflow-hidden border border-slate-250 bg-slate-950 dark:border-white/5 shadow-xl flex flex-col justify-between">
+                <div className="absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
+                
+                <div className="relative z-10 p-4 bg-gradient-to-b from-black/60 to-transparent flex justify-between items-center text-white">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex size-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex size-2 rounded-full bg-red-500" />
+                    </span>
+                    <p className="text-xs font-bold uppercase tracking-wider">Screen Share Presentation</p>
+                  </div>
+                  <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded font-semibold">1080p 30fps</span>
+                </div>
+
+                <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-3 py-16">
+                  <div className="size-16 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20 shadow-inner">
+                    <Monitor size={32} />
+                  </div>
+                  <p className="text-sm font-bold text-white leading-none">You are sharing your screen</p>
+                  <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
+                    Other participants can now view your active monitor and slides. Click Stop Share to cancel presentation.
+                  </p>
+                </div>
+
+                <div className="relative z-10 p-3 bg-black/40 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-400 font-semibold uppercase">
+                  <span>Bandwidth: 4.2 Mbps</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsScreenSharing(false)}
+                    className="rounded-lg bg-red-650 hover:bg-red-500 text-white px-3 py-1 font-bold lowercase tracking-normal transition"
+                  >
+                    Stop sharing
+                  </button>
+                </div>
+              </div>
+
+              {/* Small vertical participant list */}
+              <div className="flex-1 flex flex-row md:flex-col gap-3 overflow-x-auto md:overflow-y-auto min-w-[200px] max-h-48 md:max-h-full">
+                {participants.map((p) => (
+                  <div key={p.id} className="h-28 w-44 md:w-full md:h-32 flex-shrink-0">
+                    <ParticipantTile participant={p} isSpeaking={p.isSpeaking} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <ParticipantGrid participants={participants} />
+          )}
         </main>
         
         <ActiveStudyRoomSidebar
@@ -898,6 +982,28 @@ export function ActiveStudyRoomPage() {
             <Smile size={20} />
           </button>
 
+          {/* StudyPilot AI */}
+          <button
+            type="button"
+            className={`grid size-10 place-items-center rounded-full transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+              sidebarOpen && activeSidebarTab === "studypilot"
+                ? "bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-500/20"
+                : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/[0.06]"
+            }`}
+            title="StudyPilot AI Companion"
+            aria-label="StudyPilot AI Companion"
+            onClick={() => {
+              if (sidebarOpen && activeSidebarTab === "studypilot") {
+                setSidebarOpen(false);
+              } else {
+                setSidebarOpen(true);
+                setActiveSidebarTab("studypilot");
+              }
+            }}
+          >
+            <Sparkles size={20} />
+          </button>
+
           <div className="mx-1 h-6 w-px bg-slate-200 dark:bg-white/10" />
 
           {/* Participants */}
@@ -986,6 +1092,7 @@ export function ActiveStudyRoomPage() {
           {/* Settings */}
           <button
             type="button"
+            onClick={() => setSettingsOpen(true)}
             className="grid size-10 place-items-center rounded-full text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/[0.06] transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-signal-500"
             title="Settings"
             aria-label="Settings"
@@ -1005,6 +1112,51 @@ export function ActiveStudyRoomPage() {
           </button>
         </div>
       </div>
+
+      {/* Style block for floating reactions */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes floatUp {
+          0% {
+            transform: translateY(100vh) scale(0.5);
+            opacity: 0;
+          }
+          10% {
+            opacity: 1;
+          }
+          90% {
+            opacity: 0.8;
+          }
+          100% {
+            transform: translateY(-20vh) scale(1.5);
+            opacity: 0;
+          }
+        }
+      `}} />
+
+      {/* Floating emoji reaction bubbles */}
+      {floatingReactions.map((reaction) => (
+        <span
+          key={reaction.id}
+          className="fixed bottom-0 z-50 text-4xl pointer-events-none"
+          style={{
+            left: `${reaction.left}%`,
+            animation: "floatUp 3.2s cubic-bezier(0.08, 0.82, 0.17, 1) forwards",
+          }}
+        >
+          {reaction.emoji}
+        </span>
+      ))}
+
+      {/* Device Configurations Settings dialog */}
+      <ActiveStudyRoomSettings
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onToggleReconnecting={() => setIsReconnecting(!isReconnecting)}
+        onToggleWaitingRoom={() => setIsApproved(!isApproved)}
+        onTriggerEnded={() => setIsRoomEnded(true)}
+        onTriggerKicked={() => setIsKicked(true)}
+        onTriggerBanned={() => setIsBanned(true)}
+      />
 
       {/* --- PHASE 3 OVERLAYS, DIALOGS, BOTTOM SHEETS --- */}
 
