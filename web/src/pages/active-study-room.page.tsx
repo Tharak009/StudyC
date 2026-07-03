@@ -19,8 +19,15 @@ import {
   WifiOff,
   MessageSquare,
   FileText,
+  Vote,
+  ShieldAlert,
+  Unlock,
+  X,
 } from "lucide-react";
 import { ActiveStudyRoomSidebar, type SidebarTab } from "../components/active-study-room-sidebar";
+import { GuestWaitingScreen, type JoinRequest } from "../components/active-study-room-waiting-room";
+import { StartVoteDialog, VotePopup, VoteResultDialog, type VoteRecord } from "../components/active-study-room-voting";
+import { ConfirmationDialog } from "../components/confirmation-dialog";
 
 type RoomState = "loading" | "empty" | "active";
 type ParticipantCount = 1 | 2 | 4 | 6 | 9 | 16;
@@ -302,6 +309,257 @@ export function ActiveStudyRoomPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>("participants");
 
+  // Phase 3 Waiting Room State
+  const [isApproved, setIsApproved] = useState(true);
+  const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([
+    { id: "p1", name: "Linda Smith", joinTime: "2m ago", avatarInitials: "LS" },
+    { id: "p2", name: "James Brown", joinTime: "Just now", avatarInitials: "JB" },
+  ]);
+
+  // Lock status
+  const [isRoomLocked, setIsRoomLocked] = useState(false);
+
+  // Voting states
+  const [startVoteOpen, setStartVoteOpen] = useState(false);
+  const [activeVote, setActiveVote] = useState<{
+    question: string;
+    duration: number;
+    votedCount: number;
+    votes: { [key: string]: "yes" | "no" | "abstain" };
+  } | null>(null);
+  const [voteHistory, setVoteHistory] = useState<VoteRecord[]>([]);
+  const [voteResultOpen, setVoteResultOpen] = useState(false);
+  const [lastVoteResult, setLastVoteResult] = useState<{
+    question: string;
+    yesCount: number;
+    noCount: number;
+    abstainCount: number;
+    passed: boolean;
+  } | null>(null);
+
+  // Moderation context & dialogs
+  const [selectedParticipantForMenu, setSelectedParticipantForMenu] = useState<string | null>(null);
+  const [moderationDialog, setModerationDialog] = useState<{
+    type: "kick" | "ban" | "transferHost" | "lock" | "unlock" | "mute" | "camera" | "share" | "chat" | "lowerHand";
+    participantId?: string;
+    participantName?: string;
+  } | null>(null);
+
+  const handleApproveRequest = (id: string) => {
+    const req = pendingRequests.find((r) => r.id === id);
+    if (!req) return;
+    setPendingRequests((prev) => prev.filter((r) => r.id !== id));
+    setParticipants((prev) => [
+      ...prev,
+      {
+        id: req.id,
+        name: req.name,
+        isHost: false,
+        isSpeaking: false,
+        isMicOn: true,
+        isCameraOn: true,
+        hasRaisedHand: false,
+        reaction: undefined,
+        isScreenSharing: false,
+        networkStrength: "good",
+        joinTime: "Just now",
+        isOnline: true,
+      },
+    ]);
+  };
+
+  const handleRejectRequest = (id: string) => {
+    setPendingRequests((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const handleStartVote = (question: string, duration: number) => {
+    setStartVoteOpen(false);
+    setActiveVote({
+      question,
+      duration,
+      votedCount: 0,
+      votes: {},
+    });
+  };
+
+  const handleCastVote = (choice: "yes" | "no" | "abstain") => {
+    if (!activeVote) return;
+    const updatedVotes = { ...activeVote.votes, currentUser: choice };
+    const newVotedCount = Object.keys(updatedVotes).length;
+    
+    setActiveVote({
+      ...activeVote,
+      votedCount: newVotedCount,
+      votes: updatedVotes,
+    });
+    
+    // Auto complete simulation
+    setTimeout(() => {
+      handleCompleteVote(updatedVotes);
+    }, 1500);
+  };
+
+  const handleCompleteVote = (mockVotes?: { [key: string]: "yes" | "no" | "abstain" }) => {
+    if (!activeVote) return;
+    const votesToCount = mockVotes || activeVote.votes;
+    
+    const yesCount = (votesToCount.currentUser === "yes" ? 1 : 0) + 3;
+    const noCount = (votesToCount.currentUser === "no" ? 1 : 0) + 1;
+    const abstainCount = (votesToCount.currentUser === "abstain" ? 1 : 0) + 1;
+    const passed = yesCount > noCount;
+
+    const result = {
+      question: activeVote.question,
+      yesCount,
+      noCount,
+      abstainCount,
+      passed,
+    };
+
+    setLastVoteResult(result);
+    setVoteHistory((prev) => [
+      ...prev,
+      {
+        id: String(prev.length + 1),
+        question: activeVote.question,
+        yesCount,
+        noCount,
+        passed,
+      },
+    ]);
+
+    setActiveVote(null);
+    setVoteResultOpen(true);
+  };
+
+  const handleConfirmModeration = () => {
+    if (!moderationDialog) return;
+    const { type, participantId } = moderationDialog;
+
+    if (participantId) {
+      if (type === "kick" || type === "ban") {
+        setParticipants((prev) => prev.filter((p) => p.id !== participantId));
+      } else if (type === "mute") {
+        setParticipants((prev) =>
+          prev.map((p) => (p.id === participantId ? { ...p, isMicOn: false } : p))
+        );
+      } else if (type === "camera") {
+        setParticipants((prev) =>
+          prev.map((p) => (p.id === participantId ? { ...p, isCameraOn: false } : p))
+        );
+      } else if (type === "share") {
+        setParticipants((prev) =>
+          prev.map((p) => (p.id === participantId ? { ...p, isScreenSharing: false } : p))
+        );
+      } else if (type === "chat") {
+        // Mock disabling chat privileges locally
+      } else if (type === "lowerHand") {
+        setParticipants((prev) =>
+          prev.map((p) => (p.id === participantId ? { ...p, hasRaisedHand: false } : p))
+        );
+      } else if (type === "transferHost") {
+        setParticipants((prev) =>
+          prev.map((p) =>
+            p.id === participantId
+              ? { ...p, isHost: true }
+              : p.id === "1"
+              ? { ...p, isHost: false }
+              : p
+          )
+        );
+      }
+    } else {
+      if (type === "lock") {
+        setIsRoomLocked(true);
+      } else if (type === "unlock") {
+        setIsRoomLocked(false);
+      }
+    }
+
+    setModerationDialog(null);
+  };
+
+  const getModerationDialogContent = () => {
+    if (!moderationDialog) return { title: "", message: "", warning: "", confirmText: "" };
+    const name = moderationDialog.participantName || "this participant";
+    switch (moderationDialog.type) {
+      case "kick":
+        return {
+          title: "Kick Participant",
+          message: `Are you sure you want to remove ${name} from the study session?`,
+          warning: "They can rejoin if the room is not locked.",
+          confirmText: "Kick",
+        };
+      case "ban":
+        return {
+          title: "Ban Participant",
+          message: `Are you sure you want to ban ${name} from this room?`,
+          warning: "Banned participants cannot rejoin this session.",
+          confirmText: "Ban",
+        };
+      case "transferHost":
+        return {
+          title: "Transfer Host Rights",
+          message: `Are you sure you want to transfer the room host privileges to ${name}?`,
+          warning: "You will lose moderation controls and cannot undo this action.",
+          confirmText: "Transfer",
+        };
+      case "lock":
+        return {
+          title: "Lock Study Room",
+          message: "Are you sure you want to lock the room? New guests will be blocked from joining.",
+          warning: "Currently active participants will remain in the room.",
+          confirmText: "Lock Room",
+        };
+      case "unlock":
+        return {
+          title: "Unlock Study Room",
+          message: "Are you sure you want to unlock the room? Anyone with the link will be allowed to join.",
+          warning: "",
+          confirmText: "Unlock Room",
+        };
+      case "mute":
+        return {
+          title: "Force Mute",
+          message: `Are you sure you want to mute ${name}'s microphone?`,
+          warning: "They can unmute themselves manually if needed.",
+          confirmText: "Mute",
+        };
+      case "camera":
+        return {
+          title: "Disable Video Stream",
+          message: `Are you sure you want to turn off ${name}'s camera?`,
+          warning: "The participant can toggle their camera back on manually.",
+          confirmText: "Disable",
+        };
+      case "lowerHand":
+        return {
+          title: "Lower Raised Hand",
+          message: `Are you sure you want to lower the raised hand indicator for ${name}?`,
+          warning: "",
+          confirmText: "Lower Hand",
+        };
+      case "share":
+        return {
+          title: "Disable Screen Share",
+          message: `Are you sure you want to stop ${name} from sharing their screen?`,
+          warning: "They can start presenting again manually.",
+          confirmText: "Stop Share",
+        };
+      case "chat":
+        return {
+          title: "Disable Chat Privileges",
+          message: `Are you sure you want to block ${name} from sending chat messages?`,
+          warning: "You can restore chat permission from the participant menu.",
+          confirmText: "Block Chat",
+        };
+      default:
+        return { title: "Confirm Action", message: "Are you sure you want to proceed?", warning: "", confirmText: "Confirm" };
+    }
+  };
+
+  const dialogContent = getModerationDialogContent();
+
   useEffect(() => {
     const interval = setInterval(() => {
       setTimer((prev) => prev + 1);
@@ -433,6 +691,17 @@ export function ActiveStudyRoomPage() {
     );
   }
 
+  if (!isApproved) {
+    return (
+      <GuestWaitingScreen
+        roomName="Advanced Mathematics Group Study"
+        subject="Mathematics"
+        hostName="Alex Johnson"
+        onLeave={handleLeave}
+      />
+    );
+  }
+
   return (
     <div className="relative h-screen w-full overflow-hidden bg-slate-50 text-slate-950 dark:bg-ink-950 dark:text-white">
       {/* Sticky Header */}
@@ -445,10 +714,19 @@ export function ActiveStudyRoomPage() {
               <span className="inline-flex items-center rounded-full bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
                 StudyRoom
               </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-signal-500/10 px-2.5 py-1 text-xs font-semibold text-signal-600 dark:text-signal-300">
-                <Lock className="size-3" />
-                Active Call
-              </span>
+              <button
+                type="button"
+                onClick={() => setModerationDialog({ type: isRoomLocked ? "unlock" : "lock" })}
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-signal-500 ${
+                  isRoomLocked
+                    ? "bg-red-500/10 text-red-650 hover:bg-red-500/20"
+                    : "bg-signal-500/10 text-signal-600 dark:text-signal-300 hover:bg-signal-500/20"
+                }`}
+                title={isRoomLocked ? "Unlock study room" : "Lock study room"}
+              >
+                {isRoomLocked ? <Lock className="size-3 text-red-500" /> : <Unlock className="size-3" />}
+                {isRoomLocked ? "Locked" : "Active Call"}
+              </button>
             </div>
             <div className="flex items-center gap-5 text-xs text-slate-500 dark:text-slate-450 mt-1">
               <div className="flex items-center gap-1">
@@ -511,6 +789,11 @@ export function ActiveStudyRoomPage() {
           activeTab={activeSidebarTab}
           setActiveTab={setActiveSidebarTab}
           participants={participants}
+          isCurrentUserHost={participants.find(p => p.id === "1")?.isHost}
+          pendingRequests={pendingRequests}
+          onApproveRequest={handleApproveRequest}
+          onRejectRequest={handleRejectRequest}
+          onOpenModeration={setSelectedParticipantForMenu}
         />
       </div>
 
@@ -683,6 +966,21 @@ export function ActiveStudyRoomPage() {
             <FileText size={20} />
           </button>
 
+          {/* Start Vote */}
+          <button
+            type="button"
+            className={`grid size-10 place-items-center rounded-full transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-signal-500 ${
+              startVoteOpen
+                ? "bg-indigo-500/10 text-indigo-650 hover:bg-indigo-500/20"
+                : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/[0.06]"
+            }`}
+            title="Start a vote session"
+            aria-label="Start a vote session"
+            onClick={() => setStartVoteOpen(true)}
+          >
+            <Vote size={20} />
+          </button>
+
           <div className="mx-1 h-6 w-px bg-slate-200 dark:bg-white/10" />
 
           {/* Settings */}
@@ -707,6 +1005,199 @@ export function ActiveStudyRoomPage() {
           </button>
         </div>
       </div>
+
+      {/* --- PHASE 3 OVERLAYS, DIALOGS, BOTTOM SHEETS --- */}
+
+      {/* Start Vote Modal Dialog */}
+      <StartVoteDialog
+        isOpen={startVoteOpen}
+        onClose={() => setStartVoteOpen(false)}
+        onStart={handleStartVote}
+      />
+
+      {/* Floating Vote Ballot Container */}
+      <VotePopup
+        isOpen={activeVote !== null}
+        question={activeVote?.question || ""}
+        durationSeconds={activeVote?.duration || 60}
+        votedCount={activeVote?.votedCount || 0}
+        totalParticipants={participants.length}
+        onVote={handleCastVote}
+        onComplete={() => handleCompleteVote()}
+      />
+
+      {/* Vote Results Modal Dialog */}
+      <VoteResultDialog
+        isOpen={voteResultOpen}
+        question={lastVoteResult?.question || ""}
+        yesCount={lastVoteResult?.yesCount || 0}
+        noCount={lastVoteResult?.noCount || 0}
+        abstainCount={lastVoteResult?.abstainCount || 0}
+        passed={lastVoteResult?.passed || false}
+        onClose={() => setVoteResultOpen(false)}
+      />
+
+      {/* Participant Moderation Options Menu (Dropdown on desktop, slide-up bottom sheet on mobile) */}
+      {selectedParticipantForMenu && (() => {
+        const p = participants.find((part) => part.id === selectedParticipantForMenu);
+        if (!p) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-[1px] lg:items-center p-0 lg:p-4 animate-fade-in">
+            <div className="fixed inset-0" onClick={() => setSelectedParticipantForMenu(null)} />
+            <div className="relative w-full lg:max-w-sm bg-white dark:bg-ink-900 rounded-t-[2rem] lg:rounded-[2rem] border border-slate-200 dark:border-white/5 p-6 shadow-2xl space-y-4 animate-slide-up lg:animate-scale-up z-50">
+              {/* Drag handle visual for mobile */}
+              <div className="mx-auto h-1.5 w-12 rounded-full bg-slate-200 dark:bg-white/10 lg:hidden" />
+              
+              {/* User profile */}
+              <div className="flex items-center gap-3 border-b border-slate-100 dark:border-white/5 pb-3">
+                <div className="flex size-10 items-center justify-center rounded-full text-xs font-bold text-white bg-gradient-to-br from-indigo-650 via-violet-650 to-cyan-500">
+                  {p.name.split(" ").map((n) => n[0]).join("")}
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-950 dark:text-white leading-none">{p.name}</h4>
+                  <span className="text-[10px] text-slate-500 mt-1 block font-semibold uppercase">{p.isHost ? "Host" : "Guest"}</span>
+                </div>
+              </div>
+
+              {/* Action list */}
+              <div className="grid grid-cols-1 gap-1 max-h-[60vh] overflow-y-auto pr-1">
+                {/* Mute action */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModerationDialog({ type: "mute", participantId: p.id, participantName: p.name });
+                    setSelectedParticipantForMenu(null);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-750 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition focus:outline-none focus:ring-2 focus:ring-signal-500"
+                >
+                  <MicOff size={15} />
+                  Mute Participant
+                </button>
+
+                {/* Disable Camera */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModerationDialog({ type: "camera", participantId: p.id, participantName: p.name });
+                    setSelectedParticipantForMenu(null);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-750 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition focus:outline-none focus:ring-2 focus:ring-signal-500"
+                >
+                  <VideoOff size={15} />
+                  Disable Video Feed
+                </button>
+
+                {/* Disable Screen Share */}
+                {p.isScreenSharing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModerationDialog({ type: "share", participantId: p.id, participantName: p.name });
+                      setSelectedParticipantForMenu(null);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-750 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition focus:outline-none focus:ring-2 focus:ring-signal-500"
+                  >
+                    <Monitor size={15} />
+                    Disable Screen Share
+                  </button>
+                )}
+
+                {/* Disable Chat */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModerationDialog({ type: "chat", participantId: p.id, participantName: p.name });
+                    setSelectedParticipantForMenu(null);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-750 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition focus:outline-none focus:ring-2 focus:ring-signal-500"
+                >
+                  <MessageSquare size={15} />
+                  Disable Chat
+                </button>
+
+                {/* Lower Hand */}
+                {p.hasRaisedHand && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModerationDialog({ type: "lowerHand", participantId: p.id, participantName: p.name });
+                      setSelectedParticipantForMenu(null);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-750 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition focus:outline-none focus:ring-2 focus:ring-signal-500"
+                  >
+                    <Hand size={15} />
+                    Lower Raised Hand
+                  </button>
+                )}
+
+                {/* Transfer Host */}
+                {!p.isHost && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModerationDialog({ type: "transferHost", participantId: p.id, participantName: p.name });
+                      setSelectedParticipantForMenu(null);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-750 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition focus:outline-none focus:ring-2 focus:ring-signal-500"
+                  >
+                    <Users size={15} />
+                    Transfer Host Role
+                  </button>
+                )}
+
+                {/* Kick */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModerationDialog({ type: "kick", participantId: p.id, participantName: p.name });
+                    setSelectedParticipantForMenu(null);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/[0.04] transition focus:outline-none focus:ring-2 focus:ring-rose-500"
+                >
+                  <X size={15} />
+                  Kick from Room
+                </button>
+
+                {/* Ban */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModerationDialog({ type: "ban", participantId: p.id, participantName: p.name });
+                    setSelectedParticipantForMenu(null);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-500/[0.04] transition focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  <ShieldAlert size={15} />
+                  Ban Participant
+                </button>
+              </div>
+
+              {/* Cancel button */}
+              <button
+                type="button"
+                onClick={() => setSelectedParticipantForMenu(null)}
+                className="w-full text-center rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.06] dark:hover:bg-white/[0.1] py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-signal-500 transition"
+              >
+                Close Menu
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Moderation Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={moderationDialog !== null}
+        title={dialogContent.title}
+        message={dialogContent.message}
+        warning={dialogContent.warning}
+        confirmText={dialogContent.confirmText}
+        cancelText="Cancel"
+        isDestructive={moderationDialog?.type === "kick" || moderationDialog?.type === "ban"}
+        onConfirm={handleConfirmModeration}
+        onCancel={() => setModerationDialog(null)}
+      />
+
     </div>
   );
 }

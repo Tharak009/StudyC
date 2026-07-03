@@ -22,6 +22,7 @@ import {
   ChevronDown,
   Trash2,
 } from "lucide-react";
+import { HostWaitingPanel, type JoinRequest } from "./active-study-room-waiting-room";
 
 export type SidebarTab = "participants" | "chat" | "notes";
 
@@ -67,6 +68,11 @@ interface ActiveStudyRoomSidebarProps {
   activeTab: SidebarTab;
   setActiveTab: (tab: SidebarTab) => void;
   participants: Participant[];
+  isCurrentUserHost?: boolean;
+  pendingRequests?: JoinRequest[];
+  onApproveRequest?: (requestId: string) => void;
+  onRejectRequest?: (requestId: string) => void;
+  onOpenModeration?: (participantId: string) => void;
 }
 
 export function ActiveStudyRoomSidebar({
@@ -75,6 +81,11 @@ export function ActiveStudyRoomSidebar({
   activeTab,
   setActiveTab,
   participants,
+  isCurrentUserHost = true,
+  pendingRequests = [],
+  onApproveRequest,
+  onRejectRequest,
+  onOpenModeration,
 }: ActiveStudyRoomSidebarProps) {
   // --- STATE FOR PARTICIPANTS TAB ---
   const [pSearch, setPSearch] = useState("");
@@ -323,6 +334,17 @@ export function ActiveStudyRoomSidebar({
                   onChange={(e) => setPSearch(e.target.value)}
                 />
               </div>
+              
+              {/* Host Waiting room pending entries */}
+              {isCurrentUserHost && pendingRequests.length > 0 && (
+                <div className="mb-3 animate-scale-up">
+                  <HostWaitingPanel
+                    requests={pendingRequests}
+                    onApprove={onApproveRequest || (() => {})}
+                    onReject={onRejectRequest || (() => {})}
+                  />
+                </div>
+              )}
 
               {/* Filter and Sort Selectors */}
               <div className="flex gap-2">
@@ -435,7 +457,8 @@ export function ActiveStudyRoomSidebar({
                         {/* Action menu trigger */}
                         <button
                           type="button"
-                          className="rounded-lg p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-white/[0.06] transition"
+                          onClick={() => onOpenModeration?.(p.id)}
+                          className="rounded-lg p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-white/[0.06] transition focus:outline-none focus:ring-2 focus:ring-signal-500"
                           aria-label="Participant options"
                         >
                           <MoreVertical size={13} />
