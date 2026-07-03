@@ -9,7 +9,8 @@ import {
   ShieldCheck,
   UsersRound,
   X,
-  Calendar
+  Calendar,
+  Share2
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, Navigate } from "react-router";
@@ -29,7 +30,9 @@ const navigation = [
   { to: "/communities", label: "Communities", icon: UsersRound },
   { to: "/direct-messages", label: "Messages", icon: Mail },
   { to: "/events", label: "Events", icon: Calendar },
-  { to: "/profile", label: "Profile", icon: CircleUserRound }
+  { to: "/connections-resources", label: "Resources", icon: Share2 },
+  { to: "/profile", label: "Profile", icon: CircleUserRound },
+  { to: "/settings", label: "Settings", icon: Settings }
 ];
 
 export function AppLayout() {

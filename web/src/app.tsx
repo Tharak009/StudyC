@@ -30,6 +30,8 @@ import { AnnouncementsManagementPage } from "./pages/announcements-management.pa
 import { AnalyticsDashboardPage } from "./pages/analytics-dashboard.page";
 import { SystemSettingsPage } from "./pages/settings.page";
 import { AdminProfilePage } from "./pages/admin-profile.page";
+import { ConnectionsResourcesPage } from "./pages/connections-resources.page";
+import { StudentSettingsPage } from "./pages/student-settings.page";
 import { ProtectedRoute } from "./routes/protected-route";
 import { PublicRoute } from "./routes/public-route";
 import { ErrorBoundary } from "./components/error-boundary";
@@ -72,7 +74,9 @@ export function App() {
           <Route path="/communities/:id/resources/upload" element={<UploadResourcePage />} />
           <Route path="/communities/:id/resources/:resourceId" element={<ResourceDetailsPage />} />
           <Route path="/events" element={<StudentEventsPage />} />
+          <Route path="/connections-resources" element={<ConnectionsResourcesPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/settings" element={<StudentSettingsPage />} />
         </Route>
 
         <Route path="/admin" element={<AdminLayout />}>

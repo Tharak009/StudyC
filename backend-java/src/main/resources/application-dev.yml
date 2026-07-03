@@ -7,3 +7,6 @@ logging:
   level:
     root: INFO
     com.studyconnect.backend: DEBUG
+
+studyconnect:
+  bcrypt-rounds: 4
