@@ -30,6 +30,7 @@ import { AnnouncementsManagementPage } from "./pages/announcements-management.pa
 import { AnalyticsDashboardPage } from "./pages/analytics-dashboard.page";
 import { SystemSettingsPage } from "./pages/settings.page";
 import { AdminProfilePage } from "./pages/admin-profile.page";
+import { ActiveStudyRoomPage } from "./pages/active-study-room.page";
 import { ProtectedRoute } from "./routes/protected-route";
 import { PublicRoute } from "./routes/public-route";
 import { ErrorBoundary } from "./components/error-boundary";
@@ -74,6 +75,7 @@ export function App() {
           <Route path="/events" element={<StudentEventsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
         </Route>
+        <Route path="/study-rooms/:roomId" element={<ActiveStudyRoomPage />} />
 
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboard />} />
