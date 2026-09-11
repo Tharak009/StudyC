@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -9,78 +9,59 @@ import {
   X,
   UserCheck,
   ShieldCheck,
-  MoreHorizontal
+  UserMinus,
+  RotateCcw,
+  Clock,
+  ArrowRight
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useToastStore } from "../../store/toast.store";
 import { useAuthStore } from "../../store/auth.store";
 import { usersApi } from "../../api/users.api";
+import { friendsApi, type FriendRecord, type FriendRequestsResult } from "../../api/friends.api";
+import { directMessagesApi } from "../../api/direct-messages.api";
 import type { User as AuthUser } from "../../types/auth";
-
-export interface ClassmateConnection {
-  id: string;
-  name: string;
-  roll: string;
-  dept: string;
-  batch: string;
-  isOnline: boolean;
-  status: "connected" | "pending_incoming" | "pending_outgoing" | "none";
-  sharedCircles: number;
-}
-
-const MOCK_SEED_IDS = new Set([
-  "u-meera",
-  "u-rohan",
-  "u-ananya",
-  "u-devansh",
-  "u-priya",
-  "u-kabir"
-]);
-
-function loadSavedClassmates(): ClassmateConnection[] {
-  try {
-    const raw = localStorage.getItem("studyconnect_peer_directory");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const real = parsed.filter(
-          (p: any) =>
-            p &&
-            !MOCK_SEED_IDS.has(p.id) &&
-            !p.name?.includes("Meera Patel") &&
-            !p.name?.includes("Rohan Verma")
-        );
-        return real.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          roll: p.roll || "CS24-100",
-          dept: p.dept || "Computer Science & Engineering",
-          batch: p.batch || "2026",
-          isOnline: p.isOnline ?? true,
-          status: p.status || "none",
-          sharedCircles: p.sharedCircles || 1
-        }));
-      }
-    }
-  } catch {}
-  return [];
-}
 
 export function ConnectionsTab() {
   const navigate = useNavigate();
   const { addToast } = useToastStore();
-
   const currentUser = useAuthStore((state) => state.user);
-  const [classmates, setClassmates] = useState<ClassmateConnection[]>(loadSavedClassmates);
+
+  const [friends, setFriends] = useState<FriendRecord[]>([]);
+  const [requests, setRequests] = useState<FriendRequestsResult>({ sent: [], received: [] });
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"friends" | "received" | "sent">("friends");
   const [search, setSearch] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"all" | "dept" | "batch" | "pending">("all");
+
+  // Search registered classmates modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [modalSearch, setModalSearch] = useState("");
   const [searchResults, setSearchResults] = useState<AuthUser[]>([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  // Search real registered users from MongoDB Atlas
-  React.useEffect(() => {
+  // Fetch real friends & pending requests from MongoDB Atlas
+  const loadFriendshipData = useCallback(async () => {
+    try {
+      const [friendsData, requestsData] = await Promise.all([
+        friendsApi.getFriends().catch(() => []),
+        friendsApi.getRequests().catch(() => ({ sent: [], received: [] }))
+      ]);
+      setFriends(friendsData || []);
+      setRequests(requestsData || { sent: [], received: [] });
+    } catch (err) {
+      console.error("Failed to load friendship data:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFriendshipData();
+  }, [loadFriendshipData]);
+
+  // Search registered users from MongoDB Atlas for the Add modal
+  useEffect(() => {
     if (!addModalOpen) return;
     let isMounted = true;
     const fetchUsers = async () => {
@@ -88,7 +69,6 @@ export function ConnectionsTab() {
       try {
         const users = await usersApi.search(modalSearch);
         if (isMounted) {
-          // Exclude the current logged-in user
           setSearchResults((users || []).filter((u) => u._id !== currentUser?._id));
         }
       } catch (err) {
@@ -105,119 +85,84 @@ export function ConnectionsTab() {
     };
   }, [modalSearch, addModalOpen, currentUser?._id]);
 
-  const pendingCount = classmates.filter(
-    (c) => c.status === "pending_incoming" || c.status === "pending_outgoing"
-  ).length;
-
-  const filteredList = classmates.filter((c) => {
-    // Search
-    if (search.trim()) {
-      const q = search.toLowerCase().trim();
-      const match = c.name.toLowerCase().includes(q) || c.roll.toLowerCase().includes(q);
-      if (!match) return false;
-    }
-
-    // Filter
-    if (activeFilter === "dept" && !c.dept.includes("Computer Science")) return false;
-    if (activeFilter === "batch" && c.batch !== "2026") return false;
-    if (activeFilter === "pending" && c.status !== "pending_incoming" && c.status !== "pending_outgoing") {
-      return false;
-    }
-
-    return true;
-  });
-
-  const updateAndPersist = (updater: (prev: ClassmateConnection[]) => ClassmateConnection[]) => {
-    setClassmates((prev) => {
-      const next = updater(prev);
-      try {
-        localStorage.setItem("studyconnect_peer_directory", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  };
-
-  const handleAccept = (id: string, name: string) => {
-    updateAndPersist((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status: "connected" as const } : c))
-    );
-    addToast(`Connected with ${name}!`, "success");
-  };
-
-  const handleDecline = (id: string) => {
-    updateAndPersist((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status: "none" as const } : c))
-    );
-    addToast("Connection request declined", "info");
-  };
-
-  const handleConnect = (id: string, name: string) => {
-    updateAndPersist((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status: "pending_outgoing" as const } : c))
-    );
-    addToast(`Connection invitation sent to ${name}`, "info");
-  };
-
-  const handleSendMessageToPeer = (peer: ClassmateConnection) => {
+  // Actions
+  const handleSendRequest = async (targetUser: AuthUser) => {
+    setActionLoadingId(targetUser._id);
     try {
-      const raw = localStorage.getItem("studyconnect_dm_conversations");
-      let convs = raw ? JSON.parse(raw) : [];
-      let targetConv = convs.find((c: any) => c.peer?.id === peer.id || c.peer?.name === peer.name);
-      if (!targetConv) {
-        targetConv = {
-          id: `conv-${peer.id}`,
-          peer: {
-            id: peer.id,
-            name: peer.name,
-            roll: peer.roll,
-            dept: peer.dept,
-            isOnline: peer.isOnline
-          },
-          lastMessage: {
-            text: "Direct connection started from profile",
-            senderId: "system",
-            time: "Just now",
-            isRead: true,
-            isDelivered: true
-          },
-          unreadCount: 0
-        };
-        convs = [targetConv, ...convs];
-        localStorage.setItem("studyconnect_dm_conversations", JSON.stringify(convs));
+      await friendsApi.sendRequest(targetUser._id);
+      addToast(`Friend request sent to ${targetUser.fullName}!`, "success");
+      await loadFriendshipData();
+    } catch (err: any) {
+      addToast(err?.response?.data?.message || "Failed to send friend request", "error");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleCancelRequest = async (userId: string, userName?: string) => {
+    setActionLoadingId(userId);
+    try {
+      await friendsApi.cancelRequest(userId);
+      addToast(`Friend request cancelled${userName ? ` for ${userName}` : ""}`, "info");
+      await loadFriendshipData();
+    } catch (err: any) {
+      addToast(err?.response?.data?.message || "Failed to cancel request", "error");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleAcceptRequest = async (userId: string, userName?: string) => {
+    setActionLoadingId(userId);
+    try {
+      await friendsApi.acceptRequest(userId);
+      addToast(`Connected! You and ${userName || "classmate"} are now friends!`, "success");
+      await loadFriendshipData();
+    } catch (err: any) {
+      addToast(err?.response?.data?.message || "Failed to accept request", "error");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleDeclineRequest = async (userId: string) => {
+    setActionLoadingId(userId);
+    try {
+      await friendsApi.declineRequest(userId);
+      addToast("Friend request declined", "info");
+      await loadFriendshipData();
+    } catch (err: any) {
+      addToast(err?.response?.data?.message || "Failed to decline request", "error");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRemoveFriend = async (userId: string, userName: string) => {
+    if (!confirm(`Are you sure you want to remove ${userName} from your friends?`)) return;
+    setActionLoadingId(userId);
+    try {
+      await friendsApi.removeFriend(userId);
+      addToast(`${userName} removed from friends`, "info");
+      await loadFriendshipData();
+    } catch (err: any) {
+      addToast(err?.response?.data?.message || "Failed to remove friend", "error");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleMessagePeer = async (peerId: string) => {
+    try {
+      const conv = await directMessagesApi.startConversation(peerId);
+      if (conv?._id) {
+        navigate(`/direct-messages/${conv._id}`);
+      } else {
+        navigate("/direct-messages");
       }
-      navigate(`/direct-messages/${targetConv.id}`);
     } catch {
       navigate("/direct-messages");
     }
-  };
-
-  const handleConnectWithRegisteredUser = (targetUser: AuthUser) => {
-    const existing = classmates.find((c) => c.id === targetUser._id);
-    if (existing) {
-      if (existing.status === "connected") {
-        addToast(`You are already connected with ${targetUser.fullName}`, "info");
-        return;
-      }
-      if (existing.status === "pending_outgoing") {
-        addToast(`Connection invitation already sent to ${targetUser.fullName}`, "info");
-        return;
-      }
-    }
-
-    const newConnection: ClassmateConnection = {
-      id: targetUser._id,
-      name: targetUser.fullName,
-      roll: targetUser.rollNumber || "CSE",
-      dept: targetUser.department || "Computer Science",
-      batch: "2026",
-      isOnline: true,
-      status: "pending_outgoing",
-      sharedCircles: 1
-    };
-
-    // Strict deduplication: remove any existing entry with this ID and add fresh
-    updateAndPersist((prev) => [newConnection, ...prev.filter((c) => c.id !== targetUser._id)]);
-    addToast(`Connection invitation sent to ${targetUser.fullName}!`, "success");
   };
 
   const getInitials = (name: string) => {
@@ -229,9 +174,46 @@ export function ConnectionsTab() {
       .toUpperCase();
   };
 
+  // Helper to determine friendship status of a user
+  const getUserStatus = (userId: string): "friends" | "sent" | "received" | "none" => {
+    if (friends.some((f) => f.user?._id === userId)) return "friends";
+    if (requests.sent?.some((r) => r.recipient?._id === userId || (r.recipient as any) === userId)) {
+      return "sent";
+    }
+    if (requests.received?.some((r) => r.requester?._id === userId || (r.requester as any) === userId)) {
+      return "received";
+    }
+    return "none";
+  };
+
+  // Filter friends based on search input
+  const filteredFriends = friends.filter((f) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase().trim();
+    const nameMatch = f.user?.fullName?.toLowerCase().includes(q);
+    const rollMatch = f.user?.rollNumber?.toLowerCase().includes(q);
+    const deptMatch = f.user?.department?.toLowerCase().includes(q);
+    return nameMatch || rollMatch || deptMatch;
+  });
+
+  const filteredReceived = (requests.received || []).filter((r) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase().trim();
+    const nameMatch = r.requester?.fullName?.toLowerCase().includes(q);
+    const rollMatch = r.requester?.rollNumber?.toLowerCase().includes(q);
+    return nameMatch || rollMatch;
+  });
+
+  const filteredSent = (requests.sent || []).filter((r) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase().trim();
+    const nameMatch = r.recipient?.fullName?.toLowerCase().includes(q);
+    const rollMatch = r.recipient?.rollNumber?.toLowerCase().includes(q);
+    return nameMatch || rollMatch;
+  });
+
   return (
     <div className="space-y-6">
-      
       {/* ── Top Search & Filter Toolbar ───────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         {/* Search & Send Request Button */}
@@ -240,11 +222,19 @@ export function ConnectionsTab() {
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search classmates by name or roll number..."
+              placeholder="Search classmates by name, roll, or department..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F1A30] pl-10 pr-4 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] shadow-sm"
             />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
           <button
             type="button"
@@ -252,185 +242,296 @@ export function ConnectionsTab() {
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shrink-0 shadow-sm shadow-[#1E90FF]/25 cursor-pointer transition-all"
           >
             <UserPlus size={14} />
-            <span>Send Request</span>
+            <span>Add Friend</span>
           </button>
         </div>
 
-        {/* Filter Chips */}
+        {/* Tab Switcher */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
           <button
-            onClick={() => setActiveFilter("all")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-              activeFilter === "all"
+            onClick={() => setActiveTab("friends")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "friends"
                 ? "bg-[#1E90FF] text-white shadow-sm shadow-[#1E90FF]/25"
                 : "border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
             }`}
           >
-            All Peers
+            <UserCheck size={13} />
+            <span>Friends</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] tabular-nums font-bold ${
+                activeTab === "friends"
+                  ? "bg-white/20 text-white"
+                  : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+              }`}
+            >
+              {friends.length}
+            </span>
           </button>
+
           <button
-            onClick={() => setActiveFilter("dept")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-              activeFilter === "dept"
-                ? "bg-[#1E90FF] text-white shadow-sm shadow-[#1E90FF]/25"
+            onClick={() => setActiveTab("received")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "received"
+                ? "bg-amber-500 text-white shadow-sm shadow-amber-500/25"
                 : "border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
             }`}
           >
-            Same Dept
-          </button>
-          <button
-            onClick={() => setActiveFilter("batch")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-              activeFilter === "batch"
-                ? "bg-[#1E90FF] text-white shadow-sm shadow-[#1E90FF]/25"
-                : "border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-            }`}
-          >
-            Batch 2026
-          </button>
-          <button
-            onClick={() => setActiveFilter("pending")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-              activeFilter === "pending"
-                ? "bg-amber-500 text-white"
-                : "border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-            }`}
-          >
-            <span>Pending</span>
-            {pendingCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] tabular-nums font-bold">
-                {pendingCount}
+            <Clock size={13} />
+            <span>Received Requests</span>
+            {requests.received?.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] tabular-nums font-bold animate-pulse">
+                {requests.received.length}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("sent")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "sent"
+                ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/25"
+                : "border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+            }`}
+          >
+            <RotateCcw size={12} />
+            <span>Sent Requests</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] tabular-nums font-bold ${
+                activeTab === "sent"
+                  ? "bg-white/20 text-white"
+                  : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+              }`}
+            >
+              {requests.sent?.length || 0}
+            </span>
           </button>
         </div>
       </div>
 
-      {/* ── Classmate Cards Grid or Empty State ───────────────────────── */}
-      {classmates.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 backdrop-blur-xl">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-[#1E90FF]/10 text-[#1E90FF] border border-[#1E90FF]/20 mb-3">
-            <Users size={26} />
+      {/* ── Main Content Display ──────────────────────────────────────── */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20 gap-3 text-slate-400 text-xs">
+          <span className="w-5 h-5 rounded-full border-2 border-[#1E90FF] border-t-transparent animate-spin" />
+          <span>Synchronizing campus connections with MongoDB Atlas...</span>
+        </div>
+      ) : activeTab === "friends" ? (
+        // ── 1. ACCEPTED FRIENDS ──────────────────────────────────────────
+        filteredFriends.length === 0 ? (
+          <div className="p-12 text-center rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 backdrop-blur-xl">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-[#1E90FF]/10 text-[#1E90FF] border border-[#1E90FF]/20 mb-3">
+              <Users size={26} />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">
+              {search ? "No Matching Friends Found" : "No Friends Added Yet"}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mb-5 leading-relaxed">
+              {search
+                ? "Try adjusting your search keywords to find your friends."
+                : "Add classmates and campus study partners to collaborate on assignments and chat in real-time."}
+            </p>
+            {!search && (
+              <button
+                onClick={() => setAddModalOpen(true)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-xs font-bold text-white shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
+              >
+                <UserPlus size={14} />
+                <span>Search & Add Friends</span>
+              </button>
+            )}
           </div>
-          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">
-            No Peer Connections Yet
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mb-5 leading-relaxed">
-            Connect with classmates and study partners to collaborate on notes, assignments, and study circles.
-          </p>
-          <button
-            onClick={() => navigate("/direct-messages")}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-xs font-bold text-white shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
-          >
-            <UserPlus size={14} />
-            <span>Find Peers in Direct Messages</span>
-          </button>
-        </div>
-      ) : filteredList.length === 0 ? (
-        <div className="p-8 text-center rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80">
-          <p className="text-xs text-slate-500 dark:text-slate-400">No peers matched your search criteria.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredList.map((peer) => (
-            <motion.div
-              key={peer.id}
-              whileHover={{ y: -3 }}
-              className="p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 backdrop-blur-xl shadow-md flex flex-col justify-between"
-            >
-              <div className="flex items-start gap-3.5 mb-3">
-                {/* Avatar with Presence Ring */}
-                <div className="relative shrink-0">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1E90FF] text-white font-bold text-xs shadow-sm">
-                    {getInitials(peer.name)}
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredFriends.map((f) => {
+              const u = f.user;
+              if (!u) return null;
+              return (
+                <motion.div
+                  key={f.friendshipId}
+                  whileHover={{ y: -3 }}
+                  className="p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 backdrop-blur-xl shadow-md flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-start gap-3.5 mb-3">
+                      <div className="h-11 w-11 rounded-2xl bg-[#1E90FF] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm overflow-hidden">
+                        {u.profilePicture ? (
+                          <img src={u.profilePicture} alt={u.fullName} className="h-full w-full object-cover" />
+                        ) : (
+                          getInitials(u.fullName || "Student")
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1">
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {u.fullName}
+                          </h4>
+                          <ShieldCheck size={13} className="text-[#1E90FF] shrink-0" />
+                        </div>
+                        <p className="text-[10px] tabular-nums text-slate-400 truncate mt-0.5 font-medium">
+                          {u.rollNumber || "CSE"} • Year {u.academicYear || 1}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {u.department || "Engineering"}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <span
-                    className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white dark:border-[#0F1A30] ${
-                      peer.isOnline ? "bg-emerald-500" : "bg-slate-400"
-                    }`}
-                  />
-                </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1">
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {peer.name}
-                    </h4>
-                    <ShieldCheck size={12} className="text-[#1E90FF] shrink-0" />
-                  </div>
-                  <p className="text-[10px] tabular-nums text-slate-400 truncate mt-0.5 font-medium">
-                    {peer.roll} • {peer.batch}
-                  </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                    {peer.dept}
-                  </p>
-                </div>
-              </div>
-
-              {/* Mutual Circles & Action Buttons */}
-              <div>
-                <div className="text-[10px] tabular-nums text-[#1E90FF] pb-3 border-b border-slate-200/70 dark:border-slate-800/60 flex items-center gap-1 font-medium">
-                  <Users size={11} />
-                  <span>{peer.sharedCircles} shared study circles</span>
-                </div>
-
-                <div className="pt-3">
-                  {peer.status === "connected" && (
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
                     <button
-                      onClick={() => handleSendMessageToPeer(peer)}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
+                      onClick={() => handleMessagePeer(u._id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-sm shadow-[#1E90FF]/20 cursor-pointer transition-all"
                     >
                       <MessageCircle size={13} />
-                      <span>Send Message</span>
+                      <span>Message</span>
                     </button>
-                  )}
-
-                  {peer.status === "pending_incoming" && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => handleAccept(peer.id, peer.name)}
-                        className="flex items-center justify-center gap-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm cursor-pointer transition-colors"
-                      >
-                        <Check size={12} />
-                        <span>Accept</span>
-                      </button>
-                      <button
-                        onClick={() => handleDecline(peer.id)}
-                        className="flex items-center justify-center gap-1 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold cursor-pointer transition-colors"
-                      >
-                        <X size={12} />
-                        <span>Decline</span>
-                      </button>
+                    <button
+                      onClick={() => handleRemoveFriend(u._id, u.fullName)}
+                      disabled={actionLoadingId === u._id}
+                      title="Remove Friend"
+                      className="px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      <UserMinus size={13} />
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )
+      ) : activeTab === "received" ? (
+        // ── 2. RECEIVED PENDING REQUESTS ──────────────────────────────────
+        filteredReceived.length === 0 ? (
+          <div className="p-10 text-center rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80">
+            <Clock size={28} className="mx-auto text-amber-500 mb-2 opacity-80" />
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">No Received Requests</h4>
+            <p className="text-[11px] text-slate-400 mt-1">
+              When other campus scholars send you a friend request, they will appear here for you to accept or decline.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredReceived.map((req) => {
+              const sender = req.requester;
+              if (!sender) return null;
+              const senderId = sender._id || (sender as any);
+              return (
+                <motion.div
+                  key={req._id}
+                  whileHover={{ y: -2 }}
+                  className="p-5 rounded-3xl border border-amber-500/25 bg-amber-500/5 dark:bg-amber-500/10 backdrop-blur-xl shadow-md flex flex-col justify-between"
+                >
+                  <div className="flex items-start gap-3.5 mb-3">
+                    <div className="h-11 w-11 rounded-2xl bg-amber-500 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm">
+                      {sender.profilePicture ? (
+                        <img src={sender.profilePicture} alt={sender.fullName} className="h-full w-full object-cover rounded-2xl" />
+                      ) : (
+                        getInitials(sender.fullName || "User")
+                      )}
                     </div>
-                  )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {sender.fullName}
+                        </h4>
+                      </div>
+                      <p className="text-[10px] tabular-nums text-slate-400 truncate mt-0.5">
+                        {sender.rollNumber || "CSE"} • {sender.department || "Campus Scholar"}
+                      </p>
+                      <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                        <Clock size={10} />
+                        <span>Incoming Friend Request</span>
+                      </span>
+                    </div>
+                  </div>
 
-                  {peer.status === "pending_outgoing" && (
+                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-amber-500/20">
                     <button
-                      disabled
-                      className="w-full py-2 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-500 text-xs font-bold text-center"
+                      onClick={() => handleAcceptRequest(senderId, sender.fullName)}
+                      disabled={actionLoadingId === senderId}
+                      className="flex items-center justify-center gap-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm cursor-pointer transition-colors disabled:opacity-50"
                     >
-                      Invitation Pending...
+                      <Check size={13} />
+                      <span>Accept</span>
                     </button>
-                  )}
+                    <button
+                      onClick={() => handleDeclineRequest(senderId)}
+                      disabled={actionLoadingId === senderId}
+                      className="flex items-center justify-center gap-1 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-xs font-bold cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      <X size={13} />
+                      <span>Decline</span>
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )
+      ) : (
+        // ── 3. SENT PENDING REQUESTS (WITH REVERT / CANCEL) ────────────────
+        filteredSent.length === 0 ? (
+          <div className="p-10 text-center rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80">
+            <RotateCcw size={28} className="mx-auto text-indigo-500 mb-2 opacity-80" />
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">No Sent Requests</h4>
+            <p className="text-[11px] text-slate-400 mt-1">
+              You haven't sent any friend requests that are pending approval.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredSent.map((req) => {
+              const target = req.recipient;
+              if (!target) return null;
+              const targetId = target._id || (target as any);
+              return (
+                <motion.div
+                  key={req._id}
+                  whileHover={{ y: -2 }}
+                  className="p-5 rounded-3xl border border-indigo-500/25 bg-indigo-500/5 dark:bg-indigo-500/10 backdrop-blur-xl shadow-md flex flex-col justify-between"
+                >
+                  <div className="flex items-start gap-3.5 mb-3">
+                    <div className="h-11 w-11 rounded-2xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm">
+                      {target.profilePicture ? (
+                        <img src={target.profilePicture} alt={target.fullName} className="h-full w-full object-cover rounded-2xl" />
+                      ) : (
+                        getInitials(target.fullName || "User")
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {target.fullName}
+                        </h4>
+                      </div>
+                      <p className="text-[10px] tabular-nums text-slate-400 truncate mt-0.5">
+                        {target.rollNumber || "CSE"} • {target.department || "Campus Scholar"}
+                      </p>
+                      <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-indigo-500 dark:text-indigo-400">
+                        <Clock size={10} />
+                        <span>Awaiting Response</span>
+                      </span>
+                    </div>
+                  </div>
 
-                  {peer.status === "none" && (
+                  <div className="pt-3 border-t border-indigo-500/20">
                     <button
-                      onClick={() => handleConnect(peer.id, peer.name)}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] text-slate-700 dark:text-slate-300 hover:text-[#1E90FF] hover:border-[#1E90FF] text-xs font-bold transition-colors cursor-pointer"
+                      onClick={() => handleCancelRequest(targetId, target.fullName)}
+                      disabled={actionLoadingId === targetId}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold cursor-pointer transition-colors disabled:opacity-50"
                     >
-                      <UserPlus size={13} />
-                      <span>Connect</span>
+                      <RotateCcw size={12} />
+                      <span>Revert / Cancel Request</span>
                     </button>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )
       )}
 
-      {/* ── Send Connection Request Modal (Clean Backdrop, Zero Blur) ─── */}
+      {/* ── Add Friends / Search Registered Classmates Modal ──────────── */}
       <AnimatePresence>
         {addModalOpen && (
           <div
@@ -456,11 +557,11 @@ export function ConnectionsTab() {
               <div className="flex items-center gap-2 mb-1">
                 <UserPlus size={18} className="text-[#1E90FF]" />
                 <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">
-                  Send Campus Connection Request
+                  Search & Add Friends
                 </h3>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
-                Invite a verified student to connect, collaborate on shared study circles, and start direct messaging.
+                Connect with verified students across departments. Send or manage requests in real-time.
               </p>
 
               <div className="space-y-4">
@@ -487,7 +588,7 @@ export function ConnectionsTab() {
                 </div>
 
                 {/* Real User Search Results List */}
-                <div className="max-h-64 overflow-y-auto space-y-2 pr-1 scrollbar-none">
+                <div className="max-h-72 overflow-y-auto space-y-2 pr-1 scrollbar-none">
                   {isSearchingUsers ? (
                     <div className="flex items-center justify-center py-8 text-xs text-slate-400 gap-2">
                       <span className="w-4 h-4 rounded-full border-2 border-[#1E90FF] border-t-transparent animate-spin" />
@@ -498,17 +599,12 @@ export function ConnectionsTab() {
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {modalSearch.trim()
                           ? `No registered classmates found matching "${modalSearch}".`
-                          : "Type a name or roll number above to find registered students."}
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Only verified registered accounts are eligible for connection requests.
+                          : "Type a name or roll number above to discover classmates."}
                       </p>
                     </div>
                   ) : (
                     searchResults.map((user) => {
-                      const conn = classmates.find((c) => c.id === user._id);
-                      const isConnected = conn?.status === "connected";
-                      const isPendingOutgoing = conn?.status === "pending_outgoing";
+                      const status = getUserStatus(user._id);
 
                       return (
                         <div
@@ -539,24 +635,60 @@ export function ConnectionsTab() {
                           </div>
 
                           <div className="shrink-0 ml-2">
-                            {isConnected ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
-                                <UserCheck size={12} />
-                                <span>Connected</span>
-                              </span>
-                            ) : isPendingOutgoing ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[11px] font-bold">
-                                <Check size={12} />
-                                <span>Request Sent</span>
-                              </span>
+                            {status === "friends" ? (
+                              <div className="flex items-center gap-1">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
+                                  <UserCheck size={12} />
+                                  <span>Friends</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFriend(user._id, user.fullName)}
+                                  disabled={actionLoadingId === user._id}
+                                  title="Remove Friend"
+                                  className="p-1 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                >
+                                  <UserMinus size={13} />
+                                </button>
+                              </div>
+                            ) : status === "sent" ? (
+                              <button
+                                type="button"
+                                onClick={() => handleCancelRequest(user._id, user.fullName)}
+                                disabled={actionLoadingId === user._id}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-[11px] font-bold cursor-pointer transition-colors"
+                              >
+                                <RotateCcw size={11} />
+                                <span>Cancel</span>
+                              </button>
+                            ) : status === "received" ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAcceptRequest(user._id, user.fullName)}
+                                  disabled={actionLoadingId === user._id}
+                                  className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer"
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeclineRequest(user._id)}
+                                  disabled={actionLoadingId === user._id}
+                                  className="px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-600 text-[11px] font-bold"
+                                >
+                                  <X size={11} />
+                                </button>
+                              </div>
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => handleConnectWithRegisteredUser(user)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                                onClick={() => handleSendRequest(user)}
+                                disabled={actionLoadingId === user._id}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                               >
                                 <UserPlus size={12} />
-                                <span>Connect</span>
+                                <span>Add Friend</span>
                               </button>
                             )}
                           </div>
@@ -580,7 +712,6 @@ export function ConnectionsTab() {
           </div>
         )}
       </AnimatePresence>
-
     </div>
   );
 }

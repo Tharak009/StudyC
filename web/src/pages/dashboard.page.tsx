@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Search,
   Bell,
   Sun,
   Moon,
@@ -26,6 +25,9 @@ import {
 import { Link, useNavigate } from "react-router";
 import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { ModernNotificationHub } from "../components/modern-notification-hub";
+import { UniversalSearchMenu } from "../components/search/UniversalSearchMenu";
+import { communitiesApi } from "../api/communities.api";
+import { friendsApi } from "../api/friends.api";
 import { useAuthStore } from "../store/auth.store";
 import { useThemeStore } from "../store/theme.store";
 import { useToastStore } from "../store/toast.store";
@@ -157,7 +159,6 @@ export function DashboardPage() {
   const isDark = theme === "dark";
   const { addToast } = useToastStore();
 
-  const [searchQuery, setSearchQuery] = useState("");
   const [copilotPrompt, setCopilotPrompt] = useState("");
 
   // Dynamic state loaded from localStorage
@@ -187,24 +188,41 @@ export function DashboardPage() {
     window.addEventListener("storage", syncData);
     window.addEventListener("focus", syncData);
     window.addEventListener(STREAK_EVENT, syncData);
+
+    // Sync live circles & peer count from MongoDB Atlas
+    communitiesApi
+      .list({ limit: 20 })
+      .then((res) => {
+        if (res?.items?.length) {
+          setJoinedCommunities(
+            res.items.map((c) => ({
+              id: c._id,
+              name: c.name,
+              dept: c.category || "General",
+              emoji: "📚",
+              activeCount: c.memberCount || 1,
+              latestMsg: c.description || "Active study room channel",
+              href: `/chat?circle=${c._id}`
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+
+    friendsApi
+      .getFriends()
+      .then((friendsList) => {
+        if (Array.isArray(friendsList)) {
+          setPeerCount(friendsList.length);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       window.removeEventListener("storage", syncData);
       window.removeEventListener("focus", syncData);
       window.removeEventListener(STREAK_EVENT, syncData);
     };
-  }, []);
-
-  // Keyboard shortcut listener for Ctrl+K / Cmd+K
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        const searchInput = document.getElementById("universal-search-input");
-        searchInput?.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const handleCopilotQuickAsk = (e: React.FormEvent) => {
@@ -230,23 +248,8 @@ export function DashboardPage() {
         {/* ── Top Header Bar ──────────────────────────────────────────── */}
         <header className="sticky top-0 z-20 h-16 shrink-0 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/85 backdrop-blur-xl px-4 sm:px-8 flex items-center justify-between gap-4">
           
-          {/* Universal Search Input */}
-          <div className="flex-1 max-w-md relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
-            <input
-              id="universal-search-input"
-              type="text"
-              placeholder="Search communities, lecture notes, peers..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A]/80 pl-10 pr-12 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-[#1E90FF] focus:outline-none focus:ring-1 focus:ring-[#1E90FF] transition-all shadow-inner"
-            />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-none">
-              <span className="text-[10px] font-bold text-slate-400 bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700">
-                ⌘K
-              </span>
-            </div>
-          </div>
+          {/* Universal Search Menu */}
+          <UniversalSearchMenu />
 
           {/* Top Actions */}
           <div className="flex items-center gap-3">
