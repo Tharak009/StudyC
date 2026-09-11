@@ -18,6 +18,7 @@ import {
   Filter
 } from "lucide-react";
 import type { User as AuthUser } from "../../types/auth";
+import { usersApi } from "../../api/users.api";
 
 export interface ConversationItem {
   id: string;
@@ -75,11 +76,34 @@ export function ConversationList({
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<"directory" | "custom">("directory");
   const [peerSearch, setPeerSearch] = useState("");
-  const [customName, setCustomName] = useState("");
-  const [customRoll, setCustomRoll] = useState("");
-  const [customDept, setCustomDept] = useState("CSE");
+  const [realUsers, setRealUsers] = useState<AuthUser[]>([]);
+  const [isSearchingRealUsers, setIsSearchingRealUsers] = useState(false);
+
+  // Search real registered users from MongoDB Atlas
+  React.useEffect(() => {
+    if (!newChatModalOpen) return;
+    let isMounted = true;
+    const fetchRealUsers = async () => {
+      setIsSearchingRealUsers(true);
+      try {
+        const users = await usersApi.search(peerSearch);
+        if (isMounted) {
+          setRealUsers((users || []).filter((u) => u._id !== currentUser?._id));
+        }
+      } catch (err) {
+        console.error("Failed to search registered users:", err);
+      } finally {
+        if (isMounted) setIsSearchingRealUsers(false);
+      }
+    };
+
+    const timer = setTimeout(fetchRealUsers, 200);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [peerSearch, newChatModalOpen, currentUser?._id]);
 
   const getInitials = (name: string) => {
     return name
@@ -106,25 +130,6 @@ export function ConversationList({
       c.peer.roll.toLowerCase().includes(q) ||
       c.peer.dept.toLowerCase().includes(q) ||
       (c.lastMessage?.text && c.lastMessage.text.toLowerCase().includes(q))
-    );
-  });
-
-  // Deduplicate: Exclude peers who already have an active conversation
-  const availableDirectory = directoryPeers.filter((p) => {
-    return !conversations.some(
-      (c) =>
-        c.peer.id === p.id ||
-        c.peer.name.trim().toLowerCase() === p.name.trim().toLowerCase()
-    );
-  });
-
-  const filteredDirectory = availableDirectory.filter((p) => {
-    const q = peerSearch.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      p.name.toLowerCase().includes(q) ||
-      p.roll.toLowerCase().includes(q) ||
-      p.dept.toLowerCase().includes(q)
     );
   });
 
@@ -412,196 +417,119 @@ export function ConversationList({
                     </div>
                   </div>
 
-                  {/* Clean Tab Toggle to eliminate duplicate stacked forms */}
-                  <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-[#080D1A] border border-slate-200/60 dark:border-slate-800/60 my-4">
-                    <button
-                      type="button"
-                      onClick={() => setModalTab("directory")}
-                      className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                        modalTab === "directory"
-                          ? "bg-[#1E90FF] text-white shadow-xs shadow-[#1E90FF]/25"
-                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      <Users size={13} />
-                      <span>Classmate Directory ({availableDirectory.length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModalTab("custom")}
-                      className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                        modalTab === "custom"
-                          ? "bg-[#1E90FF] text-white shadow-xs shadow-[#1E90FF]/25"
-                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      <User size={13} />
-                      <span>Enter Classmate Details</span>
-                    </button>
+                  {/* Search Bar */}
+                  <div className="relative my-4">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search registered classmate by name, roll, or department..."
+                      value={peerSearch}
+                      onChange={(e) => setPeerSearch(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] pl-10 pr-8 py-2.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-[#1E90FF] focus:ring-2 focus:ring-[#1E90FF]/20"
+                      autoFocus
+                    />
+                    {peerSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setPeerSearch("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
                   </div>
 
-                  {/* Tab 1: Classmates Directory (Deduplicated) */}
-                  {modalTab === "directory" && (
-                    <div>
-                      {availableDirectory.length === 0 ? (
-                        <div className="py-6 text-center space-y-2">
-                          <div className="h-10 w-10 mx-auto rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                            <Check size={20} />
-                          </div>
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                            All verified classmates are already in your chats!
-                          </p>
-                          <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                            You've connected with everyone from your directory. You can start a conversation with any new student by their details.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setModalTab("custom")}
-                            className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-                          >
-                            <Plus size={13} />
-                            <span>Enter Classmate Details</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="relative mb-3">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                            <input
-                              type="text"
-                              placeholder="Search by name, roll number, or dept..."
-                              value={peerSearch}
-                              onChange={(e) => setPeerSearch(e.target.value)}
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-[#1E90FF]"
-                              autoFocus
-                            />
-                          </div>
-
-                          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1 scrollbar-none">
-                            {filteredDirectory.length === 0 ? (
-                              <div className="p-6 text-center text-xs text-slate-400">
-                                No classmates found matching "{peerSearch}".
-                              </div>
-                            ) : (
-                              filteredDirectory.map((peer) => (
-                                <button
-                                  key={peer.id}
-                                  type="button"
-                                  onClick={() => {
-                                    onStartNewChat?.(peer.id);
-                                    setNewChatModalOpen(false);
-                                  }}
-                                  className="w-full p-2.5 rounded-2xl border border-slate-200/70 dark:border-slate-800/70 hover:border-[#1E90FF]/50 bg-slate-50/50 dark:bg-[#080D1A]/50 hover:bg-[#1E90FF]/5 dark:hover:bg-[#1E90FF]/10 transition-all flex items-center justify-between text-left cursor-pointer group"
-                                >
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="h-9 w-9 rounded-xl bg-[#1E90FF] text-white font-bold text-xs flex items-center justify-center shrink-0">
-                                      {peer.avatar ? (
-                                        <img src={peer.avatar} alt={peer.name} className="h-full w-full object-cover rounded-xl" />
-                                      ) : (
-                                        getInitials(peer.name)
-                                      )}
-                                    </div>
-                                    <div>
-                                      <div className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1">
-                                        <span>{peer.name}</span>
-                                        <ShieldCheck size={12} className="text-[#1E90FF]" />
-                                      </div>
-                                      <div className="text-[10px] text-slate-400 tabular-nums">
-                                        {peer.roll} • {peer.dept}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <span className="text-xs font-bold text-[#1E90FF] group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
-                                    <span>Message</span>
-                                    <span>&rarr;</span>
-                                  </span>
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Tab 2: Custom Classmate Details Input */}
-                  {modalTab === "custom" && (
-                    <div>
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          if (!customName.trim()) return;
-                          const newPeerId = `u-${Date.now()}`;
-                          onStartNewChat?.(newPeerId, {
-                            name: customName.trim(),
-                            roll: customRoll.trim() || "CS24-001",
-                            dept: customDept.trim() || "CSE"
-                          });
-                          setCustomName("");
-                          setCustomRoll("");
-                          setNewChatModalOpen(false);
-                        }}
-                        className="space-y-3"
-                      >
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            Classmate Full Name <span className="text-rose-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Priya Sharma"
-                            value={customName}
-                            onChange={(e) => setCustomName(e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
-                            required
-                            autoFocus
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2.5">
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                              Roll Number
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="e.g. CS24-102"
-                              value={customRoll}
-                              onChange={(e) => setCustomRoll(e.target.value)}
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                              Department
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="e.g. CSE"
-                              value={customDept}
-                              onChange={(e) => setCustomDept(e.target.value)}
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
-                            />
-                          </div>
-                        </div>
-
-                        <p className="text-[10px] text-slate-400">
-                          Starting a conversation automatically creates an end-to-end encrypted direct messaging channel.
+                  {/* Real Registered Users List */}
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1 scrollbar-none">
+                    {isSearchingRealUsers ? (
+                      <div className="flex items-center justify-center py-8 text-xs text-slate-400 gap-2">
+                        <span className="w-4 h-4 rounded-full border-2 border-[#1E90FF] border-t-transparent animate-spin" />
+                        <span>Searching registered campus students...</span>
+                      </div>
+                    ) : realUsers.length === 0 ? (
+                      <div className="p-8 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {peerSearch.trim()
+                            ? `No registered students found matching "${peerSearch}".`
+                            : "Type a name or roll number above to find registered students."}
                         </p>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Only real, registered campus accounts can be messaged.
+                        </p>
+                      </div>
+                    ) : (
+                      realUsers.map((user) => {
+                        const existingConv = conversations.find((c) => c.peer.id === user._id);
 
-                        <button
-                          type="submit"
-                          disabled={!customName.trim()}
-                          className="w-full py-2.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] disabled:opacity-50 text-white text-xs font-bold transition-all shadow-sm shadow-[#1E90FF]/25 cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <Plus size={14} />
-                          <span>Start Conversation</span>
-                        </button>
-                      </form>
-                    </div>
-                  )}
+                        return (
+                          <button
+                            key={user._id}
+                            type="button"
+                            onClick={() => {
+                              if (existingConv) {
+                                onSelectConversation(existingConv.id);
+                              } else {
+                                onStartNewChat?.(user._id, {
+                                  name: user.fullName,
+                                  roll: user.rollNumber || "CSE",
+                                  dept: user.department || "Computer Science"
+                                });
+                              }
+                              setNewChatModalOpen(false);
+                            }}
+                            className="w-full p-2.5 rounded-2xl border border-slate-200/70 dark:border-slate-800/70 hover:border-[#1E90FF]/50 bg-slate-50/50 dark:bg-[#080D1A]/50 hover:bg-[#1E90FF]/5 dark:hover:bg-[#1E90FF]/10 transition-all flex items-center justify-between text-left cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-[#1E90FF] to-[#187bcd] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                {user.profilePicture ? (
+                                  <img
+                                    src={user.profilePicture}
+                                    alt={user.fullName}
+                                    className="h-full w-full object-cover rounded-xl"
+                                  />
+                                ) : (
+                                  getInitials(user.fullName)
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 truncate">
+                                  <span className="truncate">{user.fullName}</span>
+                                  <ShieldCheck size={12} className="text-[#1E90FF] shrink-0" />
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {user.rollNumber || "CSE"} • {user.department || "Campus"}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="shrink-0 ml-2">
+                              {existingConv ? (
+                                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg">
+                                  Active Chat &rarr;
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold text-[#1E90FF] group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                                  <span>Message</span>
+                                  <span>&rarr;</span>
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400 mt-2">
+                    <span>End-to-end encrypted direct channel</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewChatModalOpen(false)}
+                      className="text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </motion.div>
               </div>
             )}

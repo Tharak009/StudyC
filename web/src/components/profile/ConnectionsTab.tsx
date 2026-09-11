@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useToastStore } from "../../store/toast.store";
+import { useAuthStore } from "../../store/auth.store";
+import { usersApi } from "../../api/users.api";
+import type { User as AuthUser } from "../../types/auth";
 
 export interface ClassmateConnection {
   id: string;
@@ -67,13 +70,40 @@ export function ConnectionsTab() {
   const navigate = useNavigate();
   const { addToast } = useToastStore();
 
+  const currentUser = useAuthStore((state) => state.user);
   const [classmates, setClassmates] = useState<ClassmateConnection[]>(loadSavedClassmates);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | "dept" | "batch" | "pending">("all");
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [newPeerName, setNewPeerName] = useState("");
-  const [newPeerRoll, setNewPeerRoll] = useState("");
-  const [newPeerDept, setNewPeerDept] = useState("Computer Science & Engineering");
+  const [modalSearch, setModalSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<AuthUser[]>([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+
+  // Search real registered users from MongoDB Atlas
+  React.useEffect(() => {
+    if (!addModalOpen) return;
+    let isMounted = true;
+    const fetchUsers = async () => {
+      setIsSearchingUsers(true);
+      try {
+        const users = await usersApi.search(modalSearch);
+        if (isMounted) {
+          // Exclude the current logged-in user
+          setSearchResults((users || []).filter((u) => u._id !== currentUser?._id));
+        }
+      } catch (err) {
+        console.error("Failed to search users:", err);
+      } finally {
+        if (isMounted) setIsSearchingUsers(false);
+      }
+    };
+
+    const timer = setTimeout(fetchUsers, 200);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [modalSearch, addModalOpen, currentUser?._id]);
 
   const pendingCount = classmates.filter(
     (c) => c.status === "pending_incoming" || c.status === "pending_outgoing"
@@ -161,26 +191,33 @@ export function ConnectionsTab() {
     }
   };
 
-  const handleSendCustomRequest = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPeerName.trim()) return;
+  const handleConnectWithRegisteredUser = (targetUser: AuthUser) => {
+    const existing = classmates.find((c) => c.id === targetUser._id);
+    if (existing) {
+      if (existing.status === "connected") {
+        addToast(`You are already connected with ${targetUser.fullName}`, "info");
+        return;
+      }
+      if (existing.status === "pending_outgoing") {
+        addToast(`Connection invitation already sent to ${targetUser.fullName}`, "info");
+        return;
+      }
+    }
 
     const newConnection: ClassmateConnection = {
-      id: `u-${Date.now()}`,
-      name: newPeerName.trim(),
-      roll: newPeerRoll.trim() || "CS24-120",
-      dept: newPeerDept.trim() || "Computer Science & Engineering",
+      id: targetUser._id,
+      name: targetUser.fullName,
+      roll: targetUser.rollNumber || "CSE",
+      dept: targetUser.department || "Computer Science",
       batch: "2026",
       isOnline: true,
       status: "pending_outgoing",
       sharedCircles: 1
     };
 
-    updateAndPersist((prev) => [newConnection, ...prev]);
-    addToast(`Connection invitation sent to ${newConnection.name}!`, "success");
-    setNewPeerName("");
-    setNewPeerRoll("");
-    setAddModalOpen(false);
+    // Strict deduplication: remove any existing entry with this ID and add fresh
+    updateAndPersist((prev) => [newConnection, ...prev.filter((c) => c.id !== targetUser._id)]);
+    addToast(`Connection invitation sent to ${targetUser.fullName}!`, "success");
   };
 
   const getInitials = (name: string) => {
@@ -426,71 +463,119 @@ export function ConnectionsTab() {
                 Invite a verified student to connect, collaborate on shared study circles, and start direct messaging.
               </p>
 
-              <form onSubmit={handleSendCustomRequest} className="space-y-3">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Classmate Full Name
-                  </label>
+              <div className="space-y-4">
+                {/* Search Registered Classmates */}
+                <div className="relative">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="e.g. Priya Sharma"
-                    value={newPeerName}
-                    onChange={(e) => setNewPeerName(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
-                    required
+                    placeholder="Search registered classmate by name or roll number..."
+                    value={modalSearch}
+                    onChange={(e) => setModalSearch(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] focus:ring-2 focus:ring-[#1E90FF]/20"
                     autoFocus
                   />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Roll Number
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. CS24-115"
-                      value={newPeerRoll}
-                      onChange={(e) => setNewPeerRoll(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Department
-                    </label>
-                    <select
-                      value={newPeerDept}
-                      onChange={(e) => setNewPeerDept(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-2 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-[#1E90FF]"
+                  {modalSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setModalSearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
                     >
-                      <option value="Computer Science & Engineering">CSE</option>
-                      <option value="Data Science & AI">Data Science</option>
-                      <option value="Information Technology">IT</option>
-                      <option value="Electronics & Comm">ECE</option>
-                      <option value="Mechanical Engineering">Mech</option>
-                    </select>
-                  </div>
+                      <X size={13} />
+                    </button>
+                  )}
                 </div>
 
-                <div className="pt-2 flex items-center justify-end gap-2">
+                {/* Real User Search Results List */}
+                <div className="max-h-64 overflow-y-auto space-y-2 pr-1 scrollbar-none">
+                  {isSearchingUsers ? (
+                    <div className="flex items-center justify-center py-8 text-xs text-slate-400 gap-2">
+                      <span className="w-4 h-4 rounded-full border-2 border-[#1E90FF] border-t-transparent animate-spin" />
+                      <span>Searching verified campus database...</span>
+                    </div>
+                  ) : searchResults.length === 0 ? (
+                    <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {modalSearch.trim()
+                          ? `No registered classmates found matching "${modalSearch}".`
+                          : "Type a name or roll number above to find registered students."}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Only verified registered accounts are eligible for connection requests.
+                      </p>
+                    </div>
+                  ) : (
+                    searchResults.map((user) => {
+                      const conn = classmates.find((c) => c.id === user._id);
+                      const isConnected = conn?.status === "connected";
+                      const isPendingOutgoing = conn?.status === "pending_outgoing";
+
+                      return (
+                        <div
+                          key={user._id}
+                          className="flex items-center justify-between p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-[#080D1A]/50 hover:bg-slate-100/80 dark:hover:bg-white/[0.04] transition-colors"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-[#1E90FF] to-[#187bcd] text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
+                              {user.profilePicture ? (
+                                <img
+                                  src={user.profilePicture}
+                                  alt={user.fullName}
+                                  className="h-full w-full object-cover rounded-xl"
+                                />
+                              ) : (
+                                getInitials(user.fullName)
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 truncate">
+                                <span className="truncate">{user.fullName}</span>
+                                <ShieldCheck size={13} className="text-[#1E90FF] shrink-0" />
+                              </div>
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                {user.rollNumber || "CSE"} • {user.department || "Engineering"}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 ml-2">
+                            {isConnected ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
+                                <UserCheck size={12} />
+                                <span>Connected</span>
+                              </span>
+                            ) : isPendingOutgoing ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[11px] font-bold">
+                                <Check size={12} />
+                                <span>Request Sent</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleConnectWithRegisteredUser(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                              >
+                                <UserPlus size={12} />
+                                <span>Connect</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="pt-2 flex justify-end">
                   <button
                     type="button"
                     onClick={() => setAddModalOpen(false)}
                     className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!newPeerName.trim()}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] disabled:opacity-50 text-white text-xs font-bold shadow-sm shadow-[#1E90FF]/25 cursor-pointer transition-all"
-                  >
-                    <UserPlus size={13} />
-                    <span>Send Invitation</span>
+                    Close
                   </button>
                 </div>
-              </form>
+              </div>
             </motion.div>
           </div>
         )}

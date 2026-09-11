@@ -41,6 +41,7 @@ interface UnifiedCircleSidebarProps {
   onJoinVoice: (channel: Channel) => void;
   onCreateChannel?: (name: string, type: "text" | "voice" | "announcement") => void;
   onCreateCircle?: () => void;
+  onExploreCircles?: () => void;
   onOpenGroupInfo?: () => void;
   currentUser?: User | null;
 }
@@ -56,6 +57,7 @@ export function UnifiedCircleSidebar({
   onJoinVoice,
   onCreateChannel,
   onCreateCircle,
+  onExploreCircles,
   onOpenGroupInfo,
   currentUser
 }: UnifiedCircleSidebarProps) {
@@ -212,14 +214,24 @@ export function UnifiedCircleSidebar({
               />
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={() => onCreateCircle?.()}
-              className="w-full flex items-center justify-center gap-2 p-2.5 rounded-2xl bg-[#1E90FF]/10 border border-[#1E90FF]/25 text-[#1E90FF] hover:bg-[#1E90FF]/20 text-xs font-bold transition-all cursor-pointer"
-            >
-              <Plus size={14} />
-              <span>Create Study Circle</span>
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => onCreateCircle?.()}
+                className="flex-1 flex items-center justify-center gap-1.5 p-2 rounded-2xl bg-[#1E90FF]/10 border border-[#1E90FF]/25 text-[#1E90FF] hover:bg-[#1E90FF]/20 text-xs font-bold transition-all cursor-pointer"
+              >
+                <Plus size={13} />
+                <span>Create</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onExploreCircles?.()}
+                className="flex-1 flex items-center justify-center gap-1.5 p-2 rounded-2xl bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/[0.1] text-xs font-bold transition-all cursor-pointer"
+              >
+                <Compass size={13} className="text-[#1E90FF]" />
+                <span>Explore</span>
+              </button>
+            </div>
           )}
 
           {/* ── Integrated Circle Switcher Dropdown (No 2nd sidebar!) ──── */}
@@ -284,6 +296,18 @@ export function UnifiedCircleSidebar({
                 </div>
 
                 <div className="pt-1.5 border-t border-slate-200 dark:border-white/[0.06] space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onExploreCircles?.();
+                      setCircleDropdownOpen(false);
+                    }}
+                    className="w-full py-1.5 px-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.05] transition-colors flex items-center gap-2 cursor-pointer"
+                  >
+                    <Compass size={13} className="text-[#1E90FF]" />
+                    <span>Explore Campus Circles</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {

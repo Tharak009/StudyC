@@ -27,6 +27,8 @@ import { ContactInfoDrawer } from "../components/dm/ContactInfoDrawer";
 import { socketService } from "../services/socket.service";
 import { useAuthStore } from "../store/auth.store";
 import { useToastStore } from "../store/toast.store";
+import { directMessagesApi } from "../api/direct-messages.api";
+import type { Conversation, DirectMessage } from "../types/direct-message";
 
 // ── Local Storage Data Keys, Seed Data & Helpers ──────────────────────────────
 
@@ -44,6 +46,68 @@ const MOCK_SEED_IDS = new Set([
   "u-priya",
   "u-kabir"
 ]);
+
+const mapBackendConversationToItem = (
+  c: Conversation,
+  currentUserId?: string
+): ConversationItem => {
+  const peerUser =
+    c.participants?.find((p) => p._id !== currentUserId) || c.participants?.[0];
+  return {
+    id: c._id,
+    peer: {
+      id: peerUser?._id || "",
+      name: peerUser?.fullName || "Student",
+      roll: peerUser?.rollNumber || "Campus",
+      dept: (peerUser as any)?.department || "Computer Science",
+      isOnline: true,
+      avatar: peerUser?.profilePicture
+    },
+    lastMessage: c.lastMessage
+      ? {
+          text: c.lastMessage.content || "Attachment",
+          senderId: c.lastMessage.senderId || "",
+          time: c.lastMessage.createdAt
+            ? new Date(c.lastMessage.createdAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit"
+              })
+            : "Recently",
+          isRead: true,
+          isDelivered: true
+        }
+      : null,
+    unreadCount: 0
+  };
+};
+
+const mapBackendMessageToItem = (m: DirectMessage): DirectMessageItem => ({
+  id: m._id,
+  senderId: m.senderId?._id || (m as any).senderId || "",
+  senderName: m.senderId?.fullName || "Classmate",
+  content: m.content || "",
+  attachments: m.attachments?.map((a) => ({
+    name: a.originalName,
+    size: `${(a.size / (1024 * 1024)).toFixed(1)} MB`,
+    type: a.mimeType?.includes("pdf") ? "pdf" : "zip",
+    url: a.url
+  })),
+  replyTo: m.replyTo
+    ? {
+        senderName: m.replyTo.senderId?.fullName || "Classmate",
+        content: m.replyTo.content
+      }
+    : undefined,
+  isRead: m.read,
+  isDelivered: true,
+  time: m.createdAt
+    ? new Date(m.createdAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    : "",
+  createdAt: m.createdAt || new Date().toISOString()
+});
 
 const loadSavedConversations = (): ConversationItem[] => {
   try {
@@ -110,6 +174,34 @@ export function DirectMessagesPage() {
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [replyTarget, setReplyTarget] = useState<{ senderName: string; content: string } | null>(null);
 
+  // Load real conversations from MongoDB Atlas
+  useEffect(() => {
+    let isMounted = true;
+    const fetchConversations = async () => {
+      try {
+        const response = await directMessagesApi.listConversations({ limit: 50 });
+        if (isMounted && response?.items) {
+          const mapped = response.items.map((c) =>
+            mapBackendConversationToItem(c, user?._id)
+          );
+          setConversations(mapped);
+          if (!activeConvId && mapped.length > 0) {
+            setActiveConvId(mapped[0].id);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load conversations from server:", err);
+      }
+    };
+
+    if (user?._id) {
+      fetchConversations();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [user?._id]);
+
   // Sync route conversationId param to activeConvId
   useEffect(() => {
     if (conversationId && conversationId !== activeConvId) {
@@ -158,16 +250,51 @@ export function DirectMessagesPage() {
     }
   }, [directory]);
 
-  // Load messages from localStorage when active conversation changes
+  // Load messages from backend API (and fallback to localStorage) when active conversation changes
   useEffect(() => {
     if (!activeConvId) return;
-    setMessagesMap((prev) => {
-      if (prev[activeConvId]) return prev;
-      return {
-        ...prev,
-        [activeConvId]: loadSavedMessages(activeConvId)
-      };
-    });
+
+    const socket = socketService.get();
+    if (socket) {
+      socket.emit("joinConversation", { conversationId: activeConvId });
+    }
+
+    let isMounted = true;
+    const loadMessages = async () => {
+      try {
+        const res = await directMessagesApi.getMessages(activeConvId, {
+          limit: 50,
+          order: "oldest"
+        });
+        if (isMounted && res?.items) {
+          const mapped = res.items.map(mapBackendMessageToItem);
+          setMessagesMap((prev) => ({
+            ...prev,
+            [activeConvId]: mapped
+          }));
+          return;
+        }
+      } catch {
+        // fallback to saved local messages if offline/loading
+      }
+
+      if (isMounted) {
+        setMessagesMap((prev) => {
+          if (prev[activeConvId]) return prev;
+          return {
+            ...prev,
+            [activeConvId]: loadSavedMessages(activeConvId)
+          };
+        });
+      }
+    };
+
+    loadMessages();
+    directMessagesApi.markAsRead(activeConvId).catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
   }, [activeConvId]);
 
   // Sync messages to localStorage whenever they update for the active conversation
@@ -201,12 +328,18 @@ export function DirectMessagesPage() {
 
     if (socket && activeConvId) {
       const handleDirectMessage = (data: any) => {
+        const incomingConvId = data.conversationId || activeConvId;
         const newMsg: DirectMessageItem = {
           id: data._id || `dm-${Date.now()}`,
           senderId: data.senderId?._id || data.senderId || "u-peer",
-          senderName: data.senderId?.fullName || "Classmate",
+          senderName: data.senderId?.fullName || data.senderName || "Classmate",
           content: data.content || "",
-          attachments: data.attachments,
+          attachments: data.attachments?.map((a: any) => ({
+            name: a.originalName || a.name || "Attachment",
+            size: typeof a.size === "number" ? `${(a.size / (1024 * 1024)).toFixed(1)} MB` : a.size || "1 MB",
+            type: a.mimeType?.includes("pdf") ? "pdf" : "zip",
+            url: a.url || "#"
+          })),
           codeSnippet: data.codeSnippet,
           isRead: false,
           isDelivered: true,
@@ -214,21 +347,48 @@ export function DirectMessagesPage() {
           createdAt: new Date().toISOString()
         };
 
-        setMessagesMap((prev) => ({
-          ...prev,
-          [activeConvId]: [...(prev[activeConvId] || []), newMsg]
-        }));
+        setMessagesMap((prev) => {
+          const list = prev[incomingConvId] || [];
+          if (list.some((m) => m.id === newMsg.id)) return prev;
+          return {
+            ...prev,
+            [incomingConvId]: [...list, newMsg]
+          };
+        });
+
+        // Update conversation card preview
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === incomingConvId
+              ? {
+                  ...c,
+                  lastMessage: {
+                    text: newMsg.content || "Sent an attachment",
+                    senderId: newMsg.senderId,
+                    time: newMsg.time,
+                    isRead: incomingConvId === activeConvId,
+                    isDelivered: true
+                  },
+                  unreadCount: incomingConvId === activeConvId ? 0 : c.unreadCount + 1
+                }
+              : c
+          )
+        );
       };
 
       const handleTyping = () => setIsPeerTyping(true);
       const handleStopTyping = () => setIsPeerTyping(false);
 
       socket.on("directMessageReceived", handleDirectMessage);
+      socket.on("directMessageCreated", handleDirectMessage);
+      socket.on("dm:messageReceived", handleDirectMessage);
       socket.on("typing", handleTyping);
       socket.on("stopTyping", handleStopTyping);
 
       return () => {
         socket.off("directMessageReceived", handleDirectMessage);
+        socket.off("directMessageCreated", handleDirectMessage);
+        socket.off("dm:messageReceived", handleDirectMessage);
         socket.off("typing", handleTyping);
         socket.off("stopTyping", handleStopTyping);
       };
@@ -267,74 +427,49 @@ export function DirectMessagesPage() {
     );
   };
 
-  const handleStartNewChat = (
+  const handleStartNewChat = async (
     peerId: string,
     customPeer?: { name: string; roll?: string; dept?: string }
   ) => {
-    let targetPeer = directory.find((p) => p.id === peerId);
-
-    if (!targetPeer && customPeer) {
-      targetPeer = {
-        id: peerId,
-        name: customPeer.name,
-        roll: customPeer.roll || "CS24-001",
-        dept: customPeer.dept || "CSE",
-        isOnline: true
-      };
-      setDirectory((prev) => [targetPeer!, ...prev.filter((p) => p.id !== peerId)]);
-    }
-
-    if (!targetPeer) return;
-
-    // Check if conversation already exists
-    const existing = conversations.find((c) => c.peer.id === targetPeer!.id);
+    // 1. Check if conversation already exists in current list
+    const existing = conversations.find((c) => c.peer.id === peerId);
     if (existing) {
       handleSelectConversation(existing.id);
       return;
     }
 
-    const newConvId = `conv-${Date.now()}`;
-    const newConv: ConversationItem = {
-      id: newConvId,
-      peer: {
-        id: targetPeer.id,
-        name: targetPeer.name,
-        roll: targetPeer.roll,
-        dept: targetPeer.dept,
-        isOnline: targetPeer.isOnline
-      },
-      lastMessage: {
-        text: "New peer connection established",
-        senderId: "system",
-        time: "Just now",
-        isRead: true,
-        isDelivered: true
-      },
-      unreadCount: 0
-    };
+    try {
+      // 2. Start or retrieve existing conversation from MongoDB Atlas
+      const backendConv = await directMessagesApi.startConversation(peerId);
+      if (!backendConv) {
+        addToast("Unable to start conversation with this student", "error");
+        return;
+      }
 
-    const initialWelcomeMsg: DirectMessageItem = {
-      id: `dm-sys-${Date.now()}`,
-      senderId: "system",
-      senderName: "Campus Verification Network",
-      content: `🔒 Direct message connection established with ${targetPeer.name} (${targetPeer.roll} • ${targetPeer.dept}). End-to-end verified academic discussion.`,
-      isRead: true,
-      isDelivered: true,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      createdAt: new Date().toISOString()
-    };
+      const mappedConv = mapBackendConversationToItem(backendConv, user?._id);
+      if (customPeer && (!mappedConv.peer.name || mappedConv.peer.name === "Student")) {
+        mappedConv.peer.name = customPeer.name;
+        mappedConv.peer.roll = customPeer.roll || mappedConv.peer.roll;
+        mappedConv.peer.dept = customPeer.dept || mappedConv.peer.dept;
+      }
 
-    setConversations((prev) => [newConv, ...prev.filter((c) => c.peer.id !== targetPeer!.id)]);
-    setMessagesMap((prev) => ({
-      ...prev,
-      [newConvId]: [initialWelcomeMsg]
-    }));
-    setActiveConvId(newConvId);
-    navigate(`/direct-messages/${newConvId}`);
-    addToast(`Started conversation with ${targetPeer.name}`, "success");
+      setConversations((prev) => {
+        const found = prev.find((c) => c.id === mappedConv.id || c.peer.id === mappedConv.peer.id);
+        if (found) return prev;
+        return [mappedConv, ...prev];
+      });
+
+      setActiveConvId(mappedConv.id);
+      navigate(`/direct-messages/${mappedConv.id}`);
+      addToast(`Connected with ${mappedConv.peer.name}`, "success");
+    } catch (err: any) {
+      console.error("Failed to start conversation:", err);
+      const msg = err?.response?.data?.message || err?.message || "Failed to start conversation";
+      addToast(msg, "error");
+    }
   };
 
-  const handleSendMessage = (
+  const handleSendMessage = async (
     content: string,
     codeSnippet?: { language: string; code: string },
     files?: File[],
@@ -342,11 +477,12 @@ export function DirectMessagesPage() {
   ) => {
     if (!activeConvId) return;
 
-    const student = user?.fullName || "Aarav Sharma";
+    const student = user?.fullName || "Student";
     const studentId = user?._id || "u-me";
 
+    const tempId = `dm-opt-${Date.now()}`;
     const newMsg: DirectMessageItem = {
-      id: `dm-${Date.now()}`,
+      id: tempId,
       senderId: studentId,
       senderName: student,
       content,
@@ -365,6 +501,7 @@ export function DirectMessagesPage() {
       createdAt: new Date().toISOString()
     };
 
+    // Optimistically update message stream
     setMessagesMap((prev) => ({
       ...prev,
       [activeConvId]: [...(prev[activeConvId] || []), newMsg]
@@ -390,56 +527,45 @@ export function DirectMessagesPage() {
       )
     );
 
-    // Socket.IO emission
-    const socket = socketService.get();
-    if (socket && activeConversation) {
-      socket.emit("sendDirectMessage", {
-        receiverId: activeConversation.peer.id,
-        conversationId: activeConvId,
+    try {
+      // 1. Persist to MongoDB Atlas via backend API
+      const sent = await directMessagesApi.sendMessage(activeConvId, {
         content,
-        codeSnippet
+        attachments: files
       });
-    }
 
-    // Interactive Demo Simulation: If socket is not connected or in standalone dev mode,
-    // generate an active peer response after a brief delay so the interaction is visibly responsive
-    if ((!socket || !socket.connected) && activeConversation && activeConversation.peer.id !== studentId) {
-      setTimeout(() => {
-        setIsPeerTyping(true);
-        setTimeout(() => {
-          setIsPeerTyping(false);
-          const simulatedResponse: DirectMessageItem = {
-            id: `dm-reply-${Date.now()}`,
-            senderId: activeConversation.peer.id,
-            senderName: activeConversation.peer.name,
-            content: `Hey Aarav! Got your note regarding ${activeConversation.peer.dept} coursework. Let me check the solution and get back to you in a bit!`,
-            isRead: true,
-            isDelivered: true,
-            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            createdAt: new Date().toISOString()
-          };
-          setMessagesMap((prev) => ({
-            ...prev,
-            [activeConvId]: [...(prev[activeConvId] || []), simulatedResponse]
-          }));
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === activeConvId
-                ? {
-                    ...c,
-                    lastMessage: {
-                      text: simulatedResponse.content,
-                      senderId: simulatedResponse.senderId,
-                      time: simulatedResponse.time,
-                      isRead: true,
-                      isDelivered: true
-                    }
-                  }
-                : c
-            )
-          );
-        }, 1800);
-      }, 1200);
+      if (sent) {
+        const mappedSent = mapBackendMessageToItem(sent);
+        setMessagesMap((prev) => ({
+          ...prev,
+          [activeConvId]: (prev[activeConvId] || []).map((m) =>
+            m.id === tempId ? mappedSent : m
+          )
+        }));
+      }
+
+      // 2. Broadcast to Socket.IO room for real-time peer update
+      const socket = socketService.get();
+      if (socket && activeConversation) {
+        socket.emit("sendDirectMessage", {
+          receiverId: activeConversation.peer.id,
+          conversationId: activeConvId,
+          content,
+          codeSnippet
+        });
+      }
+    } catch (err: any) {
+      console.warn("Could not persist message to backend API:", err?.message || err);
+      // Fallback: emit via socket if available
+      const socket = socketService.get();
+      if (socket && activeConversation) {
+        socket.emit("sendDirectMessage", {
+          receiverId: activeConversation.peer.id,
+          conversationId: activeConvId,
+          content,
+          codeSnippet
+        });
+      }
     }
   };
 
