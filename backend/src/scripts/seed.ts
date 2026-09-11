@@ -57,9 +57,9 @@ export async function runSeed(): Promise<void> {
 
     // ── 2. Seed Campus Users ─────────────────────────────────────────────────
     console.log("👥 Seeding Verified Campus Users...");
-    const adminPasswordHash = await bcrypt.hash("Admin@2026!", 12);
-    const facultyPasswordHash = await bcrypt.hash("Faculty@2026!", 12);
-    const studentPasswordHash = await bcrypt.hash("Student@2026!", 12);
+    const adminPassword = "Admin@2026!";
+    const facultyPassword = "Faculty@2026!";
+    const studentPassword = "Student@2026!";
 
     // Root Administrator
     const adminUser = await User.create({
@@ -68,7 +68,7 @@ export async function runSeed(): Promise<void> {
       department: "CSE",
       academicYear: 4,
       email: "admin@campus.edu",
-      password: adminPasswordHash,
+      password: adminPassword,
       role: ROLES.ADMIN,
       status: USER_STATUS.ACTIVE,
       bio: "Campus Dean of Academics & Lead StudyConnect Platform Administrator. Ensuring academic excellence and collaborative safety.",
@@ -83,7 +83,7 @@ export async function runSeed(): Promise<void> {
       department: "CSE",
       academicYear: 4,
       email: "prof.sharma@campus.edu",
-      password: facultyPasswordHash,
+      password: facultyPassword,
       role: ROLES.MODERATOR,
       status: USER_STATUS.ACTIVE,
       bio: "Associate Professor in Department of Computer Science. Faculty Advisor for ICPC competitive programming and algorithms research circle.",
@@ -98,7 +98,7 @@ export async function runSeed(): Promise<void> {
       department: "CSE",
       academicYear: 3,
       email: "aarav.patel@campus.edu",
-      password: studentPasswordHash,
+      password: studentPassword,
       role: ROLES.STUDENT,
       status: USER_STATUS.ACTIVE,
       bio: "Full-Stack Engineer & Cloud Systems Builder | 7-day study streak 🔥 | GitHub: @aaravpatel | Building high-scale web architectures",
@@ -112,7 +112,7 @@ export async function runSeed(): Promise<void> {
       department: "CSE",
       academicYear: 3,
       email: "meera.nair@campus.edu",
-      password: studentPasswordHash,
+      password: studentPassword,
       role: ROLES.STUDENT,
       status: USER_STATUS.ACTIVE,
       bio: "Competitive Programmer & ICPC 2025 Regionalist | Algorithms Mentor | 7-day study streak 🔥 | Passionate about combinatorial algorithms",
@@ -126,7 +126,7 @@ export async function runSeed(): Promise<void> {
       department: "AI & DS",
       academicYear: 2,
       email: "rohan.gupta@campus.edu",
-      password: studentPasswordHash,
+      password: studentPassword,
       role: ROLES.STUDENT,
       status: USER_STATUS.ACTIVE,
       bio: "Deep Learning Researcher & PyTorch Hacker | Exploring LLM agentic workflows & transformers | 7-day study streak 🔥",
@@ -140,7 +140,7 @@ export async function runSeed(): Promise<void> {
       department: "AI & DS",
       academicYear: 2,
       email: "ananya.singh@campus.edu",
-      password: studentPasswordHash,
+      password: studentPassword,
       role: ROLES.STUDENT,
       status: USER_STATUS.ACTIVE,
       bio: "Robotics & Autonomous Systems Builder | ROS2, Gazebo & Drone Vision Systems | 7-day study streak 🔥",
