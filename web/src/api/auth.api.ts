@@ -27,5 +27,11 @@ export const authApi = {
     ).data.data,
   changePassword: async (payload: { currentPassword: string; newPassword: string }) => {
     await apiClient.post("/api/auth/change-password", payload);
+  },
+  forgotPassword: async (email: string) => {
+    await apiClient.post("/api/auth/forgot-password", { email });
+  },
+  resetPassword: async (payload: { token: string; newPassword: string }) => {
+    await apiClient.post("/api/auth/reset-password", payload);
   }
 };

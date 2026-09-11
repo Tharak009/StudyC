@@ -36,11 +36,23 @@ export const socketService = {
       }
     });
 
+    if (typeof window !== "undefined") {
+      (window as any)._socket = socket;
+      (window as any)._tokenService = tokenService;
+    }
     return socket;
   },
-  get: () => socket,
+  get: () => {
+    if (typeof window !== "undefined") {
+      (window as any)._socket = socket;
+    }
+    return socket;
+  },
   disconnect: () => {
     socket?.disconnect();
     socket = null;
+    if (typeof window !== "undefined") {
+      (window as any)._socket = null;
+    }
   }
 };

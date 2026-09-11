@@ -1,0 +1,72 @@
+# =============================================================================
+# StudyConnect Render Infrastructure-as-Code Blueprint
+# https://render.com/docs/blueprint-spec
+# =============================================================================
+
+version: "1"
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. StudyConnect Backend (Node.js + Express + Socket.IO + Mongoose)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: studyconnect-backend
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false # Set securely in Render dashboard (e.g. MongoDB Atlas cluster URI)
+      - key: CLIENT_URL
+        value: https://studyconnect-frontend.onrender.com
+      - key: FRONTEND_URL
+        value: https://studyconnect-frontend.onrender.com
+      - key: APPROVED_EMAIL_DOMAINS
+        value: campus.edu,college.edu,students.college.edu
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: 7
+      - key: BCRYPT_ROUNDS
+        value: 12
+      - key: COOKIE_SECURE
+        value: true
+      - key: MAX_FILE_SIZE_MB
+        value: 5
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: LOG_LEVEL
+        value: combined
+
+  # ---------------------------------------------------------------------------
+  # 2. StudyConnect Frontend (Vite + React 19 + Tailwind CSS SPA)
+  # ---------------------------------------------------------------------------
+  - type: static
+    name: studyconnect-frontend
+    rootDir: web
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    autoDeploy: true
+    routes:
+      # React Router v7 SPA Catch-all rewrite
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://studyconnect-backend.onrender.com
+      - key: VITE_SOCKET_URL
+        value: https://studyconnect-backend.onrender.com

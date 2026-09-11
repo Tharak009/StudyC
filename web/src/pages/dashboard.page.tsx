@@ -1,494 +1,713 @@
-import { Bell, BookOpen, ChevronRight, MessageCircle, MessagesSquare, ShieldCheck, Video, Megaphone, Download, AlertOctagon, X, Eye, Calendar, User, Users, Plus, ArrowRight, Award, Compass, GraduationCap } from "lucide-react";
-import { Link } from "react-router";
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Avatar } from "../components/avatar";
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Search,
+  Bell,
+  Sun,
+  Moon,
+  FolderPlus,
+  Sparkles,
+  Flame,
+  MessageSquare,
+  BookOpen,
+  Users,
+  ArrowRight,
+  Clock,
+  Download,
+  FileText,
+  FileCode,
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  ExternalLink,
+  ChevronRight,
+  Plus
+} from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
+import { ModernNotificationHub } from "../components/modern-notification-hub";
 import { useAuthStore } from "../store/auth.store";
-import { useAnnouncementStore } from "../store/announcement.store";
-import { useStudentDashboard } from "../hooks/use-student-dashboard";
-import { communitiesApi } from "../api/communities.api";
-import type { Announcement } from "../types/announcement";
+import { useThemeStore } from "../store/theme.store";
+import { useToastStore } from "../store/toast.store";
+import { getStreakDisplay, recordStudyActivity, STREAK_EVENT } from "../utils/streak";
 
-const MOCK_MESSAGES = [
-  { id: "msg-1", sender: "Aarav Sharma", preview: "Are we meeting today for the group project?", time: "10m ago" },
-  { id: "msg-2", sender: "Meera Patel", preview: "I shared the notes in the Java community.", time: "1h ago" },
-  { id: "msg-3", sender: "Kabir Mehta", preview: "Thanks for the workshop details!", time: "4h ago" }
-];
+// ── Types & Dynamic LocalStorage Loaders ──────────────────────────────────────
 
-const MOCK_EVENTS = [
-  { id: "evt-1", title: "National Coding Challenge 2026", date: "2026-07-10", time: "09:00", category: "Hackathon", venue: "Main Auditorium" },
-  { id: "evt-2", title: "AI & ML Technical Seminar", date: "2026-06-30", time: "14:00", category: "Seminar", venue: "Seminar Hall B" }
-];
+interface CircleItem {
+  id: string;
+  name: string;
+  dept?: string;
+  emoji?: string;
+  activeCount?: number;
+  latestMsg?: string;
+  href?: string;
+}
+
+interface VaultItem {
+  id: string;
+  title: string;
+  uploader?: string;
+  uploaderName?: string;
+  dept?: string;
+  department?: string;
+  size?: string;
+  fileSize?: string;
+  downloads?: number;
+  downloadCount?: number;
+  type?: string;
+  fileType?: string;
+}
+
+interface DeadlineItem {
+  id: string;
+  code?: string;
+  subjectCode?: string;
+  title: string;
+  due?: string;
+  dateStr?: string;
+  urgency?: "urgent" | "warning" | "normal";
+  daysLeft?: string;
+  category?: string;
+}
+
+const loadCircles = (): CircleItem[] => {
+  try {
+    const raw = localStorage.getItem("studyconnect_user_circles");
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.map((c: any) => ({
+          id: c.id || String(Math.random()),
+          name: c.name || "Study Circle",
+          dept: c.dept || "General",
+          emoji: c.emoji || "📚",
+          activeCount: c.activeCount || c.members?.length || 1,
+          latestMsg: c.latestMsg || c.description || "Active study room channel",
+          href: "/chat"
+        }))
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const loadVaultResources = (): VaultItem[] => {
+  try {
+    const raw = localStorage.getItem("studyconnect_vault_resources");
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.map((r: any) => ({
+          id: r.id || String(Math.random()),
+          title: r.title || "Academic Document",
+          uploader: r.uploaderName || r.uploader || "Campus Scholar",
+          dept: r.department || r.dept || "Academic Vault",
+          size: r.fileSize || r.size || "1.2 MB",
+          downloads: r.downloadCount ?? r.downloads ?? 0,
+          type:
+            (r.fileType || r.type || "").toLowerCase().includes("code") ||
+            (r.fileType || r.type || "").toLowerCase().includes("ipynb")
+              ? "code"
+              : "pdf"
+        }))
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const loadUpcomingDeadlines = (): DeadlineItem[] => {
+  try {
+    const raw = localStorage.getItem("studyconnect_campus_events");
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((e: any) => e.category === "deadlines" || e.urgency === "urgent" || e.urgency === "warning")
+      .map((e: any) => ({
+        id: e.id || String(Math.random()),
+        code: e.subjectCode || e.code || "ACAD",
+        title: e.title || "Campus Deadline",
+        due: e.dateStr ? `${e.dateStr} ${e.timeStr || ""}`.trim() : (e.due || "Upcoming"),
+        urgency: e.urgency || "warning",
+        daysLeft: e.daysLeft || "Upcoming",
+        category: e.category || "deadlines"
+      }));
+  } catch {
+    return [];
+  }
+};
+
+const loadPeerCount = (): number => {
+  try {
+    const raw = localStorage.getItem("studyconnect_peer_directory");
+    if (!raw) return 0;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+};
 
 export function DashboardPage() {
-  const user = useAuthStore((state) => state.user)!;
-  const firstName = user.fullName.split(" ")[0];
+  const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
+  const theme = useThemeStore((state) => state.theme);
+  const toggleTheme = useThemeStore((state) => state.toggleTheme);
+  const isDark = theme === "dark";
+  const { addToast } = useToastStore();
 
-  const { announcements, incrementViews } = useAnnouncementStore();
-  const [selectedAnn, setSelectedAnn] = useState<Announcement | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [copilotPrompt, setCopilotPrompt] = useState("");
 
-  const { data: dashData, isLoading: isDashLoading } = useStudentDashboard();
+  // Dynamic state loaded from localStorage
+  const [joinedCommunities, setJoinedCommunities] = useState<CircleItem[]>(() => loadCircles());
+  const [recentResources, setRecentResources] = useState<VaultItem[]>(() => loadVaultResources());
+  const [upcomingDeadlines, setUpcomingDeadlines] = useState<DeadlineItem[]>(() => loadUpcomingDeadlines());
+  const [peerCount, setPeerCount] = useState<number>(() => loadPeerCount());
+  const [streakDisplay, setStreakDisplay] = useState(() => getStreakDisplay());
 
-  const { data: communitiesData } = useQuery({
-    queryKey: ["communities-dashboard-rec"],
-    queryFn: () => communitiesApi.list({ page: 1, limit: 12 })
-  });
+  // Record daily study activity on dashboard visit & re-sync with localStorage
+  useEffect(() => {
+    // Record study activity for today
+    const actResult = recordStudyActivity();
+    setStreakDisplay(getStreakDisplay());
+    if (actResult.extended && actResult.streakCount > 1) {
+      addToast(`Study Streak Extended! You're on a ${actResult.streakCount}-day study streak 🔥`, "success");
+    }
 
-  const greeting = useMemo(() => {
-    const hr = new Date().getHours();
-    if (hr < 12) return "Good morning";
-    if (hr < 17) return "Good afternoon";
-    return "Good evening";
+    const syncData = () => {
+      setJoinedCommunities(loadCircles());
+      setRecentResources(loadVaultResources());
+      setUpcomingDeadlines(loadUpcomingDeadlines());
+      setPeerCount(loadPeerCount());
+      setStreakDisplay(getStreakDisplay());
+    };
+
+    window.addEventListener("storage", syncData);
+    window.addEventListener("focus", syncData);
+    window.addEventListener(STREAK_EVENT, syncData);
+    return () => {
+      window.removeEventListener("storage", syncData);
+      window.removeEventListener("focus", syncData);
+      window.removeEventListener(STREAK_EVENT, syncData);
+    };
   }, []);
 
-  const studentAnnouncements = useMemo(() => {
-    return announcements
-      .filter((ann) => {
-        if (ann.status !== "PUBLISHED") return false;
-        if (ann.targetAudience === "ENTIRE_COLLEGE") return true;
-        if (ann.targetAudience === "DEPARTMENT" && ann.targetDepartment === user.department) return true;
-        if (ann.targetAudience === "ACADEMIC_YEAR" && ann.targetAcademicYear === user.academicYear) return true;
-        return false;
-      })
-      .sort((a, b) => {
-        const aCritical = a.priority === "CRITICAL" ? 1 : 0;
-        const bCritical = b.priority === "CRITICAL" ? 1 : 0;
-        if (aCritical !== bCritical) return bCritical - aCritical;
-        return new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime();
-      });
-  }, [announcements, user]);
+  // Keyboard shortcut listener for Ctrl+K / Cmd+K
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        const searchInput = document.getElementById("universal-search-input");
+        searchInput?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
-  const recommendedCommunities = useMemo(() => {
-    if (!communitiesData) return [];
-    return communitiesData.items
-      .filter((c) => !c.isMember)
-      .slice(0, 3);
-  }, [communitiesData]);
-
-  const stats = dashData?.stats ?? {
-    communitiesJoined: 0,
-    upcomingEvents: 0,
-    unreadMessages: 0,
-    unreadNotifications: 0,
-    projectsShared: 0
+  const handleCopilotQuickAsk = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!copilotPrompt.trim()) return;
+    addToast(`AI Copilot processing: "${copilotPrompt}"`, "info");
+    setCopilotPrompt("");
   };
 
-  const profileCompletion = dashData?.profileCompletion ?? 0;
+  const studentName = user?.fullName || "Student";
+  const studentRoll = user?.rollNumber || "Enrolled Scholar";
+  const studentDept = user?.department || "Academic Department";
+  const urgentDeadlinesCount = upcomingDeadlines.filter((d) => d.urgency === "urgent").length;
 
   return (
-    <div className="animate-fade-up space-y-8">
-      {/* Welcome & Profile Summary Banner */}
-      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/5 dark:bg-ink-900 md:p-8">
-        <div className="absolute right-0 top-0 -mr-16 -mt-16 size-64 rounded-full bg-indigo-500/5 blur-3xl" />
-        <div className="absolute left-1/3 bottom-0 -mb-20 size-80 rounded-full bg-violet-500/5 blur-3xl" />
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-slate-50 font-sans antialiased transition-colors duration-300">
+      {/* ── Left Sticky Collapsible Sidebar ───────────────────────────── */}
+      <DashboardSidebar />
 
-        <div className="relative flex flex-col items-center justify-between gap-6 md:flex-row">
-          <div className="flex flex-col items-center gap-5 text-center md:flex-row md:text-left">
-            <Avatar name={user.fullName} src={user.profilePicture} className="size-20 ring-4 ring-indigo-50 dark:ring-indigo-950/40" />
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">
-                Welcome back
-              </p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-slate-900 dark:text-white sm:text-4xl">
-                {greeting}, {firstName}!
-              </h1>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-center gap-2 md:justify-start">
-                <span className="inline-flex items-center gap-1 text-indigo-650 dark:text-indigo-400 font-semibold">
-                  <GraduationCap size={15} /> {user.department}
-                </span>
-                <span className="text-slate-300 dark:text-slate-700">•</span>
-                <span>Year {user.academicYear} Student</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Profile Completion Dial */}
-          <div className="flex flex-col items-center gap-3 rounded-2xl bg-slate-50/50 p-4 dark:bg-white/[0.01] border border-slate-100 dark:border-white/5">
-            <div className="relative flex size-16 items-center justify-center">
-              <svg className="absolute size-full -rotate-90">
-                <circle cx="32" cy="32" r="28" className="stroke-slate-200 dark:stroke-slate-800" strokeWidth="4" fill="transparent" />
-                <circle
-                  cx="32"
-                  cy="32"
-                  r="28"
-                  className="stroke-indigo-600 dark:stroke-indigo-500 transition-all duration-500"
-                  strokeWidth="4"
-                  fill="transparent"
-                  strokeDasharray={175.9}
-                  strokeDashoffset={175.9 - (175.9 * profileCompletion) / 100}
-                />
-              </svg>
-              <span className="text-sm font-extrabold text-slate-900 dark:text-white">{profileCompletion}%</span>
-            </div>
-            <div className="text-center">
-              <span className="block text-xs font-bold text-slate-700 dark:text-slate-350">Profile Completion</span>
-              <Link to="/profile" className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 inline-flex items-center gap-0.5 mt-0.5">
-                Complete now <ChevronRight size={10} />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Quick Action Shortcuts */}
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Link to="/communities" className="flex items-center gap-3 rounded-2xl border border-slate-250 bg-white p-4 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm dark:border-white/5 dark:bg-ink-900 dark:text-slate-300 dark:hover:bg-white/[0.02] dark:hover:text-white transition-all duration-200">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
-            <Compass size={18} />
-          </span>
-          <span className="text-xs font-bold leading-none">Join Community</span>
-        </Link>
-        <Link to="/communities" className="flex items-center gap-3 rounded-2xl border border-slate-250 bg-white p-4 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm dark:border-white/5 dark:bg-ink-900 dark:text-slate-300 dark:hover:bg-white/[0.02] dark:hover:text-white transition-all duration-200">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-violet-50 text-violet-650 dark:bg-violet-500/10 dark:text-violet-400">
-            <Calendar size={18} />
-          </span>
-          <span className="text-xs font-bold leading-none">Browse Events</span>
-        </Link>
-        <Link to="/direct-messages" className="flex items-center gap-3 rounded-2xl border border-slate-250 bg-white p-4 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm dark:border-white/5 dark:bg-ink-900 dark:text-slate-300 dark:hover:bg-white/[0.02] dark:hover:text-white transition-all duration-200">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-650 dark:bg-emerald-500/10 dark:text-emerald-400">
-            <MessagesSquare size={18} />
-          </span>
-          <span className="text-xs font-bold leading-none">Open Messages</span>
-        </Link>
-        <Link to="/profile" className="flex items-center gap-3 rounded-2xl border border-slate-250 bg-white p-4 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm dark:border-white/5 dark:bg-ink-900 dark:text-slate-300 dark:hover:bg-white/[0.02] dark:hover:text-white transition-all duration-200">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
-            <User size={18} />
-          </span>
-          <span className="text-xs font-bold leading-none">View Profile</span>
-        </Link>
-      </section>
-
-      {/* Quick Statistics Cards */}
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-ink-900">
-          <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Joined</span>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{stats.communitiesJoined}</span>
-            <span className="text-slate-400"><Users size={16} /></span>
-          </div>
-          <span className="mt-1 block text-[10px] text-slate-500">Communities Joined</span>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-ink-900">
-          <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Events</span>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{stats.upcomingEvents}</span>
-            <span className="text-slate-400"><Calendar size={16} /></span>
-          </div>
-          <span className="mt-1 block text-[10px] text-slate-500">Upcoming Events</span>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-ink-900">
-          <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Chats</span>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{stats.unreadMessages}</span>
-            <span className="text-slate-400"><MessageCircle size={16} /></span>
-          </div>
-          <span className="mt-1 block text-[10px] text-slate-500">Unread Messages</span>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-ink-900">
-          <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Alerts</span>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{stats.unreadNotifications}</span>
-            <span className="text-slate-400"><Bell size={16} /></span>
-          </div>
-          <span className="mt-1 block text-[10px] text-slate-500">Notifications</span>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-ink-900">
-          <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Shared</span>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{stats.projectsShared}</span>
-            <span className="text-slate-400"><BookOpen size={16} /></span>
-          </div>
-          <span className="mt-1 block text-[10px] text-slate-500">Projects Shared</span>
-        </div>
-      </section>
-
-      {/* Main Grid Content */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      {/* ── Main Scrollable Dashboard Content ─────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
         
-        {/* Left main pane */}
-        <div className="space-y-8">
+        {/* ── Top Header Bar ──────────────────────────────────────────── */}
+        <header className="sticky top-0 z-20 h-16 shrink-0 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/85 backdrop-blur-xl px-4 sm:px-8 flex items-center justify-between gap-4">
           
-          {/* Announcements Feed */}
-          {studentAnnouncements.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Megaphone size={18} className="text-indigo-600 dark:text-indigo-400" />
-                  <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
-                    Campus Announcements
-                  </h2>
-                </div>
-              </div>
-              <div className="grid gap-3">
-                {studentAnnouncements.map((ann) => {
-                  const isCritical = ann.priority === "CRITICAL";
-                  return (
-                    <div
-                      key={ann._id}
-                      onClick={() => {
-                        setSelectedAnn(ann);
-                        incrementViews(ann._id);
-                      }}
-                      className={`group relative rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:shadow cursor-pointer ${
-                        isCritical
-                          ? "bg-rose-50/40 border-rose-250 dark:bg-rose-950/15 dark:border-rose-900/30 hover:border-rose-350"
-                          : "bg-white border-slate-200 dark:bg-ink-900 dark:border-white/5 hover:border-slate-350"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                            <span className={`rounded px-1.5 py-0.2 text-[8px] font-bold uppercase tracking-wider ${
-                              isCritical
-                                ? "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400"
-                                : "bg-indigo-50 text-indigo-750 dark:bg-white/5 dark:text-indigo-400"
-                            }`}>
-                              {ann.category}
-                            </span>
-                            {isCritical && (
-                              <span className="inline-flex items-center gap-1 rounded bg-rose-600 px-1.5 py-0.2 text-[8px] font-bold text-white uppercase tracking-wider animate-pulse">
-                                <AlertOctagon size={8} /> Urgent
-                              </span>
-                            )}
-                            <span className="text-[10px] font-semibold text-slate-450 dark:text-slate-500">
-                              {new Date(ann.publishDate).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <h3 className={`font-bold text-sm tracking-tight group-hover:text-indigo-650 transition-colors ${
-                            isCritical ? "text-rose-900 dark:text-rose-455" : "text-slate-900 dark:text-white"
-                          }`}>
-                            {ann.title}
-                          </h3>
-                          <div
-                            className="mt-1 text-xs text-slate-550 dark:text-slate-400 line-clamp-1 leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: ann.content }}
-                          />
-                        </div>
-                        <ChevronRight size={15} className="text-slate-400 group-hover:translate-x-0.5 transition-transform mt-5 shrink-0" />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Upcoming Registered Events */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Calendar size={18} className="text-indigo-600 dark:text-indigo-400" />
-              <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
-                Your Upcoming Events
-              </h2>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {MOCK_EVENTS.map((event) => (
-                <div key={event.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-ink-900 flex flex-col justify-between gap-4">
-                  <div className="min-w-0">
-                    <span className="inline-block rounded bg-indigo-50 px-1.5 py-0.2 text-[8px] font-bold uppercase tracking-wider text-indigo-750 dark:bg-white/5 dark:text-indigo-400 mb-2">
-                      {event.category}
-                    </span>
-                    <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">{event.title}</h3>
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 truncate">Venue: {event.venue}</p>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase">
-                    <span>{new Date(event.date).toLocaleDateString()}</span>
-                    <span>{event.time}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Recommended Communities */}
-          {recommendedCommunities.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Compass size={18} className="text-indigo-600 dark:text-indigo-400" />
-                  <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
-                    Recommended Communities
-                  </h2>
-                </div>
-                <Link to="/communities" className="text-xs font-bold text-indigo-650 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 inline-flex items-center gap-0.5">
-                  Browse all <ArrowRight size={13} />
-                </Link>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-3">
-                {recommendedCommunities.map((c) => (
-                  <div key={c._id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-ink-900 flex flex-col justify-between h-40">
-                    <div className="min-w-0">
-                      <span className="inline-block rounded bg-slate-100 px-1.5 py-0.2 text-[8px] font-bold uppercase tracking-wider text-slate-600 dark:bg-white/5 dark:text-slate-400 mb-2">
-                        {c.category}
-                      </span>
-                      <h3 className="font-bold text-xs text-slate-900 dark:text-white truncate">{c.name}</h3>
-                      <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{c.description}</p>
-                    </div>
-                    <Link to={`/communities/${c._id}`} className="mt-3 block text-center rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-white/[0.02] dark:hover:bg-white/[0.04] py-1.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 border border-slate-150 dark:border-white/5">
-                      View Details
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-        </div>
-
-        {/* Right Sidebar pane */}
-        <aside className="space-y-6">
-          
-          {/* Recent Messages */}
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/5 dark:bg-ink-900">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4 dark:border-white/5">
-              <h2 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                Recent Chats
-              </h2>
-              <Link to="/direct-messages" className="text-[10px] font-bold text-indigo-650 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
-                View Box
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {MOCK_MESSAGES.map((msg) => (
-                <Link to="/direct-messages" key={msg.id} className="flex items-start gap-3 rounded-xl p-2 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors group">
-                  <Avatar name={msg.sender} className="size-8 text-[10px] ring-2 ring-indigo-50 dark:ring-indigo-950/20" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-xs text-slate-900 dark:text-white truncate group-hover:text-indigo-650 transition-colors">{msg.sender}</span>
-                      <span className="text-[9px] text-slate-400 shrink-0">{msg.time}</span>
-                    </div>
-                    <p className="mt-0.5 text-[10px] text-slate-550 dark:text-slate-450 truncate leading-normal">{msg.preview}</p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          {/* Recent Activity Timeline */}
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/5 dark:bg-ink-900">
-            <h2 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider border-b border-slate-100 pb-3 mb-4 dark:border-white/5">
-              Activity History
-            </h2>
-            <div className="space-y-4">
-              {dashData?.recentActivity.map((activity) => (
-                <div key={activity.id} className="flex gap-3 relative">
-                  <div className="flex flex-col items-center shrink-0">
-                    <span className="z-10 flex size-2.5 items-center justify-center rounded-full bg-indigo-600 dark:bg-indigo-400" />
-                    <span className="absolute bottom-0 top-2.5 w-0.5 bg-slate-100 dark:bg-slate-800" />
-                  </div>
-                  <div className="min-w-0 flex-1 pb-1">
-                    <p className="text-[11px] text-slate-650 dark:text-slate-350 leading-relaxed">{activity.content}</p>
-                    <span className="block text-[9px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">{activity.timestamp}</span>
-                  </div>
-                </div>
-              ))}
-              {(!dashData?.recentActivity || dashData.recentActivity.length === 0) && (
-                <p className="text-xs text-slate-400 text-center py-4">No recent activities logged</p>
-              )}
-            </div>
-          </section>
-
-        </aside>
-      </div>
-
-      {/* Expanded Student Announcement Overlay Modal */}
-      {selectedAnn && (
-        <div className="fixed inset-0 z-50 flex justify-center items-start overflow-y-auto p-4 bg-slate-950/20 backdrop-blur-[2px]">
-          <div
-            className="fixed inset-0"
-            onClick={() => setSelectedAnn(null)}
-          />
-          <div className="relative my-8 w-full max-w-xl transform rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/5 dark:bg-ink-900 overflow-hidden animate-scale-up">
-            {/* Colored Header Banner */}
-            <div className={`h-24 bg-gradient-to-tr ${
-              selectedAnn.category === "EMERGENCY"
-                ? "from-rose-500 to-red-600"
-                : selectedAnn.category === "PLACEMENT"
-                ? "from-amber-500 to-orange-600"
-                : selectedAnn.category === "ACADEMIC"
-                ? "from-blue-500 to-indigo-600"
-                : selectedAnn.category === "EVENTS"
-                ? "from-emerald-500 to-teal-600"
-                : selectedAnn.category === "CLUBS"
-                ? "from-violet-500 to-purple-600"
-                : "from-slate-500 to-slate-700"
-            } p-5 flex items-end relative`}>
-              <button
-                onClick={() => setSelectedAnn(null)}
-                className="absolute right-4 top-4 rounded-full bg-black/25 p-1.5 text-white hover:bg-black/45 transition cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-              <span className="rounded bg-white/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white border border-white/10 backdrop-blur-sm">
-                {selectedAnn.category} Announcement
+          {/* Universal Search Input */}
+          <div className="flex-1 max-w-md relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
+            <input
+              id="universal-search-input"
+              type="text"
+              placeholder="Search communities, lecture notes, peers..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A]/80 pl-10 pr-12 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-[#1E90FF] focus:outline-none focus:ring-1 focus:ring-[#1E90FF] transition-all shadow-inner"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-none">
+              <span className="text-[10px] font-bold text-slate-400 bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700">
+                ⌘K
               </span>
             </div>
+          </div>
 
-            {/* Content Details */}
-            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin">
-              <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
-                {selectedAnn.title}
-              </h2>
+          {/* Top Actions */}
+          <div className="flex items-center gap-3">
+            {/* Upload Note Action Button */}
+            <Link to="/resources">
+              <motion.button
+                whileHover={{ scale: 1.03, y: -1 }}
+                whileTap={{ scale: 0.97 }}
+                className="hidden sm:inline-flex items-center gap-2 rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] px-4 py-2 text-xs font-bold text-white shadow-[0_0_20px_rgba(30,144,255,0.35)] hover:shadow-[0_0_25px_rgba(30,144,255,0.45)] transition-all cursor-pointer"
+              >
+                <FolderPlus size={14} />
+                <span>Upload Note</span>
+              </motion.button>
+            </Link>
 
-              <div className="flex flex-wrap items-center gap-4 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase border-b border-slate-100 pb-3 dark:border-white/5">
-                <div className="flex items-center gap-1">
-                  <Calendar size={12} />
-                  <span>Published: {new Date(selectedAnn.publishDate).toLocaleDateString()}</span>
+            {/* Modern Campus Notification Hub */}
+            <ModernNotificationHub />
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+              className="h-9 w-9 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer"
+            >
+              {isDark ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} className="text-slate-700" />}
+            </button>
+          </div>
+        </header>
+
+        {/* ── Dashboard Body Feed ──────────────────────────────────────── */}
+        <main className="p-4 sm:p-8 space-y-8 max-w-7xl w-full mx-auto">
+          
+          {/* ── 1. Personalized Welcome Banner ─────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            className="relative overflow-hidden rounded-3xl border border-[#1E90FF]/30 dark:border-[#1E90FF]/25 bg-gradient-to-r from-white via-[#1E90FF]/5 to-white dark:from-[#0F1A30] dark:via-[#162544] dark:to-[#0F1A30] p-6 sm:p-8 shadow-xl"
+          >
+            {/* Ambient Radial Aura */}
+            <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[#1E90FF]/15 dark:bg-[#1E90FF]/20 blur-3xl" />
+            <div className="pointer-events-none absolute bottom-0 right-1/3 h-40 w-40 rounded-full bg-[#1E90FF]/10 blur-2xl" />
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div>
+                {/* Academic Identity Pill */}
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#1E90FF]/30 dark:border-[#1E90FF]/30 bg-[#1E90FF]/10 px-3 py-1 text-xs font-bold text-[#1E90FF] mb-3">
+                  <Sparkles size={12} />
+                  <span>{studentDept} • {studentRoll}</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <User size={12} />
-                  <span>By: {selectedAnn.createdBy}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Eye size={12} />
-                  <span>{selectedAnn.viewsCount + 1} views</span>
-                </div>
+
+                <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
+                  Welcome back, {studentName} 👋
+                </h1>
+                <p className="mt-2 text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl leading-relaxed">
+                  {urgentDeadlinesCount > 0 && joinedCommunities.length > 0 ? (
+                    <>
+                      You have <strong className="text-rose-500">{urgentDeadlinesCount} urgent deadline{urgentDeadlinesCount > 1 ? "s" : ""}</strong> pending and <strong className="text-[#1E90FF]">{joinedCommunities.length} study room{joinedCommunities.length > 1 ? "s" : ""}</strong> active in your batch.
+                    </>
+                  ) : urgentDeadlinesCount > 0 ? (
+                    <>
+                      You have <strong className="text-rose-500">{urgentDeadlinesCount} urgent deadline{urgentDeadlinesCount > 1 ? "s" : ""}</strong> scheduled for submission.
+                    </>
+                  ) : joinedCommunities.length > 0 ? (
+                    <>
+                      You have <strong className="text-[#1E90FF]">{joinedCommunities.length} study room{joinedCommunities.length > 1 ? "s" : ""}</strong> actively collaborating in your department.
+                    </>
+                  ) : (
+                    "Welcome to your campus workspace. Join study circles, share course handouts, and organize semester deadlines."
+                  )}
+                </p>
               </div>
 
-              {/* HTML Description Body */}
-              <div
-                className="prose prose-sm text-slate-700 dark:text-slate-350 leading-relaxed whitespace-pre-line space-y-2 dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: selectedAnn.content }}
-              />
+              {/* Quick Jump Action */}
+              <div className="flex items-center gap-3 shrink-0">
+                <Link to="/chat">
+                  <motion.button
+                    whileHover={{ scale: 1.04, y: -1 }}
+                    whileTap={{ scale: 0.96 }}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] px-5 py-3 text-xs font-bold text-white shadow-[0_0_20px_rgba(30,144,255,0.35)] hover:shadow-[0_0_25px_rgba(30,144,255,0.45)] transition-all cursor-pointer"
+                  >
+                    <MessageSquare size={14} />
+                    <span>Enter Study Rooms</span>
+                    <ArrowRight size={14} />
+                  </motion.button>
+                </Link>
+              </div>
+            </div>
+          </motion.div>
 
-              {/* Attachments */}
-              {selectedAnn.attachments && selectedAnn.attachments.length > 0 && (
-                <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-white/5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Downloadable Attachments
-                  </span>
-                  <div className="space-y-1.5">
-                    {selectedAnn.attachments.map((attach, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between rounded-xl bg-slate-50 border p-3 dark:bg-black/15 dark:border-white/5 text-xs text-slate-700"
+          {/* ── 2. 4 KPI Metric Cards Grid ─────────────────────────────── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* Card 1: Study Streak */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+              whileHover={{ y: -3 }}
+              onClick={() => navigate("/profile")}
+              className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 p-5 backdrop-blur-xl shadow-md cursor-pointer group"
+              title={`Consecutive study days: ${streakDisplay.count}. Click to view academic milestones.`}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-500 border border-amber-500/25 group-hover:scale-110 transition-transform">
+                  <Flame size={18} className={streakDisplay.isActiveToday ? "animate-pulse" : ""} />
+                </div>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+                  {streakDisplay.isActiveToday && (
+                    <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  )}
+                  🔥 Streak
+                </span>
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
+                {streakDisplay.text}
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                {streakDisplay.subtitle}
+              </div>
+            </motion.div>
+
+            {/* Card 2: Active Rooms */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              whileHover={{ y: -3 }}
+              className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 p-5 backdrop-blur-xl shadow-md"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#1E90FF]/15 text-[#1E90FF] border border-[#1E90FF]/25">
+                  <MessageSquare size={18} />
+                </div>
+                <span className="text-[10px] font-bold text-[#1E90FF] bg-[#1E90FF]/10 px-2 py-0.5 rounded-full">
+                  {joinedCommunities.length > 0 ? `● ${joinedCommunities.length} Active` : "None active"}
+                </span>
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
+                {joinedCommunities.length} Joined
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Subject Channels</div>
+            </motion.div>
+
+            {/* Card 3: Shared Vault Files */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.15 }}
+              whileHover={{ y: -3 }}
+              className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 p-5 backdrop-blur-xl shadow-md"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#1E90FF]/15 text-[#1E90FF] border border-[#1E90FF]/25">
+                  <BookOpen size={18} />
+                </div>
+                <span className="text-[10px] font-bold text-[#1E90FF] bg-[#1E90FF]/10 px-2 py-0.5 rounded-full">
+                  Vault
+                </span>
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
+                {recentResources.length} Upload{recentResources.length === 1 ? "" : "s"}
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Notes & Notebooks</div>
+            </motion.div>
+
+            {/* Card 4: Classmates Network */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              whileHover={{ y: -3 }}
+              className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 p-5 backdrop-blur-xl shadow-md"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-500 border border-emerald-500/25">
+                  <Users size={18} />
+                </div>
+                <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                  Verified
+                </span>
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
+                {peerCount} Peer{peerCount === 1 ? "" : "s"}
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Batch Connections</div>
+            </motion.div>
+          </div>
+
+          {/* ── 3. Main 2-Column Responsive Feed ──────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* ── LEFT COLUMN: Main Feed (8 cols) ─────────────────────── */}
+            <div className="lg:col-span-8 space-y-8">
+              
+              {/* Section: My Joined Study Circles */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-[#1E90FF]" />
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">
+                      My Joined Study Circles
+                    </h3>
+                  </div>
+                  <Link to="/chat" className="text-xs font-bold text-[#1E90FF] hover:underline flex items-center gap-1">
+                    <span>View all rooms</span>
+                    <ChevronRight size={14} />
+                  </Link>
+                </div>
+
+                {joinedCommunities.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 bg-white/50 dark:bg-[#0F1A30]/50 p-8 text-center backdrop-blur-xl">
+                    <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-2xl bg-[#1E90FF]/10 text-[#1E90FF] mb-3">
+                      <MessageSquare size={22} />
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
+                      No Joined Study Circles Yet
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mb-4 leading-relaxed">
+                      Collaborate with classmates from your department in real-time voice stages, code channels, and study groups.
+                    </p>
+                    <Link
+                      to="/chat"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] px-4 py-2 text-xs font-bold text-white shadow-md shadow-[#1E90FF]/25 transition-all"
+                    >
+                      <Plus size={14} />
+                      <span>Explore & Join Circles</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {joinedCommunities.slice(0, 3).map((c) => (
+                      <motion.div
+                        key={c.id}
+                        whileHover={{ y: -3 }}
+                        className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 p-5 backdrop-blur-xl shadow-md flex flex-col justify-between"
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <BookOpen size={14} className="text-indigo-650 shrink-0" />
-                          <span className="truncate flex-1 font-semibold dark:text-slate-350">{attach.name}</span>
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-2xl">{c.emoji || "📚"}</span>
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              {c.activeCount || 1} active
+                            </span>
+                          </div>
+
+                          <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
+                            {c.name}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                            {c.latestMsg || "Active study circle"}
+                          </p>
                         </div>
-                        <button className="flex size-7 items-center justify-center rounded-lg border border-slate-200 dark:border-white/5 text-slate-550 hover:bg-slate-100 cursor-pointer">
-                          <Download size={13} />
-                        </button>
+
+                        <Link
+                          to={c.href || "/chat"}
+                          className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800/60 flex items-center justify-between text-xs font-bold text-[#1E90FF] hover:underline"
+                        >
+                          <span>Open Channel</span>
+                          <ArrowRight size={13} />
+                        </Link>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Section: Recent Resource Drop Feed */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-[#1E90FF]" />
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">
+                      Recent Resource Drops
+                    </h3>
+                  </div>
+                  <Link to="/resources" className="text-xs font-bold text-[#1E90FF] hover:underline flex items-center gap-1">
+                    <span>Browse Vault</span>
+                    <ChevronRight size={14} />
+                  </Link>
+                </div>
+
+                {recentResources.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 bg-white/50 dark:bg-[#0F1A30]/50 p-8 text-center backdrop-blur-xl">
+                    <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-2xl bg-[#1E90FF]/10 text-[#1E90FF] mb-3">
+                      <BookOpen size={22} />
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
+                      No Study Resources Shared Yet
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mb-4 leading-relaxed">
+                      Upload lecture notes, problem sets, or cheatsheets to share with your peers in the Resource Vault.
+                    </p>
+                    <Link
+                      to="/resources"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] px-4 py-2 text-xs font-bold text-white shadow-md shadow-[#1E90FF]/25 transition-all"
+                    >
+                      <FolderPlus size={14} />
+                      <span>Upload First Note</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 p-5 backdrop-blur-xl shadow-md divide-y divide-slate-200/80 dark:divide-slate-800/60">
+                    {recentResources.slice(0, 4).map((res) => (
+                      <div
+                        key={res.id}
+                        className="py-3.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#1E90FF]/10 text-[#1E90FF] border border-[#1E90FF]/20">
+                            {res.type === "pdf" ? <FileText size={18} /> : <FileCode size={18} />}
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 hover:text-[#1E90FF] transition-colors cursor-pointer">
+                              {res.title}
+                            </h4>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                              <span>Uploaded by {res.uploader}</span>
+                              <span>•</span>
+                              <span>{res.size}</span>
+                              <span>•</span>
+                              <span className="flex items-center gap-1">
+                                <Download size={10} /> {res.downloads || 0} downloads
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                          <Link
+                            to="/resources"
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-[#1E90FF] transition-colors"
+                          >
+                            Preview
+                          </Link>
+                        </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+
             </div>
 
-            {/* Footer close button */}
-            <div className="border-t border-slate-200 bg-slate-50/50 p-4 dark:border-white/5 dark:bg-ink-950 flex justify-end">
-              <button
-                onClick={() => setSelectedAnn(null)}
-                className="rounded-xl border border-slate-250 bg-white hover:bg-slate-100 px-5 py-2 text-xs font-bold text-slate-750 cursor-pointer shadow-sm"
-              >
-                Close details
-              </button>
+            {/* ── RIGHT COLUMN: Academic Hub & Deadlines (4 cols) ───────── */}
+            <div className="lg:col-span-4 space-y-6">
+              
+              {/* Upcoming Campus Deadlines */}
+              <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/80 p-6 backdrop-blur-xl shadow-md">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/80 dark:border-slate-800/60">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-[#1E90FF]" />
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                      Upcoming Deadlines
+                    </h3>
+                  </div>
+                  <span className="text-[10px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded-full">
+                    {urgentDeadlinesCount > 0 ? `${urgentDeadlinesCount} Urgent` : "Schedule"}
+                  </span>
+                </div>
+
+                {upcomingDeadlines.length === 0 ? (
+                  <div className="p-6 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-[#080D1A]/50">
+                    <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2 opacity-80" />
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">
+                      All Caught Up!
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+                      No pending assignment or exam deadlines scheduled.
+                    </p>
+                    <Link
+                      to="/events"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1E90FF] hover:underline"
+                    >
+                      <span>+ Add Campus Event</span>
+                      <ArrowRight size={12} />
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {upcomingDeadlines.slice(0, 4).map((d) => (
+                      <div
+                        key={d.id}
+                        className={`p-3.5 rounded-2xl border transition-all ${
+                          d.urgency === "urgent"
+                            ? "border-rose-500/40 bg-rose-500/5 dark:bg-rose-500/10"
+                            : d.urgency === "warning"
+                            ? "border-amber-500/40 bg-amber-500/5 dark:bg-amber-500/10"
+                            : "border-[#1E90FF]/30 bg-[#1E90FF]/5 dark:bg-[#1E90FF]/10"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white dark:bg-[#080D1A] text-slate-900 dark:text-slate-100 tabular-nums">
+                            {d.code || "ACAD"}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold ${
+                              d.urgency === "urgent"
+                                ? "text-rose-500"
+                                : d.urgency === "warning"
+                                ? "text-amber-500"
+                                : "text-[#1E90FF]"
+                            }`}
+                          >
+                            {d.daysLeft || "Scheduled"}
+                          </span>
+                        </div>
+
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 mt-1">
+                          {d.title}
+                        </h4>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Due: {d.due}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick AI Study Copilot Card */}
+              <div className="rounded-3xl border border-[#1E90FF]/30 dark:border-[#1E90FF]/20 bg-gradient-to-br from-[#1E90FF]/10 via-[#1E90FF]/5 to-transparent p-6 shadow-md">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#1E90FF] text-white shadow-[0_0_15px_rgba(30,144,255,0.35)]">
+                    <Bot size={15} />
+                  </div>
+                  <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Quick AI Copilot
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
+                  Ask questions bound directly to your course syllabus and professor handouts.
+                </p>
+
+                <form onSubmit={handleCopilotQuickAsk} className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Solve Question 3 from Lab 4..."
+                    value={copilotPrompt}
+                    onChange={(e) => setCopilotPrompt(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#080D1A] px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] focus:ring-1 focus:ring-[#1E90FF]"
+                  />
+                  <button
+                    type="submit"
+                    className="w-full py-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-[0_0_15px_rgba(30,144,255,0.3)] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Sparkles size={12} />
+                    <span>Ask Study Copilot</span>
+                  </button>
+                </form>
+              </div>
+
             </div>
+
           </div>
-        </div>
-      )}
+
+        </main>
+      </div>
     </div>
   );
 }
+
+export default DashboardPage;

@@ -111,7 +111,7 @@ export function ReportsTable({
                 className="hover:bg-slate-50/30 dark:hover:bg-white/[0.01] transition-colors"
               >
                 {/* ID */}
-                <td className="px-6 py-4 font-mono font-bold text-slate-550 dark:text-slate-400">
+                <td className="px-6 py-4 tabular-nums font-bold text-slate-550 dark:text-slate-400">
                   #{report._id.slice(-6).toUpperCase()}
                 </td>
 

@@ -51,3 +51,8 @@ communityRouter.delete(
   validate(moderatorParamsSchema),
   asyncHandler(communityController.removeModerator)
 );
+
+communityRouter.patch(
+  "/:id/channels/:channelId/study-mode",
+  asyncHandler(communityController.updateChannelStudyMode)
+);

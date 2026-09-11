@@ -1,7 +1,14 @@
-import { BookOpen } from "lucide-react";
+import { BookOpen, Camera } from "lucide-react";
+import { Link } from "react-router";
 import type { Community } from "../types/community";
 
-export function CommunityBanner({ community }: { community: Community }) {
+export function CommunityBanner({
+  community,
+  canEdit
+}: {
+  community: Community;
+  canEdit?: boolean;
+}) {
   return (
     <div className="relative min-h-56 overflow-hidden rounded-2xl bg-slate-950 text-white">
       {community.bannerImage ? (
@@ -14,6 +21,19 @@ export function CommunityBanner({ community }: { community: Community }) {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(52,120,246,0.45),transparent_30%),linear-gradient(135deg,#020617,#0f766e)]" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/45 to-transparent" />
+      
+      {/* Change / Upload Custom Photo Button for owner/moderator */}
+      {canEdit && (
+        <Link
+          to={`/communities/${community._id}/edit`}
+          className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/45 hover:bg-black/65 border border-white/20 text-white text-xs font-bold backdrop-blur-md transition-all shadow-md cursor-pointer"
+          title="Change community custom photo or banner"
+        >
+          <Camera size={13} />
+          <span>Change Photo</span>
+        </Link>
+      )}
+
       <div className="relative flex min-h-56 flex-col justify-end p-6 sm:p-8">
         <span className="mb-4 inline-flex w-fit items-center gap-2 rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold backdrop-blur">
           <BookOpen size={14} />

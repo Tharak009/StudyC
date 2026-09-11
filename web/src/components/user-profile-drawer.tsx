@@ -71,8 +71,12 @@ export function UserProfileDrawer({ user, onClose }: UserProfileDrawerProps) {
           <div className="flex-1 overflow-y-auto py-5 space-y-6 scrollbar-thin">
             {/* Profile Brief Card */}
             <div className="flex flex-col items-center text-center p-4 rounded-2xl bg-slate-50/50 dark:bg-white/[0.01] border border-slate-150/40 dark:border-white/5">
-              <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-500 to-violet-500 text-lg font-bold text-white shadow-lg">
-                {initials}
+              <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-500 to-violet-500 text-lg font-bold text-white shadow-lg overflow-hidden">
+                {user.profilePicture ? (
+                  <img src={user.profilePicture} alt={user.fullName} className="h-full w-full object-cover" />
+                ) : (
+                  initials
+                )}
               </div>
               <h3 className="mt-3 text-base font-bold text-slate-900 dark:text-white">
                 {user.fullName}

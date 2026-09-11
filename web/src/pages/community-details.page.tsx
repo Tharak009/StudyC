@@ -177,7 +177,7 @@ export function CommunityDetailsPage() {
 
   return (
     <div className="animate-fade-up">
-      <CommunityBanner community={community} />
+      <CommunityBanner community={community} canEdit={canManage} />
 
       <div className="grid gap-8 py-8 xl:grid-cols-[minmax(0,1fr)_320px]">
         {/* Left Workspace Panel */}

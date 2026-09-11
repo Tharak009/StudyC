@@ -353,7 +353,7 @@ export function InteractiveDoughnutChart({ title, data, height = 200 }: CommonCh
   );
 }
 
-export function InteractiveComboChart({ title, data, color = "#3b82f6", secondaryColor = "#f43f5e", height = 200 }: CommonChartProps) {
+export function InteractiveComboChart({ title, data, color = "#1E90FF", secondaryColor = "#10b981", height = 200 }: CommonChartProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);

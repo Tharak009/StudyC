@@ -29,13 +29,20 @@ export const createApp = () => {
   app.use(hpp());
   if (env.NODE_ENV !== "test") app.use(morgan(env.LOG_LEVEL));
 
-  app.get("/health", (_request, response) => {
-    response.json({
+  // Render Health Check Endpoint
+  const healthHandler = (_request: express.Request, response: express.Response) => {
+    response.status(200).json({
+      status: "ok",
+      uptime: process.uptime(),
+      timestamp: Date.now(),
       success: true,
-      data: { status: "ok", timestamp: new Date().toISOString() },
-      message: "StudyConnect API is healthy"
+      service: "studyconnect-backend",
+      environment: env.NODE_ENV
     });
-  });
+  };
+
+  app.get("/health", healthHandler);
+  app.get("/api/health", healthHandler);
 
   app.use("/uploads", express.static(path.resolve(process.cwd(), env.UPLOAD_DIR), {
     maxAge: env.NODE_ENV === "production" ? "1d" : 0,

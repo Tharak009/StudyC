@@ -1,37 +1,31 @@
 import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
+import { isOriginAllowed } from "../config/cors.js";
 import { env } from "../config/env.js";
 import { USER_STATUS } from "../constants/user-status.js";
 import { userRepository } from "../repositories/user.repository.js";
 import { chatBus } from "../services/chat-bus.service.js";
-import { chatService } from "../services/chat.service.js";
-import { directMessageService } from "../services/direct-message.service.js";
 import { dmBus } from "../services/dm-bus.service.js";
 import { notificationBus } from "../services/notification-bus.service.js";
 import { notificationService } from "../services/notification.service.js";
 import { ApiError } from "../utils/api-error.js";
 import { verifyAccessToken } from "../utils/tokens.js";
-import {
-  socketCommunitySchema,
-  socketDeleteMessageSchema,
-  socketEditMessageSchema,
-  socketSendMessageSchema
-} from "../validators/chat.validator.js";
-import {
-  socketConversationSchema,
-  socketDeleteDirectMessageSchema,
-  socketEditDirectMessageSchema,
-  socketMarkAsReadSchema,
-  socketSendDirectMessageSchema,
-  socketStartConversationSchema
-} from "../validators/direct-message.validator.js";
 import { notificationIdParamsSchema } from "../validators/notification.validator.js";
+import {
+  type SocketRegistry,
+  type VoicePeer,
+  registerPresenceHandlers
+} from "./presence.socket.js";
+import { registerChatHandlers } from "./chat.socket.js";
+import { registerDmHandlers } from "./dm.socket.js";
+import { registerVoiceHandlers } from "./voice.socket.js";
+import { registerAdminBroadcastHandlers } from "./admin.socket.js";
 
 const RATE_LIMIT_WINDOW_MS = 1000;
-const RATE_LIMIT_MAX_EVENTS = 10;
+const RATE_LIMIT_MAX_EVENTS = 15;
 const socketRateLimits = new Map<string, { count: number; resetAt: number }>();
 
-const isRateLimited = (socketId: string): boolean => {
+export const isSocketRateLimited = (socketId: string): boolean => {
   const now = Date.now();
   const entry = socketRateLimits.get(socketId);
   if (!entry || now >= entry.resetAt) {
@@ -42,56 +36,22 @@ const isRateLimited = (socketId: string): boolean => {
   return entry.count > RATE_LIMIT_MAX_EVENTS;
 };
 
-interface ChatSocketData {
+export interface SocketUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  department?: string;
+  rollNumber?: string;
+  academicYear?: number | string;
+  batchYear?: number | string;
+}
+
+export interface ChatSocketData {
   userId: string;
   role: string;
+  user: SocketUser;
 }
-
-interface ServerToClientEvents {
-  messageCreated: (message: unknown) => void;
-  messageUpdated: (message: unknown) => void;
-  messageDeleted: (message: unknown) => void;
-  userTyping: (payload: { communityId?: string; conversationId?: string; userId: string }) => void;
-  userStoppedTyping: (payload: { communityId?: string; conversationId?: string; userId: string }) => void;
-  userJoined: (payload: { communityId: string; userId: string; onlineUserIds: string[] }) => void;
-  userLeft: (payload: { communityId: string; userId: string; onlineUserIds: string[] }) => void;
-  chatError: (payload: { message: string }) => void;
-  conversationCreated: (payload: unknown) => void;
-  directMessageCreated: (payload: unknown) => void;
-  directMessageUpdated: (payload: unknown) => void;
-  directMessageDeleted: (payload: unknown) => void;
-  messageRead: (payload: unknown) => void;
-  dmError: (payload: { message: string }) => void;
-  notificationCreated: (payload: unknown) => void;
-  notificationUpdated: (payload: unknown) => void;
-  notificationDeleted: (payload: unknown) => void;
-  notificationError: (payload: { message: string }) => void;
-  unreadCountUpdate: (payload: { count: number }) => void;
-}
-
-interface ClientToServerEvents {
-  joinCommunity: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  leaveCommunity: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  sendMessage: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  editMessage: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  deleteMessage: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  typingStart: (payload: unknown) => void;
-  typingStop: (payload: unknown) => void;
-  startConversation: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  joinConversation: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  leaveConversation: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  sendDirectMessage: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  editDirectMessage: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  deleteDirectMessage: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  markAsRead: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-  subscribeNotifications: (acknowledge?: (response: unknown) => void) => void;
-  markNotificationRead: (payload: unknown, acknowledge?: (response: unknown) => void) => void;
-}
-
-type ChatSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, ChatSocketData>;
-type ChatServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, ChatSocketData>;
-
-const onlineUsers = new Map<string, Map<string, Set<string>>>();
 
 export const futureSocketModules = [
   "community-chat",
@@ -100,349 +60,15 @@ export const futureSocketModules = [
   "video-signaling-gateway"
 ] as const;
 
-export const initializeSockets = (server: HttpServer) => {
-  const io: ChatServer = new Server<
-    ClientToServerEvents,
-    ServerToClientEvents,
-    Record<string, never>,
-    ChatSocketData
-  >(server, {
-    cors: {
-      origin: env.CLIENT_URL.split(",").map((url) => url.trim()),
-      credentials: true
-    },
-    maxHttpBufferSize: 1e6
-  });
-
-  io.use(async (socket, next) => {
-    try {
-      const token = tokenFrom(socket);
-      if (!token) throw new ApiError(401, "Socket authentication is required", [], "SOCKET_AUTH_REQUIRED");
-      const payload = verifyAccessToken(token);
-      if (payload.type !== "access") throw new Error("Wrong token type");
-      const user = await userRepository.findById(payload.sub);
-      if (!user || user.status !== USER_STATUS.ACTIVE) {
-        throw new ApiError(401, "User is unavailable", [], "USER_UNAVAILABLE");
-      }
-      socket.data.userId = user.id;
-      socket.data.role = user.role;
-      next();
-    } catch (error) {
-      next(error instanceof Error ? error : new Error("Socket authentication failed"));
-    }
-  });
-
-  io.on("connection", (socket) => {
-    const chatSocket = socket as ChatSocket;
-    const userId = chatSocket.data.userId;
-
-    chatSocket.join(userRoomFor(userId));
-
-    registerCommunityChatHandlers(io, chatSocket);
-    registerDirectMessageHandlers(io, chatSocket);
-    registerTypingHandler(io, chatSocket);
-    registerNotificationHandlers(io, chatSocket);
-
-    chatSocket.on("disconnect", () => {
-      socketRateLimits.delete(socket.id);
-    });
-  });
-
-  chatBus.onCreated((communityId, message) => {
-    io.to(roomFor(communityId)).emit("messageCreated", message);
-  });
-  chatBus.onUpdated((communityId, message) => {
-    io.to(roomFor(communityId)).emit("messageUpdated", message);
-  });
-  chatBus.onDeleted((communityId, message) => {
-    io.to(roomFor(communityId)).emit("messageDeleted", message);
-  });
-
-  dmBus.onCreated((conversationId, message) => {
-    io.to(dmRoomFor(conversationId)).emit("directMessageCreated", message);
-  });
-  dmBus.onUpdated((conversationId, message) => {
-    io.to(dmRoomFor(conversationId)).emit("directMessageUpdated", message);
-  });
-  dmBus.onDeleted((conversationId, message) => {
-    io.to(dmRoomFor(conversationId)).emit("directMessageDeleted", message);
-  });
-  dmBus.onRead((conversationId, message) => {
-    io.to(dmRoomFor(conversationId)).emit("messageRead", message as Record<string, unknown>);
-  });
-
-  notificationBus.onCreated((userId, notification) => {
-    io.to(userRoomFor(userId)).emit("notificationCreated", notification);
-    io.to(userRoomFor(userId)).emit("unreadCountUpdate", { count: 1 });
-  });
-  notificationBus.onUpdated((userId, notification) => {
-    io.to(userRoomFor(userId)).emit("notificationUpdated", notification);
-  });
-  notificationBus.onDeleted((userId, notification) => {
-    io.to(userRoomFor(userId)).emit("notificationDeleted", notification);
-  });
-
-  return io;
+/**
+ * Global in-memory registry for online tabs and active WebRTC stages
+ */
+export const socketRegistry: SocketRegistry = {
+  onlineUsersMap: new Map<string, Set<string>>(),
+  activeVoiceRooms: new Map<string, Set<VoicePeer>>()
 };
 
-const registerCommunityChatHandlers = (io: ChatServer, socket: ChatSocket) => {
-  socket.on("joinCommunity", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const { communityId } = socketCommunitySchema.parse(payload);
-      await chatService.requireMembership(communityId, socket.data.userId);
-      await socket.join(roomFor(communityId));
-      addOnlineUser(communityId, socket.data.userId, socket.id);
-      socket.to(roomFor(communityId)).emit("userJoined", {
-        communityId,
-        userId: socket.data.userId,
-        onlineUserIds: onlineUserIdsFor(communityId)
-      });
-      return { communityId, onlineUserIds: onlineUserIdsFor(communityId) };
-    });
-  });
-
-  socket.on("leaveCommunity", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const { communityId } = socketCommunitySchema.parse(payload);
-      await socket.leave(roomFor(communityId));
-      removeOnlineUser(communityId, socket.data.userId, socket.id);
-      socket.to(roomFor(communityId)).emit("userLeft", {
-        communityId,
-        userId: socket.data.userId,
-        onlineUserIds: onlineUserIdsFor(communityId)
-      });
-      return { communityId, onlineUserIds: onlineUserIdsFor(communityId) };
-    });
-  });
-
-  socket.on("sendMessage", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const input = socketSendMessageSchema.parse(payload);
-      return chatService.createMessage(
-        input.communityId,
-        socket.data.userId,
-        { content: input.content, replyTo: input.replyTo },
-        []
-      );
-    });
-  });
-
-  socket.on("editMessage", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const input = socketEditMessageSchema.parse(payload);
-      return chatService.editMessage(input.communityId, input.messageId, socket.data.userId, input.content);
-    });
-  });
-
-  socket.on("deleteMessage", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const input = socketDeleteMessageSchema.parse(payload);
-      return chatService.deleteMessage(input.communityId, input.messageId, socket.data.userId);
-    });
-  });
-
-  socket.on("disconnect", () => {
-    for (const [communityId] of onlineUsers) {
-      const removed = removeOnlineUser(communityId, socket.data.userId, socket.id);
-      if (removed) {
-        io.to(roomFor(communityId)).emit("userLeft", {
-          communityId,
-          userId: socket.data.userId,
-          onlineUserIds: onlineUserIdsFor(communityId)
-        });
-      }
-    }
-  });
-};
-
-const registerDirectMessageHandlers = (io: ChatServer, socket: ChatSocket) => {
-  socket.on("startConversation", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const { receiverId } = socketStartConversationSchema.parse(payload);
-      const conversation = await directMessageService.startConversation(
-        socket.data.userId,
-        receiverId
-      );
-      const conversationId = conversation!._id.toString();
-      await socket.join(dmRoomFor(conversationId));
-      io.to(dmRoomFor(conversationId)).emit("conversationCreated", conversation);
-      return conversation;
-    });
-  });
-
-  socket.on("joinConversation", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const { conversationId } = socketConversationSchema.parse(payload);
-      await directMessageService.getConversation(conversationId, socket.data.userId);
-      await socket.join(dmRoomFor(conversationId));
-      return { conversationId };
-    });
-  });
-
-  socket.on("leaveConversation", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const { conversationId } = socketConversationSchema.parse(payload);
-      await socket.leave(dmRoomFor(conversationId));
-      return { conversationId };
-    });
-  });
-
-  socket.on("sendDirectMessage", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const input = socketSendDirectMessageSchema.parse(payload);
-      const { message } = await directMessageService.sendMessage(
-        input.conversationId,
-        socket.data.userId,
-        { content: input.content, replyTo: input.replyTo },
-        []
-      );
-      const conversationRoom = dmRoomFor(input.conversationId);
-      io.to(conversationRoom).emit("directMessageCreated", message.toJSON?.() ?? message);
-      return message;
-    });
-  });
-
-  socket.on("editDirectMessage", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const input = socketEditDirectMessageSchema.parse(payload);
-      const updated = await directMessageService.editMessage(
-        input.messageId,
-        socket.data.userId,
-        input.content
-      );
-      io.to(dmRoomFor(input.conversationId)).emit("directMessageUpdated", updated.toJSON?.() ?? updated);
-      return updated;
-    });
-  });
-
-  socket.on("deleteDirectMessage", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const input = socketDeleteDirectMessageSchema.parse(payload);
-      const deleted = await directMessageService.deleteMessage(
-        input.messageId,
-        socket.data.userId
-      );
-      io.to(dmRoomFor(input.conversationId)).emit("directMessageDeleted", deleted.toJSON?.() ?? deleted);
-      return deleted;
-    });
-  });
-
-  socket.on("markAsRead", async (payload: unknown, acknowledge: unknown) => {
-    await handleSocketAction(socket, acknowledge, async () => {
-      const input = socketMarkAsReadSchema.parse(payload);
-      await directMessageService.markAsRead(input.conversationId, socket.data.userId);
-      io.to(dmRoomFor(input.conversationId)).emit("messageRead", {
-        conversationId: input.conversationId,
-        messageId: input.messageId,
-        readAt: new Date().toISOString()
-      });
-      return { conversationId: input.conversationId, readAt: new Date().toISOString() };
-    });
-  });
-};
-
-const registerTypingHandler = (io: ChatServer, socket: ChatSocket) => {
-  socket.on("typingStart", async (payload: unknown) => {
-    const payloadObj = payload as Record<string, unknown> | undefined;
-    if (!payloadObj) return;
-
-    if (typeof payloadObj.communityId === "string") {
-      const parsed = socketCommunitySchema.safeParse(payload);
-      if (!parsed.success) return;
-      if (!(await hasMembership(parsed.data.communityId, socket.data.userId))) return;
-      socket.to(roomFor(parsed.data.communityId)).emit("userTyping", {
-        communityId: parsed.data.communityId,
-        userId: socket.data.userId
-      });
-    } else if (typeof payloadObj.conversationId === "string") {
-      const parsed = socketConversationSchema.safeParse(payload);
-      if (!parsed.success) return;
-      try {
-        await directMessageService.getConversation(parsed.data.conversationId, socket.data.userId);
-        socket.to(dmRoomFor(parsed.data.conversationId)).emit("userTyping", {
-          conversationId: parsed.data.conversationId,
-          userId: socket.data.userId
-        });
-      } catch {
-        // ignore
-      }
-    }
-  });
-
-  socket.on("typingStop", async (payload: unknown) => {
-    const payloadObj = payload as Record<string, unknown> | undefined;
-    if (!payloadObj) return;
-
-    if (typeof payloadObj.communityId === "string") {
-      const parsed = socketCommunitySchema.safeParse(payload);
-      if (!parsed.success) return;
-      if (!(await hasMembership(parsed.data.communityId, socket.data.userId))) return;
-      socket.to(roomFor(parsed.data.communityId)).emit("userStoppedTyping", {
-        communityId: parsed.data.communityId,
-        userId: socket.data.userId
-      });
-    } else if (typeof payloadObj.conversationId === "string") {
-      const parsed = socketConversationSchema.safeParse(payload);
-      if (!parsed.success) return;
-      try {
-        await directMessageService.getConversation(parsed.data.conversationId, socket.data.userId);
-        socket.to(dmRoomFor(parsed.data.conversationId)).emit("userStoppedTyping", {
-          conversationId: parsed.data.conversationId,
-          userId: socket.data.userId
-        });
-      } catch {
-        // ignore
-      }
-    }
-  });
-};
-
-const registerNotificationHandlers = (_io: ChatServer, socket: ChatSocket) => {
-  socket.on("subscribeNotifications", async (acknowledge: unknown) => {
-    try {
-      await socket.join(userRoomFor(socket.data.userId));
-      if (typeof acknowledge === "function") acknowledge({ success: true });
-    } catch {
-      if (typeof acknowledge === "function") acknowledge({ success: false, message: "Failed to subscribe" });
-    }
-  });
-
-  socket.on("markNotificationRead", async (payload: unknown, acknowledge: unknown) => {
-    try {
-      const rawId = typeof payload === "string" ? payload : (payload as Record<string, unknown>).notificationId;
-      const { params: { notificationId } } = notificationIdParamsSchema.parse({ params: { notificationId: rawId } });
-      const notification = await notificationService.markAsRead(notificationId, socket.data.userId);
-      if (typeof acknowledge === "function") acknowledge({ success: true, data: notification });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to mark notification read";
-      if (typeof acknowledge === "function") acknowledge({ success: false, message });
-      socket.emit("notificationError", { message });
-    }
-  });
-};
-
-const handleSocketAction = async (
-  socket: ChatSocket,
-  acknowledge: unknown,
-  action: () => Promise<unknown>
-) => {
-  try {
-    if (isRateLimited(socket.id)) {
-      const msg = "Rate limit exceeded. Please slow down.";
-      if (typeof acknowledge === "function") acknowledge({ success: false, message: msg });
-      socket.emit("chatError", { message: msg });
-      return;
-    }
-    const result = await action();
-    if (typeof acknowledge === "function") acknowledge({ success: true, data: result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Socket event failed";
-    if (typeof acknowledge === "function") acknowledge({ success: false, message });
-    socket.emit("chatError", { message });
-  }
-};
-
-const tokenFrom = (socket: Socket) => {
+const tokenFrom = (socket: Socket): string | undefined => {
   const authToken = socket.handshake.auth?.token;
   if (typeof authToken === "string") return authToken;
   const header = socket.handshake.headers.authorization;
@@ -450,37 +76,170 @@ const tokenFrom = (socket: Socket) => {
   return undefined;
 };
 
-const hasMembership = async (communityId: string, userId: string) => {
-  try {
-    await chatService.requireMembership(communityId, userId);
-    return true;
-  } catch {
-    return false;
-  }
+const registerNotificationHandlers = (_io: Server, socket: Socket): void => {
+  socket.on("subscribeNotifications", async (acknowledge?: (res: unknown) => void) => {
+    try {
+      await socket.join(`user:${socket.data.userId}`);
+      if (typeof acknowledge === "function") acknowledge({ success: true });
+    } catch {
+      if (typeof acknowledge === "function") {
+        acknowledge({ success: false, message: "Failed to subscribe" });
+      }
+    }
+  });
+
+  socket.on("markNotificationRead", async (payload: unknown, acknowledge?: (res: unknown) => void) => {
+    try {
+      const rawId =
+        typeof payload === "string" ? payload : (payload as Record<string, unknown>)?.notificationId;
+      const {
+        params: { notificationId }
+      } = notificationIdParamsSchema.parse({ params: { notificationId: rawId } });
+
+      const notification = await notificationService.markAsRead(notificationId, socket.data.userId);
+      if (typeof acknowledge === "function") {
+        acknowledge({ success: true, data: notification });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to mark notification read";
+      if (typeof acknowledge === "function") {
+        acknowledge({ success: false, message });
+      }
+      socket.emit("notificationError", { message });
+    }
+  });
 };
 
-const roomFor = (communityId: string) => `community:${communityId}`;
+let socketServerInstance: Server | null = null;
 
-const dmRoomFor = (conversationId: string) => `dm:${conversationId}`;
+export const getSocketServer = (): Server | null => socketServerInstance;
 
-const userRoomFor = (userId: string) => `user:${userId}`;
+/**
+ * Main Socket.IO Server Initialization & Dispatch Gateway
+ */
+export const initializeSockets = (server: HttpServer): Server => {
+  const io = new Server(server, {
+    cors: {
+      origin(origin, callback) {
+        if (isOriginAllowed(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`Socket CORS origin '${origin}' not allowed`));
+        }
+      },
+      credentials: true
+    },
+    transports: ["websocket", "polling"],
+    maxHttpBufferSize: 1e6
+  });
 
-const addOnlineUser = (communityId: string, userId: string, socketId: string) => {
-  const room = onlineUsers.get(communityId) ?? new Map<string, Set<string>>();
-  const sockets = room.get(userId) ?? new Set<string>();
-  sockets.add(socketId);
-  room.set(userId, sockets);
-  onlineUsers.set(communityId, room);
+  // Handshake authentication middleware
+  io.use(async (socket, next) => {
+    try {
+      const token = tokenFrom(socket);
+      if (!token) {
+        throw new ApiError(401, "Socket authentication is required", [], "UNAUTHORIZED_SOCKET");
+      }
+      const payload = verifyAccessToken(token);
+      if (payload.type !== "access") {
+        throw new ApiError(401, "Invalid socket token type", [], "UNAUTHORIZED_SOCKET");
+      }
+      const user = await userRepository.findById(payload.sub);
+      if (!user || user.status !== USER_STATUS.ACTIVE) {
+        throw new ApiError(401, "User is unavailable", [], "USER_UNAVAILABLE");
+      }
+
+      socket.data.userId = user.id;
+      socket.data.role = user.role;
+      socket.data.user = {
+        id: user.id,
+        name: user.fullName,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        rollNumber: user.rollNumber,
+        academicYear: user.academicYear
+      };
+
+      next();
+    } catch (error) {
+      next(error instanceof Error ? error : new Error("UNAUTHORIZED_SOCKET"));
+    }
+  });
+
+  // Client Connection Handler
+  io.on("connection", (socket) => {
+    const userId = socket.data.userId as string;
+    const user = socket.data.user as SocketUser | undefined;
+
+    // Join personal user room
+    socket.join(`user:${userId}`);
+
+    // Join department room if available (for targeted campus alerts)
+    if (user?.department) {
+      socket.join(`dept:${user.department.toLowerCase().trim()}`);
+    }
+
+    // Join role room if available
+    if (user?.role) {
+      socket.join(`role:${user.role.toLowerCase().trim()}`);
+    }
+
+    // Register all modular controllers
+    registerPresenceHandlers(io, socket, socketRegistry);
+    registerChatHandlers(io, socket, socketRegistry);
+    registerDmHandlers(io, socket, socketRegistry);
+    registerVoiceHandlers(io, socket, socketRegistry);
+    registerAdminBroadcastHandlers(io, socket, socketRegistry);
+    registerNotificationHandlers(io, socket);
+
+    socket.on("disconnect", () => {
+      socketRateLimits.delete(socket.id);
+    });
+  });
+
+  // ── Global Event Bus Bridges ───────────────────────────────────────────────
+  chatBus.onCreated((communityId, message) => {
+    io.to(`community:${communityId}`).emit("messageCreated", message);
+    io.to(`room:${communityId}`).emit("messageCreated", message);
+    io.to(`room:${communityId}`).emit("newMessage", message);
+  });
+  chatBus.onUpdated((communityId, message) => {
+    io.to(`community:${communityId}`).emit("messageUpdated", message);
+    io.to(`room:${communityId}`).emit("messageUpdated", message);
+  });
+  chatBus.onDeleted((communityId, message) => {
+    io.to(`community:${communityId}`).emit("messageDeleted", message);
+    io.to(`room:${communityId}`).emit("messageDeleted", message);
+  });
+
+  dmBus.onCreated((conversationId, message) => {
+    io.to(`dm:${conversationId}`).emit("directMessageCreated", message);
+    io.to(`dm:${conversationId}`).emit("dm:messageReceived", message);
+    io.to(`dm:${conversationId}`).emit("directMessageReceived", message);
+  });
+  dmBus.onUpdated((conversationId, message) => {
+    io.to(`dm:${conversationId}`).emit("directMessageUpdated", message);
+  });
+  dmBus.onDeleted((conversationId, message) => {
+    io.to(`dm:${conversationId}`).emit("directMessageDeleted", message);
+  });
+  dmBus.onRead((conversationId, message) => {
+    io.to(`dm:${conversationId}`).emit("messageRead", message as Record<string, unknown>);
+    io.to(`dm:${conversationId}`).emit("dm:messageRead", message as Record<string, unknown>);
+  });
+
+  notificationBus.onCreated((userId, notification) => {
+    io.to(`user:${userId}`).emit("notificationCreated", notification);
+    io.to(`user:${userId}`).emit("unreadCountUpdate", { count: 1 });
+  });
+  notificationBus.onUpdated((userId, notification) => {
+    io.to(`user:${userId}`).emit("notificationUpdated", notification);
+  });
+  notificationBus.onDeleted((userId, notification) => {
+    io.to(`user:${userId}`).emit("notificationDeleted", notification);
+  });
+
+  socketServerInstance = io;
+  return io;
 };
-
-const removeOnlineUser = (communityId: string, userId: string, socketId: string) => {
-  const room = onlineUsers.get(communityId);
-  const sockets = room?.get(userId);
-  if (!room || !sockets) return false;
-  sockets.delete(socketId);
-  if (sockets.size === 0) room.delete(userId);
-  if (room.size === 0) onlineUsers.delete(communityId);
-  return true;
-};
-
-const onlineUserIdsFor = (communityId: string) => [...(onlineUsers.get(communityId)?.keys() ?? [])];

@@ -41,7 +41,7 @@ export function NotificationCard({ notification, onMarkRead, onDelete }: Notific
             {notification.title}
           </p>
           {!notification.isRead && (
-            <span className="size-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 shrink-0" />
+            <span className="size-1.5 rounded-full bg-[#1E90FF] shadow-xs shadow-[#1E90FF] shrink-0" />
           )}
         </div>
         <p className="text-[11px] leading-relaxed text-slate-500 line-clamp-2 dark:text-slate-400">{notification.message}</p>
@@ -109,9 +109,9 @@ function themeFor(type: NotificationType) {
     case "NEW_MESSAGE":
     case "DIRECT_MESSAGE":
       return {
-        bg: "bg-indigo-50/40 dark:bg-indigo-950/15",
-        border: "border-indigo-250 dark:border-indigo-900/30",
-        badge: "bg-indigo-100 text-indigo-750 dark:bg-indigo-900/30 dark:text-indigo-400"
+        bg: "bg-[#1E90FF]/5 dark:bg-[#1E90FF]/10",
+        border: "border-[#1E90FF]/25 dark:border-[#1E90FF]/30",
+        badge: "bg-[#1E90FF]/15 text-[#1E90FF]"
       };
     case "COMMUNITY_JOIN":
     case "COMMUNITY_INVITE":

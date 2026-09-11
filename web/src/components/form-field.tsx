@@ -1,4 +1,4 @@
-import { forwardRef, useState, type InputHTMLAttributes } from "react";
+import { forwardRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 interface FormFieldProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -6,10 +6,11 @@ interface FormFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   hint?: string;
   showPasswordToggle?: boolean;
+  children?: ReactNode;
 }
 
 export const FormField = forwardRef<HTMLInputElement, FormFieldProps>(
-  ({ label, error, hint, showPasswordToggle, className = "", ...props }, ref) => {
+  ({ label, error, hint, showPasswordToggle, className = "", children, ...props }, ref) => {
     const [passwordVisible, setPasswordVisible] = useState(false);
     const isPassword = showPasswordToggle && props.type === "password";
     const actualType = isPassword && passwordVisible ? "text" : props.type;
@@ -20,13 +21,17 @@ export const FormField = forwardRef<HTMLInputElement, FormFieldProps>(
           {label}
         </span>
         <div className="relative">
-          <input
-            ref={ref}
-            className={`field ${error ? "border-red-400 focus:border-red-400 focus:ring-red-400/15" : ""} ${isPassword ? "pr-11" : ""} ${className}`}
-            {...props}
-            type={actualType}
-          />
-          {isPassword && (
+          {children ? (
+            children
+          ) : (
+            <input
+              ref={ref}
+              className={`field ${error ? "border-red-400 focus:border-red-400 focus:ring-red-400/15" : ""} ${isPassword ? "pr-11" : ""} ${className}`}
+              {...props}
+              type={actualType}
+            />
+          )}
+          {isPassword && !children && (
             <button
               type="button"
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"

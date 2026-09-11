@@ -50,6 +50,7 @@ public class ChatService {
     private final FileStorageService storageService;
     private final MongoTemplate mongoTemplate;
     private final SimpMessagingTemplate messagingTemplate;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     public ChatService(
             MessageRepository messages,
@@ -57,13 +58,15 @@ public class ChatService {
             UserRepository users,
             FileStorageService storageService,
             MongoTemplate mongoTemplate,
-            SimpMessagingTemplate messagingTemplate) {
+            SimpMessagingTemplate messagingTemplate,
+            org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.messages = messages;
         this.members = members;
         this.users = users;
         this.storageService = storageService;
         this.mongoTemplate = mongoTemplate;
         this.messagingTemplate = messagingTemplate;
+        this.eventPublisher = eventPublisher;
     }
 
     public PaginatedChatMessagesDto listMessages(String communityId, String userId, int page, int limit, String order) {
@@ -121,6 +124,7 @@ public class ChatService {
         message.setDeleted(false);
         Message created = messages.save(message);
         ChatMessageDto dto = toDto(created);
+        eventPublisher.publishEvent(new com.studyconnect.backend.event.ChatEvent(com.studyconnect.backend.event.ChatEvent.EventType.CREATED, communityId, dto));
         messagingTemplate.convertAndSend(RealtimeTopics.communityMessageCreated(communityId), dto);
         return dto;
     }
@@ -144,6 +148,7 @@ public class ChatService {
         message.setEditedAt(Instant.now());
         Message saved = messages.save(message);
         ChatMessageDto dto = toDto(saved);
+        eventPublisher.publishEvent(new com.studyconnect.backend.event.ChatEvent(com.studyconnect.backend.event.ChatEvent.EventType.UPDATED, communityId, dto));
         messagingTemplate.convertAndSend(RealtimeTopics.communityMessageUpdated(communityId), dto);
         return dto;
     }
@@ -168,6 +173,7 @@ public class ChatService {
         message.setEditedAt(null);
         Message saved = messages.save(message);
         ChatMessageDto dto = toDto(saved);
+        eventPublisher.publishEvent(new com.studyconnect.backend.event.ChatEvent(com.studyconnect.backend.event.ChatEvent.EventType.DELETED, communityId, dto));
         messagingTemplate.convertAndSend(RealtimeTopics.communityMessageDeleted(communityId), dto);
         return dto;
     }

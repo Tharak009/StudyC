@@ -114,7 +114,7 @@ export function ChartCard({ title, type }: ChartCardProps) {
       <path
         d="M 48 100 Q 128 80 208 60 T 368 75 T 448 50"
         fill="none"
-        stroke="#f43f5e"
+        stroke="#1E90FF"
         strokeWidth="2.5"
         strokeLinecap="round"
       />

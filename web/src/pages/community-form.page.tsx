@@ -1,6 +1,7 @@
+import { useState, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, LoaderCircle, Save } from "lucide-react";
+import { Camera, LoaderCircle, Save, Trash2, Upload } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router";
 import { z } from "zod";
@@ -25,6 +26,7 @@ export function CommunityFormPage({ mode }: { mode: "create" | "edit" }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isEdit = mode === "edit";
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const existing = useQuery({
     queryKey: ["community", id],
@@ -81,6 +83,21 @@ export function CommunityFormPage({ mode }: { mode: "create" | "edit" }) {
       navigate(`/communities/${community._id}`);
     }
   });
+
+  useEffect(() => {
+    if (existing.data?.bannerImage) {
+      setPreviewImage(existing.data.bannerImage);
+    }
+  }, [existing.data]);
+
+  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => setPreviewImage(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
 
   if (isEdit && existing.isLoading) {
     return <div className="py-16 text-sm text-slate-500">Loading community...</div>;
@@ -144,16 +161,59 @@ export function CommunityFormPage({ mode }: { mode: "create" | "edit" }) {
           placeholder="java, dsa, interview"
           {...register("tagsText")}
         />
-        <label className="block">
+        <div>
           <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-            Banner image
+            Community Banner / Custom Photo
           </span>
-          <span className="field flex cursor-pointer items-center gap-3">
-            <Camera size={17} className="text-slate-400" />
-            <span className="text-slate-500">Upload JPEG, PNG, or WebP</span>
-            <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" {...register("bannerImage")} />
-          </span>
-        </label>
+
+          {previewImage ? (
+            <div className="relative h-44 w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 group mb-2 shadow-sm">
+              <img
+                src={previewImage}
+                alt="Community banner preview"
+                className="h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                <label className="px-4 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold flex items-center gap-1.5 hover:bg-sky-500 cursor-pointer shadow-md">
+                  <Camera size={14} />
+                  <span>Change Photo</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="sr-only"
+                    {...register("bannerImage", { onChange: handleBannerChange })}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImage(null)}
+                  className="px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold flex items-center gap-1.5 hover:bg-rose-500 cursor-pointer shadow-md"
+                >
+                  <Trash2 size={14} />
+                  <span>Remove</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <label className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-slate-300 dark:border-white/10 hover:border-sky-500 dark:hover:border-sky-500 bg-slate-50/60 dark:bg-white/[0.02] cursor-pointer transition-colors text-center">
+              <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-500 mb-2">
+                <Camera size={22} />
+              </div>
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                Upload Custom Community Photo / Banner
+              </span>
+              <span className="text-xs text-slate-400 mt-1">
+                JPEG, PNG, or WebP (max 5MB)
+              </span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                {...register("bannerImage", { onChange: handleBannerChange })}
+              />
+            </label>
+          )}
+        </div>
 
         {mutation.isError && (
           <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">

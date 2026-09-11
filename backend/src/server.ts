@@ -9,8 +9,11 @@ const start = async (): Promise<void> => {
   const server = createServer(app);
   initializeSockets(server);
 
-  server.listen(env.PORT, () => {
-    console.info(`StudyConnect API listening on port ${env.PORT}`);
+  const port = Number(process.env.PORT) || env.PORT || 5000;
+  const host = "0.0.0.0";
+
+  server.listen(port, host, () => {
+    console.info(`StudyConnect API listening on http://${host}:${port}`);
   });
 
   const shutdown = (signal: string) => {

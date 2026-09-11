@@ -1,4 +1,4 @@
-import { FileText, MoreHorizontal, Pencil, Reply, Trash2 } from "lucide-react";
+import { FileText, Pencil, Reply, Trash2, Download } from "lucide-react";
 import { Avatar } from "./avatar";
 import type { ChatMessage } from "../types/chat";
 
@@ -22,39 +22,52 @@ export function MessageBubble({
   const canDelete = isOwn || canModerate;
 
   return (
-    <article className={`group flex gap-3 py-3 ${isOwn ? "sm:flex-row-reverse" : ""}`}>
+    <article className={`group flex gap-3 py-3 ${isOwn ? "flex-row-reverse" : ""}`}>
       <Avatar
         name={message.senderId.fullName}
         src={message.senderId.profilePicture}
-        className="mt-1 size-9 shrink-0"
+        className="mt-0.5 size-9 shrink-0 ring-2 ring-sky-400/20"
       />
-      <div className={`min-w-0 max-w-[min(760px,86%)] ${isOwn ? "items-end" : ""}`}>
+      <div className={`min-w-0 max-w-[min(720px,85%)] ${isOwn ? "items-end" : ""}`}>
         <div className={`mb-1 flex items-center gap-2 ${isOwn ? "justify-end" : ""}`}>
-          <span className="text-sm font-semibold">{message.senderId.fullName}</span>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs font-bold text-foreground">{message.senderId.fullName}</span>
+          <span className="text-[10px] text-muted-foreground font-medium">
             {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
-          {message.edited && !message.deleted && <span className="text-xs text-slate-400">edited</span>}
+          {message.edited && !message.deleted && (
+            <span className="text-[10px] text-muted-foreground/70 italic">(edited)</span>
+          )}
         </div>
 
-        <div className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
-          isOwn
-            ? "bg-slate-950 text-white dark:bg-white dark:text-ink-950"
-            : "bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 dark:bg-white/[0.05] dark:text-slate-200 dark:ring-white/10"
-        }`}>
+        <div
+          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all ${
+            isOwn
+              ? "bg-gradient-to-r from-sky-500 to-violet-600 text-white font-medium rounded-tr-none"
+              : "bg-card text-foreground border border-border rounded-tl-none"
+          }`}
+        >
           {message.replyTo && (
-            <div className={`mb-2 border-l-2 pl-2 text-xs ${
-              isOwn ? "border-white/30 text-white/70 dark:border-ink-950/30 dark:text-ink-950/60" : "border-signal-400 text-slate-500 dark:text-slate-400"
-            }`}>
-              Replying to {message.replyTo.senderId?.fullName ?? "a message"}:{" "}
+            <div
+              className={`mb-2 border-l-2 pl-2.5 py-0.5 text-xs rounded-r ${
+                isOwn
+                  ? "border-white/40 bg-white/10 text-white/90"
+                  : "border-sky-400 bg-sky-400/5 text-muted-foreground"
+              }`}
+            >
+              <span className="font-bold">Replying to {message.replyTo.senderId?.fullName ?? "a message"}</span>:{" "}
               {message.replyTo.deleted ? "deleted message" : message.replyTo.content.slice(0, 80)}
             </div>
           )}
+
           {message.deleted ? (
-            <p className="italic opacity-65">This message was deleted.</p>
+            <p className="italic text-xs opacity-75">This message was deleted.</p>
           ) : (
             <>
-              {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+              {message.content && (
+                <p className="whitespace-pre-wrap break-words">{message.content}</p>
+              )}
+
+              {/* Attachments Card Render */}
               {message.attachments.length > 0 && (
                 <div className="mt-3 space-y-2">
                   {message.attachments.map((attachment) => (
@@ -63,12 +76,22 @@ export function MessageBubble({
                       href={attachment.url}
                       target="_blank"
                       rel="noreferrer"
-                      className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
-                        isOwn ? "bg-white/10 dark:bg-ink-950/10" : "bg-slate-100 dark:bg-white/[0.06]"
+                      className={`flex items-center justify-between gap-3 rounded-xl p-3 text-xs font-semibold border transition-all ${
+                        isOwn
+                          ? "bg-white/15 border-white/20 hover:bg-white/25 text-white"
+                          : "bg-muted/50 border-border hover:bg-muted text-foreground"
                       }`}
                     >
-                      <FileText size={15} />
-                      <span className="truncate">{attachment.originalName}</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`p-2 rounded-lg ${isOwn ? "bg-white/20" : "bg-sky-400/10 text-sky-500"}`}>
+                          <FileText size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate font-bold">{attachment.originalName}</p>
+                          <p className="text-[10px] opacity-80">{attachment.mimeType || "Document"}</p>
+                        </div>
+                      </div>
+                      <Download size={14} className="shrink-0 opacity-80 hover:opacity-100" />
                     </a>
                   ))}
                 </div>
@@ -77,22 +100,41 @@ export function MessageBubble({
           )}
         </div>
 
+        {/* Message Actions */}
         {!message.deleted && (
-          <div className={`mt-1 flex gap-1 opacity-0 transition group-hover:opacity-100 ${isOwn ? "justify-end" : ""}`}>
-            <button className="icon-button size-8" type="button" onClick={() => onReply(message)} aria-label="Reply">
-              <Reply size={14} />
+          <div
+            className={`mt-1 flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100 ${
+              isOwn ? "justify-end" : ""
+            }`}
+          >
+            <button
+              className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              type="button"
+              onClick={() => onReply(message)}
+              title="Reply"
+            >
+              <Reply size={13} />
             </button>
             {isOwn && (
-              <button className="icon-button size-8" type="button" onClick={() => onEdit(message)} aria-label="Edit">
-                <Pencil size={14} />
+              <button
+                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                type="button"
+                onClick={() => onEdit(message)}
+                title="Edit"
+              >
+                <Pencil size={13} />
               </button>
             )}
             {canDelete && (
-              <button className="icon-button size-8 hover:text-red-600 dark:hover:text-red-400" type="button" onClick={() => onDelete(message)} aria-label="Delete">
-                <Trash2 size={14} />
+              <button
+                className="p-1 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                type="button"
+                onClick={() => onDelete(message)}
+                title="Delete"
+              >
+                <Trash2 size={13} />
               </button>
             )}
-            {!isOwn && <MoreHorizontal size={14} className="mt-2 text-slate-300" />}
           </div>
         )}
       </div>

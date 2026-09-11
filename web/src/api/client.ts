@@ -1,6 +1,7 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type { ApiResponse } from "../types/auth";
 import { tokenService } from "../services/token.service";
+import { useToastStore } from "../store/toast.store";
 
 const baseURL = import.meta.env.VITE_API_URL ?? "";
 
@@ -45,10 +46,17 @@ const refreshAccessToken = (): Promise<string> => {
 
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError) => {
+  async (error: AxiosError<{ message?: string }>) => {
     const original = error.config as RetryConfig | undefined;
     const isAuthRoute = original?.url?.includes("/api/auth/");
 
+    // Rate limiting handler (429)
+    if (error.response?.status === 429) {
+      const msg = error.response.data?.message || "Rate limit reached. Please slow down and try again in a moment.";
+      useToastStore.getState().addToast(msg, "warning");
+    }
+
+    // Auto-refresh token handler (401)
     if (error.response?.status === 401 && original && !original._retry && !isAuthRoute) {
       original._retry = true;
       try {

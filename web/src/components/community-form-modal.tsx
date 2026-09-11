@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Camera, Upload, Trash2 } from "lucide-react";
 import { Button } from "./button";
 import { Input } from "./input";
 import { COMMUNITY_CATEGORIES, type Community, type CommunityVisibility, type CommunityCategory } from "../types/community";
@@ -30,6 +30,23 @@ export function CommunityFormModal({ community, onClose, onSave }: CommunityForm
   const [bannerImage, setBannerImage] = useState("");
   const [rules, setRules] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File size exceeds 5MB limit");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setBannerImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (community) {
@@ -169,12 +186,70 @@ export function CommunityFormModal({ community, onClose, onSave }: CommunityForm
             </div>
           </div>
 
-          <Input
-            label="Banner Image URL (Optional)"
-            value={bannerImage}
-            onChange={(e) => setBannerImage(e.target.value)}
-            placeholder="https://images.unsplash.com/photo-..."
-          />
+          {/* Custom Community Image / Banner Uploader */}
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold text-slate-550 dark:text-slate-400">
+              Community Photo / Banner
+            </label>
+
+            {bannerImage ? (
+              <div className="relative h-28 w-full rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 group">
+                <img
+                  src={bannerImage}
+                  alt="Community Banner Preview"
+                  className="h-full w-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs font-bold flex items-center gap-1 hover:bg-sky-500 cursor-pointer"
+                  >
+                    <Camera size={13} />
+                    <span>Change</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBannerImage("")}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold flex items-center gap-1 hover:bg-rose-500 cursor-pointer"
+                  >
+                    <Trash2 size={13} />
+                    <span>Remove</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/10 hover:border-sky-500/50 dark:hover:border-sky-500/50 bg-slate-50/50 dark:bg-white/[0.02] cursor-pointer transition-colors"
+              >
+                <div className="p-2 rounded-xl bg-sky-500/10 text-sky-500 mb-1.5">
+                  <Upload size={18} />
+                </div>
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  Upload Custom Community Photo
+                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5">
+                  PNG, JPG, or WebP up to 5MB
+                </span>
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+
+            <Input
+              label="Or paste an image URL"
+              value={bannerImage.startsWith("data:") ? "" : bannerImage}
+              onChange={(e) => setBannerImage(e.target.value)}
+              placeholder="https://images.unsplash.com/photo-..."
+            />
+          </div>
 
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-550 dark:text-slate-400">

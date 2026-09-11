@@ -1,6 +1,11 @@
 import type { Request, Response } from "express";
+import { Types } from "mongoose";
 import { communityService } from "../services/community.service.js";
 import { ApiResponse } from "../utils/api-response.js";
+import { ApiError } from "../utils/api-error.js";
+import { Community, type IChannel } from "../models/community.model.js";
+import { AdminLog } from "../models/admin-log.model.js";
+import { getSocketServer } from "../sockets/index.js";
 import type {
   CreateCommunityInput,
   ListCommunitiesQuery,
@@ -85,6 +90,106 @@ export class CommunityController {
       request.user!.id
     );
     response.json(new ApiResponse(200, members, "Member removed"));
+  }
+
+  async updateChannelStudyMode(request: Request, response: Response) {
+    const communityId = param(request, "id");
+    const channelId = param(request, "channelId");
+    const userId = request.user!.id;
+    const userRole = request.user!.role;
+
+    const community = await Community.findById(communityId);
+    if (!community) {
+      throw new ApiError(404, "Community not found", [], "COMMUNITY_NOT_FOUND");
+    }
+
+    const isOwner = community.owner.toString() === userId;
+    const isModerator = community.moderators.some((m) => m.toString() === userId);
+    const isAdmin = userRole === "ADMIN";
+
+    if (!isOwner && !isModerator && !isAdmin) {
+      throw new ApiError(
+        403,
+        "Only verified room moderators or administrators can configure study mode",
+        [],
+        "FORBIDDEN_STUDY_MODE"
+      );
+    }
+
+    const {
+      isStrictStudyMode,
+      academicContextTags,
+      strictnessThreshold,
+      allowCodeSnippetsOnly,
+      strikeLimitBeforeTimeout,
+      timeoutDurationMinutes
+    } = request.body;
+
+    let targetChannel = community.channels.find(
+      (c) => c._id?.toString() === channelId || c.name.toLowerCase() === channelId.toLowerCase()
+    );
+
+    if (!targetChannel) {
+      const newChan: IChannel = {
+        name: channelId,
+        type: "text",
+        isStrictStudyMode: isStrictStudyMode ?? true,
+        academicContextTags: Array.isArray(academicContextTags)
+          ? academicContextTags
+          : ["algorithms", "code", "homework", "exam"],
+        strictnessThreshold:
+          typeof strictnessThreshold === "number" ? strictnessThreshold : 0.4,
+        allowCodeSnippetsOnly: Boolean(allowCodeSnippetsOnly),
+        strikeLimitBeforeTimeout: strikeLimitBeforeTimeout ?? 3,
+        timeoutDurationMinutes: timeoutDurationMinutes ?? 5
+      };
+      community.channels.push(newChan);
+      targetChannel = newChan;
+    } else {
+      if (typeof isStrictStudyMode === "boolean") targetChannel.isStrictStudyMode = isStrictStudyMode;
+      if (Array.isArray(academicContextTags)) targetChannel.academicContextTags = academicContextTags;
+      if (typeof strictnessThreshold === "number") targetChannel.strictnessThreshold = strictnessThreshold;
+      if (typeof allowCodeSnippetsOnly === "boolean") targetChannel.allowCodeSnippetsOnly = allowCodeSnippetsOnly;
+      if (typeof strikeLimitBeforeTimeout === "number") targetChannel.strikeLimitBeforeTimeout = strikeLimitBeforeTimeout;
+      if (typeof timeoutDurationMinutes === "number") targetChannel.timeoutDurationMinutes = timeoutDurationMinutes;
+    }
+
+    await community.save();
+
+    // Log admin / mod audit trail
+    try {
+      await AdminLog.create({
+        adminId: new Types.ObjectId(userId),
+        adminName: request.user?.fullName || "Room Moderator",
+        action: "UPDATE_CHANNEL_STUDY_MODE",
+        targetType: "Channel",
+        targetId: channelId,
+        details: {
+          communityId,
+          channelId,
+          isStrictStudyMode: targetChannel?.isStrictStudyMode,
+          academicContextTags: targetChannel?.academicContextTags,
+          strictnessThreshold: targetChannel?.strictnessThreshold,
+          allowCodeSnippetsOnly: targetChannel?.allowCodeSnippetsOnly
+        }
+      });
+    } catch {}
+
+    // Emit live socket event to all active room subscribers
+    try {
+      const io = getSocketServer();
+      if (io) {
+        const payload = {
+          communityId,
+          channelId,
+          channel: targetChannel
+        };
+        io.to(`room:${communityId}`).emit("channel:studyModeUpdated", payload);
+        io.to(`room:${communityId}:${channelId}`).emit("channel:studyModeUpdated", payload);
+      }
+    } catch {}
+
+    response.json(new ApiResponse(200, targetChannel, "Channel study mode configuration updated"));
   }
 }
 

@@ -475,8 +475,8 @@ export function AnalyticsDashboardPage() {
                 <InteractiveComboChart
                   title="Daily Active Users vs. New Registrations"
                   data={dauData}
-                  color="#3b82f6"
-                  secondaryColor="#f43f5e"
+                  color="#1E90FF"
+                  secondaryColor="#10b981"
                 />
                 <InteractiveLineChart
                   title="Monthly Active Users Trend"

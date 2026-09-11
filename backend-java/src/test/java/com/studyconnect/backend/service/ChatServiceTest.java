@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -37,6 +38,7 @@ class ChatServiceTest {
     @Mock private FileStorageService storageService;
     @Mock private MongoTemplate mongoTemplate;
     @Mock private SimpMessagingTemplate messagingTemplate;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @Test
     void createMessageStoresAttachmentAndBroadcasts() {
@@ -52,7 +54,7 @@ class ChatServiceTest {
         });
         when(users.findById("user-1")).thenReturn(Optional.of(baseUser("user-1")));
 
-        ChatService service = new ChatService(messages, members, users, storageService, mongoTemplate, messagingTemplate);
+        ChatService service = new ChatService(messages, members, users, storageService, mongoTemplate, messagingTemplate, eventPublisher);
         var result = service.createMessage(
                 "community-1",
                 "user-1",
@@ -74,7 +76,7 @@ class ChatServiceTest {
         when(mongoTemplate.count(any(Query.class), eq(Message.class))).thenReturn(1L);
         when(users.findById("user-1")).thenReturn(Optional.of(baseUser("user-1")));
 
-        ChatService service = new ChatService(messages, members, users, storageService, mongoTemplate, messagingTemplate);
+        ChatService service = new ChatService(messages, members, users, storageService, mongoTemplate, messagingTemplate, eventPublisher);
         var result = service.listMessages("community-1", "user-1", 1, 30, "latest");
 
         assertThat(result.items()).hasSize(1);
@@ -86,7 +88,7 @@ class ChatServiceTest {
         when(members.findByCommunityIdAndUserId("community-1", "user-2")).thenReturn(Optional.of(member("community-1", "user-2", CommunityRole.MEMBER)));
         when(messages.findById("message-1")).thenReturn(Optional.of(baseMessage("message-1", "community-1", "user-1")));
 
-        ChatService service = new ChatService(messages, members, users, storageService, mongoTemplate, messagingTemplate);
+        ChatService service = new ChatService(messages, members, users, storageService, mongoTemplate, messagingTemplate, eventPublisher);
         ApiException exception = assertThrows(ApiException.class, () -> service.editMessage("community-1", "message-1", "user-2", "Updated"));
 
         assertThat(exception.getCode()).isEqualTo("MESSAGE_EDIT_FORBIDDEN");
@@ -99,7 +101,7 @@ class ChatServiceTest {
         when(messages.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(users.findById("user-1")).thenReturn(Optional.of(baseUser("user-1")));
 
-        ChatService service = new ChatService(messages, members, users, storageService, mongoTemplate, messagingTemplate);
+        ChatService service = new ChatService(messages, members, users, storageService, mongoTemplate, messagingTemplate, eventPublisher);
         var deleted = service.deleteMessage("community-1", "message-1", "user-2");
 
         assertThat(deleted.deleted()).isTrue();

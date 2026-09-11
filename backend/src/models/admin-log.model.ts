@@ -2,9 +2,11 @@ import { Schema, model, type HydratedDocument, type Model, type Types } from "mo
 
 export interface IAdminLog {
   adminId: Types.ObjectId;
+  adminName?: string;
   action: string;
   targetType: string;
   targetId: string | null;
+  ipAddress?: string;
   details: Record<string, unknown>;
   createdAt: Date;
 }
@@ -15,9 +17,11 @@ type AdminLogModel = Model<IAdminLog>;
 const adminLogSchema = new Schema<IAdminLog, AdminLogModel>(
   {
     adminId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    adminName: { type: String, trim: true },
     action: { type: String, required: true, trim: true, maxlength: 100 },
     targetType: { type: String, required: true, trim: true, maxlength: 50 },
     targetId: { type: String, default: null },
+    ipAddress: { type: String, trim: true },
     details: { type: Schema.Types.Mixed, default: {} }
   },
   { timestamps: { createdAt: true, updatedAt: false }, versionKey: false }

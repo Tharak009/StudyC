@@ -67,7 +67,9 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       </div>
 
       {/* Navigation list */}
-      <nav className="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin">
+      <nav className={`flex-1 p-3 space-y-1 scrollbar-none no-scrollbar overflow-x-hidden ${
+        collapsed ? "overflow-hidden" : "overflow-y-auto"
+      }`}>
         {navItems.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}

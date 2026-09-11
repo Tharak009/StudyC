@@ -16,8 +16,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, Navigate } from "react-router";
 import { Avatar } from "../components/avatar";
 import { Brand } from "../components/brand";
-import { NotificationBell } from "../components/notification-bell";
-import { NotificationDropdown } from "../components/notification-dropdown";
+import { ModernNotificationHub } from "../components/modern-notification-hub";
 import { ThemeToggle } from "../components/theme-toggle";
 import { useLogout } from "../hooks/use-auth";
 import { useSocketNotifications } from "../hooks/use-socket-notifications";
@@ -37,7 +36,6 @@ const navigation = [
 
 export function AppLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
   const user = useAuthStore((state) => state.user)!;
   const logout = useLogout();
 
@@ -147,13 +145,7 @@ export function AppLayout() {
             Verified campus workspace
           </p>
           <div className="ml-auto flex items-center gap-2">
-            <div className="relative">
-              <NotificationBell
-                onClick={() => setNotifOpen(!notifOpen)}
-                hasNotifications={(unreadData?.count ?? 0) > 0}
-              />
-              {notifOpen && <NotificationDropdown onClose={() => setNotifOpen(false)} />}
-            </div>
+            <ModernNotificationHub />
             <ThemeToggle />
             <NavLink to="/profile" className="icon-button" aria-label="Profile settings">
               <Settings size={18} />
