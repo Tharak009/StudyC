@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
@@ -10,29 +10,62 @@ import {
   Clock,
   Lightbulb,
   Search,
-  RotateCcw
+  RotateCcw,
+  Loader2
 } from "lucide-react";
 import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { EventsFilterBar, eventDepartments } from "../components/events/EventsFilterBar";
 import { EventCard, type CampusEvent } from "../components/events/EventCard";
 import { MonthlyCalendarView } from "../components/events/MonthlyCalendarView";
 import { CreateEventModal } from "../components/events/CreateEventModal";
+import { eventsApi, type BackendEvent, type CreateEventPayload } from "../api/events.api";
+import { useAuthStore } from "../store/auth.store";
+import { useToastStore } from "../store/toast.store";
 
-// ── LocalStorage Key & State Loader ──────────────────────────────────────────
+function mapBackendToCampusEvent(b: BackendEvent, currentUserId?: string): CampusEvent {
+  const creator = typeof b.createdBy === "object" ? b.createdBy : null;
+  const initials = creator?.fullName
+    ? creator.fullName
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : "EV";
 
-const EVENTS_STORAGE_KEY = "studyconnect_campus_events";
+  const isRegistered = Array.isArray(b.attendees)
+    ? b.attendees.some((a) => (typeof a === "object" ? a._id === currentUserId : a === currentUserId))
+    : false;
 
-function loadSavedEvents(): CampusEvent[] {
-  try {
-    const raw = localStorage.getItem(EVENTS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return {
+    id: b._id,
+    _id: b._id,
+    title: b.title,
+    category: b.category,
+    organizer: b.organizer,
+    dateStr: b.dateStr,
+    timeStr: b.timeStr,
+    venue: b.venue,
+    isVirtual: b.isVirtual,
+    description: b.description,
+    tags: b.tags || [],
+    attendeesCount: b.attendeesCount || 1,
+    batchAttendeesCount: b.attendeesCount || 1,
+    attendeeInitials: [initials],
+    daysLeft: "Upcoming",
+    isUrgent: b.category === "deadlines",
+    isRegistered,
+    department: b.department,
+    createdBy: b.createdBy
+  };
 }
 
 export function EventsPage() {
-  const [events, setEvents] = useState<CampusEvent[]>(loadSavedEvents);
+  const currentUser = useAuthStore((state) => state.user);
+  const { addToast } = useToastStore();
+
+  const [events, setEvents] = useState<CampusEvent[]>([]);
+  const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"feed" | "calendar">("feed");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -41,16 +74,22 @@ export function EventsPage() {
   const [myRsvpsOnly, setMyRsvpsOnly] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  // Sync helper
-  const updateEvents = (newEventsOrFn: CampusEvent[] | ((prev: CampusEvent[]) => CampusEvent[])) => {
-    setEvents((prev) => {
-      const next = typeof newEventsOrFn === "function" ? newEventsOrFn(prev) : newEventsOrFn;
-      try {
-        localStorage.setItem(EVENTS_STORAGE_KEY, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  };
+  // Load events from backend
+  const loadEvents = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await eventsApi.list();
+      setEvents(data.map((item) => mapBackendToCampusEvent(item, currentUser?._id)));
+    } catch {
+      addToast("Unable to fetch campus events from server.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser?._id, addToast]);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
 
   // ── Dynamic KPI Calculations ──────────────────────────────────────────────
   const activeDeadlinesCount = useMemo(
@@ -88,18 +127,39 @@ export function EventsPage() {
     });
   }, [events, myRsvpsOnly, selectedCategory, searchQuery]);
 
-  const handleToggleRsvp = (eventId: string) => {
-    updateEvents((prev) =>
-      prev.map((e) =>
-        e.id === eventId
-          ? {
-              ...e,
-              isRegistered: !e.isRegistered,
-              attendeesCount: e.isRegistered ? Math.max(0, e.attendeesCount - 1) : e.attendeesCount + 1
-            }
-          : e
-      )
-    );
+  const handleToggleRsvp = async (eventId: string) => {
+    try {
+      const res = await eventsApi.toggleRsvp(eventId);
+      setEvents((prev) =>
+        prev.map((e) =>
+          e.id === eventId
+            ? {
+                ...e,
+                isRegistered: res.isRegistered,
+                attendeesCount: res.event.attendeesCount
+              }
+            : e
+        )
+      );
+    } catch {
+      addToast("Failed to update RSVP status.", "error");
+    }
+  };
+
+  const handleCreateEvent = async (payload: CreateEventPayload) => {
+    const created = await eventsApi.create(payload);
+    const mapped = mapBackendToCampusEvent(created, currentUser?._id);
+    setEvents((prev) => [mapped, ...prev]);
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    try {
+      await eventsApi.delete(eventId);
+      setEvents((prev) => prev.filter((e) => e.id !== eventId));
+      addToast("Event deleted successfully.", "info");
+    } catch {
+      addToast("Failed to delete event.", "error");
+    }
   };
 
   const handleResetFilters = () => {
@@ -131,7 +191,7 @@ export function EventsPage() {
                 Campus Events & Academic Deadlines
               </h1>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-xl">
-                Institutional hackathons, lab review schedules, guest symposiums, and exam countdowns.
+                Institutional hackathons, lab review schedules, guest symposiums, and exam countdowns stored in real-time across the university.
               </p>
             </div>
 
@@ -219,7 +279,14 @@ export function EventsPage() {
           />
 
           {/* ── Main View Renderer: Feed vs Monthly Calendar ───────────── */}
-          {viewMode === "feed" ? (
+          {loading ? (
+            <div className="flex flex-col items-center justify-center p-16 rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0F1A30]/80">
+              <Loader2 className="size-8 animate-spin text-[#1E90FF] mb-3" />
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Loading campus events and deadlines...
+              </p>
+            </div>
+          ) : viewMode === "feed" ? (
             events.length === 0 ? (
               /* Dedicated Zero Events Empty State */
               <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0F1A30]/80 p-12 text-center backdrop-blur-xl">
@@ -265,13 +332,24 @@ export function EventsPage() {
                 layout
                 className="grid grid-cols-1 md:grid-cols-2 gap-5"
               >
-                {filteredEvents.map((ev) => (
-                  <EventCard
-                    key={ev.id}
-                    event={ev}
-                    onToggleRsvp={handleToggleRsvp}
-                  />
-                ))}
+                {filteredEvents.map((ev) => {
+                  const creatorId = typeof ev.createdBy === "object" ? ev.createdBy?._id : ev.createdBy;
+                  const canDelete = Boolean(
+                    currentUser?.role === "ADMIN" ||
+                    currentUser?.role === "MODERATOR" ||
+                    (currentUser?._id && creatorId === currentUser._id)
+                  );
+
+                  return (
+                    <EventCard
+                      key={ev.id}
+                      event={ev}
+                      onToggleRsvp={handleToggleRsvp}
+                      onDelete={handleDeleteEvent}
+                      canDelete={canDelete}
+                    />
+                  );
+                })}
               </motion.div>
             )
           ) : (
@@ -291,7 +369,7 @@ export function EventsPage() {
           <CreateEventModal
             isOpen={createModalOpen}
             onClose={() => setCreateModalOpen(false)}
-            onCreateEvent={(newEv) => updateEvents((prev) => [newEv, ...prev])}
+            onCreateEvent={handleCreateEvent}
           />
         )}
       </AnimatePresence>

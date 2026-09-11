@@ -18,6 +18,7 @@ import { useNavigate } from "react-router";
 import { communitiesApi } from "../../api/communities.api";
 import { resourcesApi } from "../../api/resources.api";
 import { usersApi } from "../../api/users.api";
+import { eventsApi } from "../../api/events.api";
 import { directMessagesApi } from "../../api/direct-messages.api";
 import { useAuthStore } from "../../store/auth.store";
 
@@ -117,42 +118,25 @@ export function UniversalSearchMenu() {
       const q = query.trim();
 
       try {
-        const [circlesRes, resourcesRes, peersRes] = await Promise.allSettled([
+        const [circlesRes, resourcesRes, peersRes, eventsRes] = await Promise.allSettled([
           communitiesApi.list({ search: q, limit: 6 }),
           resourcesApi.list({ search: q, limit: 6 }),
-          usersApi.search(q)
+          usersApi.search(q),
+          eventsApi.list({ search: q, limit: 6 })
         ]);
 
-        // Load local campus events from localStorage
         let matchedEvents: EventResult[] = [];
-        try {
-          const raw = localStorage.getItem("studyconnect_campus_events");
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              matchedEvents = parsed
-                .filter((ev: any) => {
-                  const lq = q.toLowerCase();
-                  return (
-                    ev.title?.toLowerCase().includes(lq) ||
-                    ev.organizer?.toLowerCase().includes(lq) ||
-                    ev.tags?.some((t: string) => t.toLowerCase().includes(lq)) ||
-                    ev.category?.toLowerCase().includes(lq)
-                  );
-                })
-                .slice(0, 6)
-                .map((ev: any) => ({
-                  id: ev.id,
-                  title: ev.title,
-                  category: ev.category,
-                  dateStr: ev.dateStr,
-                  timeStr: ev.timeStr,
-                  organizer: ev.organizer,
-                  urgency: ev.urgency
-                }));
-            }
-          }
-        } catch {}
+        if (eventsRes.status === "fulfilled" && Array.isArray(eventsRes.value)) {
+          matchedEvents = eventsRes.value.map((ev) => ({
+            id: ev._id,
+            title: ev.title,
+            category: ev.category,
+            dateStr: ev.dateStr,
+            timeStr: ev.timeStr,
+            organizer: ev.organizer,
+            urgency: ev.category === "deadlines" ? "Urgent" : undefined
+          }));
+        }
 
         if (!isCurrent) return;
 

@@ -12,12 +12,14 @@ import {
   CheckSquare,
   Sparkles,
   ExternalLink,
-  Volume2
+  Volume2,
+  Trash2
 } from "lucide-react";
 import { useToastStore } from "../../store/toast.store";
 
 export interface CampusEvent {
   id: string;
+  _id?: string;
   title: string;
   category: "hackathons" | "deadlines" | "workshops" | "reviews";
   organizer: string;
@@ -28,27 +30,36 @@ export interface CampusEvent {
   description: string;
   tags: string[];
   attendeesCount: number;
-  batchAttendeesCount: number;
-  attendeeInitials: string[];
+  batchAttendeesCount?: number;
+  attendeeInitials?: string[];
   daysLeft?: string;
   isUrgent?: boolean;
   isRegistered?: boolean;
+  department?: string;
+  createdBy?: any;
 }
 
 interface EventCardProps {
   event: CampusEvent;
   onToggleRsvp: (eventId: string) => void;
+  onDelete?: (eventId: string) => void;
+  canDelete?: boolean;
 }
 
-export function EventCard({ event, onToggleRsvp }: EventCardProps) {
+export function EventCard({ event, onToggleRsvp, onDelete, canDelete }: EventCardProps) {
   const { addToast } = useToastStore();
-  const [isGoing, setIsGoing] = useState(event.isRegistered || false);
+  const [isGoing, setIsGoing] = useState(Boolean(event.isRegistered));
   const [calendarAdded, setCalendarAdded] = useState(false);
 
+  React.useEffect(() => {
+    setIsGoing(Boolean(event.isRegistered));
+  }, [event.isRegistered]);
+
   const handleRsvpClick = () => {
-    setIsGoing(!isGoing);
+    const nextState = !isGoing;
+    setIsGoing(nextState);
     onToggleRsvp(event.id);
-    if (!isGoing) {
+    if (nextState) {
       addToast(`RSVP Confirmed for "${event.title}"!`, "success");
     } else {
       addToast(`Cancelled RSVP for "${event.title}".`, "info");
@@ -110,17 +121,29 @@ export function EventCard({ event, onToggleRsvp }: EventCardProps) {
             <span>{cat.label}</span>
           </span>
 
-          {event.daysLeft && (
-            <span
-              className={`text-[10px] font-bold tabular-nums px-2 py-0.5 rounded-lg border ${
-                event.isUrgent
-                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30"
-                  : "bg-slate-100 dark:bg-[#162544] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800"
-              }`}
-            >
-              {event.daysLeft}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {event.daysLeft && (
+              <span
+                className={`text-[10px] font-bold tabular-nums px-2 py-0.5 rounded-lg border ${
+                  event.isUrgent
+                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                    : "bg-slate-100 dark:bg-[#162544] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800"
+                }`}
+              >
+                {event.daysLeft}
+              </span>
+            )}
+            {canDelete && onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(event.id)}
+                className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                title="Delete Event"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ── Title & Organizer ───────────────────────────────────────── */}
@@ -170,7 +193,7 @@ export function EventCard({ event, onToggleRsvp }: EventCardProps) {
         <div className="pt-3 border-t border-slate-200/70 dark:border-slate-800/60 flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
             <div className="flex -space-x-1.5 overflow-hidden">
-              {event.attendeeInitials.slice(0, 3).map((init, iIdx) => (
+              {(event.attendeeInitials || ["EV"]).slice(0, 3).map((init, iIdx) => (
                 <div
                   key={iIdx}
                   className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1E90FF] text-white font-bold text-[9px] border border-white dark:border-[#0F1A30]"
@@ -180,7 +203,7 @@ export function EventCard({ event, onToggleRsvp }: EventCardProps) {
               ))}
             </div>
             <span className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
-              {event.attendeesCount} Attending ({event.batchAttendeesCount} from batch)
+              {event.attendeesCount} Attending {event.batchAttendeesCount ? `(${event.batchAttendeesCount} from batch)` : ""}
             </span>
           </div>
 

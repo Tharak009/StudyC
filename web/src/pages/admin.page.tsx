@@ -10,6 +10,7 @@ import { UserManagementTab } from "../components/admin/UserManagementTab";
 import { ReportsTriageTab } from "../components/admin/ReportsTriageTab";
 import { ResourceModerationTab } from "../components/admin/ResourceModerationTab";
 import { CommunityGovernanceTab } from "../components/admin/CommunityGovernanceTab";
+import { EventsGovernanceTab } from "../components/admin/tabs/EventsGovernanceTab";
 import { AuditLogTab } from "../components/admin/AuditLogTab";
 import { BroadcastModal } from "../components/admin/BroadcastModal";
 import { AdminProfilePage } from "./admin-profile.page";
@@ -120,6 +121,18 @@ export function AdminPage() {
                   transition={{ duration: 0.2 }}
                 >
                   <UserManagementTab />
+                </motion.div>
+              )}
+
+              {activeTab === "events" && (
+                <motion.div
+                  key="events"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <EventsGovernanceTab />
                 </motion.div>
               )}
 

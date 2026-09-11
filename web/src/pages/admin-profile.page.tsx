@@ -1,17 +1,9 @@
 import React, { useState, useRef, useMemo, useEffect } from "react";
 import {
   User,
-  Key,
-  Shield,
-  Bell,
   Clock,
   Camera,
   Check,
-  X,
-  Laptop,
-  Smartphone,
-  Lock,
-  AlertTriangle,
   Trash2,
   UserCheck,
   ShieldCheck,
@@ -21,29 +13,25 @@ import {
   ExternalLink,
   Save,
   CheckCircle2,
-  AlertOctagon,
-  Building2,
   Mail,
   Phone,
-  Layers,
   Activity,
-  FileCheck,
   Users,
   MessageSquare,
   ScrollText,
-  Sparkles,
-  RefreshCw,
-  LogOut,
-  Sliders
+  Calendar,
+  AlertTriangle
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useAuthStore } from "../store/auth.store";
 import { useToastStore } from "../store/toast.store";
 import { ConfirmationDialog } from "../components/confirmation-dialog";
 import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
+import { ConnectionsTab } from "../components/profile/ConnectionsTab";
+import { BroadcastModal } from "../components/admin/BroadcastModal";
 import type { AdminTabKey } from "../components/admin/AdminTabsNav";
 
-type ProfileTab = "PERSONAL" | "PASSWORD" | "SECURITY" | "NOTIFICATIONS" | "ACTIVITY";
+type ProfileTab = "PERSONAL" | "CONNECTIONS" | "ACTIVITY";
 
 interface AdminProfileData {
   fullName: string;
@@ -63,27 +51,6 @@ interface AuditLogEntry {
   targetType: string;
   targetId: string;
   metadataSummary: string;
-}
-
-function detectCurrentSession() {
-  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  let browser = "Google Chrome";
-  if (ua.includes("Firefox/")) browser = "Mozilla Firefox";
-  else if (ua.includes("Edg/")) browser = "Microsoft Edge";
-  else if (ua.includes("Safari/") && !ua.includes("Chrome/")) browser = "Apple Safari";
-  else if (ua.includes("OPR/") || ua.includes("Opera")) browser = "Opera";
-
-  let os = "Windows 11 / 10";
-  if (ua.includes("Mac OS X")) os = "macOS";
-  else if (ua.includes("Linux")) os = "Linux";
-  else if (ua.includes("Android")) os = "Android";
-  else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
-
-  let device = "Desktop Workstation";
-  if (/Mobi|Android/i.test(ua)) device = "Mobile Device";
-  else if (/Tablet|iPad/i.test(ua)) device = "Tablet Device";
-
-  return { browser, os, device };
 }
 
 function loadDynamicAdminStats() {
@@ -141,10 +108,14 @@ function loadSavedAdminProfile(user: any): AdminProfileData {
 
   return {
     fullName: saved.fullName || user?.fullName || "Administrator",
-    designation: saved.designation || (user?.role === "MODERATOR" ? "Faculty Content Moderator" : "Campus Safety & Governance Lead"),
+    designation:
+      saved.designation ||
+      (user?.role === "MODERATOR" ? "Faculty Content Moderator" : "Campus Safety & Governance Lead"),
     department: saved.department || user?.department || "Academic Affairs & Platform Safety",
     phone: saved.phone || "",
-    bio: saved.bio || "Responsible for maintaining campus academic integrity, reviewing content reports, managing student permissions, and coordinating emergency communications.",
+    bio:
+      saved.bio ||
+      "Responsible for maintaining campus academic integrity, reviewing content reports, managing student permissions, and coordinating emergency communications.",
     profilePicture: saved.profilePicture || user?.profilePicture
   };
 }
@@ -188,39 +159,19 @@ export function AdminProfilePage({
   const [bio, setBio] = useState(profileData.bio);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profileData.profilePicture || null);
 
-  // Password fields state
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  // Notification Preferences State (persisted in localStorage)
-  const [notificationPrefs, setNotificationPrefs] = useState(() => {
-    try {
-      const saved = localStorage.getItem("studyconnect_admin_notif_prefs");
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return {
-      urgentReports: true,
-      broadcastEcho: true,
-      securityLogins: true,
-      roleEscalations: true,
-      weeklyDigest: false
-    };
-  });
-
   // Dynamic Live Stats
   const [stats, setStats] = useState(loadDynamicAdminStats);
 
   // Live Audit Logs from localStorage
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(loadAdminAuditLogs);
 
-  // Real Current Device Session
-  const currentSession = useMemo(() => detectCurrentSession(), []);
+  // Broadcast Modal State
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
 
   // Confirmation Modals State
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
-    type: "SAVE_PROFILE" | "PASSWORD" | "TERMINATE_OTHERS" | "REMOVE_PHOTO";
+    type: "SAVE_PROFILE" | "REMOVE_PHOTO";
     title: string;
     message: string;
   } | null>(null);
@@ -232,34 +183,6 @@ export function AdminProfilePage({
     setStats(loadDynamicAdminStats());
     setAuditLogs(loadAdminAuditLogs());
   }, [activeTab]);
-
-  // Password Requirements Checks
-  const passwordCriteria = useMemo(() => {
-    return {
-      length: newPassword.length >= 8,
-      uppercase: /[A-Z]/.test(newPassword),
-      numbers: /[0-9]/.test(newPassword),
-      symbols: /[^A-Za-z0-9]/.test(newPassword)
-    };
-  }, [newPassword]);
-
-  // Password Strength Meter
-  const passwordStrength = useMemo(() => {
-    if (!newPassword) return { score: 0, label: "None", color: "bg-slate-200 dark:bg-white/10" };
-    let score = 0;
-    if (passwordCriteria.length) score += 1;
-    if (passwordCriteria.uppercase) score += 1;
-    if (passwordCriteria.numbers) score += 1;
-    if (passwordCriteria.symbols) score += 1;
-
-    switch (score) {
-      case 1: return { score: 25, label: "Weak", color: "bg-rose-500" };
-      case 2: return { score: 50, label: "Fair", color: "bg-amber-500" };
-      case 3: return { score: 75, label: "Good", color: "bg-[#1E90FF]" };
-      case 4: return { score: 100, label: "Strong", color: "bg-emerald-500" };
-      default: return { score: 0, label: "None", color: "bg-slate-200" };
-    }
-  }, [newPassword, passwordCriteria]);
 
   // Photo handlers
   const handlePhotoUploadClick = () => {
@@ -318,34 +241,6 @@ export function AdminProfilePage({
         });
       }
       addToast("Administrator profile details saved successfully.", "success");
-    } else if (type === "PASSWORD") {
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      
-      // Record credential rotation in audit logs
-      const auditEntry: AuditLogEntry = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC",
-        relativeTime: "Just now",
-        adminName: fullName || user?.fullName || "Administrator",
-        action: "PASSWORD_ROTATED",
-        targetType: "Security",
-        targetId: user?._id || "Admin-Account",
-        metadataSummary: "Administrative account password successfully updated."
-      };
-      
-      try {
-        const rawLogs = localStorage.getItem("studyconnect_audit_logs");
-        const existing = rawLogs ? JSON.parse(rawLogs) : [];
-        const updatedLogs = [auditEntry, ...existing];
-        localStorage.setItem("studyconnect_audit_logs", JSON.stringify(updatedLogs));
-        setAuditLogs(updatedLogs.slice(0, 15));
-      } catch {}
-
-      addToast("Account security credentials updated successfully.", "success");
-    } else if (type === "TERMINATE_OTHERS") {
-      addToast("All secondary session tokens invalidated.", "success");
     } else if (type === "REMOVE_PHOTO") {
       setAvatarPreview(null);
       const updated = { ...profileData, profilePicture: undefined };
@@ -362,15 +257,6 @@ export function AdminProfilePage({
     setConfirmDialog(null);
   };
 
-  const handleSaveNotifications = () => {
-    try {
-      localStorage.setItem("studyconnect_admin_notif_prefs", JSON.stringify(notificationPrefs));
-      addToast("Administrative notification preferences saved.", "success");
-    } catch {
-      addToast("Failed to save preferences.", "error");
-    }
-  };
-
   const adminIdDisplay = `ADM-${(user?._id || "ROOT01").slice(-6).toUpperCase()}`;
 
   // Content body
@@ -385,11 +271,11 @@ export function AdminProfilePage({
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
-            Administrator Profile & Security
+            Administrator Governance Profile
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-2xl">
-            Manage your verified administrator identity, security credentials, governance authority matrix, and compliance logs.
+            Manage your verified administrator identity, accept peer and student connections, coordinate campus events, and review institutional compliance logs.
           </p>
         </div>
 
@@ -414,6 +300,15 @@ export function AdminProfilePage({
             </Link>
           )}
 
+          <button
+            type="button"
+            onClick={() => setBroadcastOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-all cursor-pointer"
+          >
+            <Megaphone size={13} />
+            <span>Broadcast Alert</span>
+          </button>
+
           {onSwitchToStudentView ? (
             <button
               type="button"
@@ -427,7 +322,7 @@ export function AdminProfilePage({
               to="/dashboard"
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F1A30] text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-[#1E90FF] hover:text-[#1E90FF] transition-all"
             >
-              <span>Student View</span>
+              <span>Student Workspace</span>
             </Link>
           )}
         </div>
@@ -445,9 +340,13 @@ export function AdminProfilePage({
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Reports in Queue</span>
-            <div className={`flex h-8 w-8 items-center justify-center rounded-xl ${
-              stats.pendingReportsCount > 0 ? "bg-rose-500/10 text-rose-500" : "bg-emerald-500/10 text-emerald-500"
-            }`}>
+            <div
+              className={`flex h-8 w-8 items-center justify-center rounded-xl ${
+                stats.pendingReportsCount > 0
+                  ? "bg-rose-500/10 text-rose-500"
+                  : "bg-emerald-500/10 text-emerald-500"
+              }`}
+            >
               <AlertTriangle size={15} />
             </div>
           </div>
@@ -455,9 +354,11 @@ export function AdminProfilePage({
             <span className="text-2xl font-black text-slate-900 dark:text-slate-50 tabular-nums">
               {stats.pendingReportsCount}
             </span>
-            <span className={`text-[10px] font-bold ${
-              stats.pendingReportsCount > 0 ? "text-rose-500" : "text-emerald-500"
-            }`}>
+            <span
+              className={`text-[10px] font-bold ${
+                stats.pendingReportsCount > 0 ? "text-rose-500" : "text-emerald-500"
+              }`}
+            >
               {stats.pendingReportsCount > 0 ? "Action Needed" : "Queue Clean"}
             </span>
           </div>
@@ -548,20 +449,14 @@ export function AdminProfilePage({
 
       {/* ── Main Split Pane: Left Summary Card + Right Tabs ──────────────── */}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr] items-start">
-        
         {/* ── Left Profile & Clearance Card ─────────────────────────────── */}
         <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-[#0F1A30]/90 p-6 shadow-sm backdrop-blur-md space-y-6">
-          
           {/* Avatar frame */}
           <div className="text-center space-y-3">
             <div className="relative mx-auto size-28 group">
               <div className="relative size-full rounded-3xl overflow-hidden bg-[#1E90FF] text-white flex items-center justify-center font-extrabold text-3xl shadow-lg shadow-[#1E90FF]/25 ring-4 ring-slate-100 dark:ring-[#162544]">
                 {avatarPreview ? (
-                  <img
-                    src={avatarPreview}
-                    alt={fullName}
-                    className="size-full object-cover"
-                  />
+                  <img src={avatarPreview} alt={fullName} className="size-full object-cover" />
                 ) : (
                   <span>
                     {fullName
@@ -572,7 +467,7 @@ export function AdminProfilePage({
                       .toUpperCase() || "AD"}
                   </span>
                 )}
-                
+
                 {/* Camera upload hover */}
                 <button
                   type="button"
@@ -609,14 +504,14 @@ export function AdminProfilePage({
               <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
                 {designation}
               </p>
-              
+
               <div className="pt-1 flex items-center justify-center gap-1.5 flex-wrap">
                 <span className="inline-flex items-center gap-1 rounded-lg bg-[#1E90FF]/10 border border-[#1E90FF]/20 px-2.5 py-0.5 text-[10px] font-bold text-[#1E90FF] uppercase tracking-wider">
                   <UserCheck size={11} /> {user?.role || "ADMIN"}
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-500">
                   <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Active Session
+                  Active Clearance
                 </span>
               </div>
             </div>
@@ -629,7 +524,8 @@ export function AdminProfilePage({
                     isOpen: true,
                     type: "REMOVE_PHOTO",
                     title: "Remove Administrator Avatar?",
-                    message: "Are you sure you want to remove your custom avatar and revert to initial initials?"
+                    message:
+                      "Are you sure you want to remove your custom avatar and revert to initial initials?"
                   })
                 }
                 className="inline-flex items-center gap-1.5 text-[11px] font-bold text-rose-500 hover:underline cursor-pointer"
@@ -702,7 +598,7 @@ export function AdminProfilePage({
               </li>
               <li className="flex items-center gap-2">
                 <Check size={13} className="text-emerald-500 shrink-0" />
-                <span>Study Circle Governance & Archival</span>
+                <span>Campus Events Scheduling & Moderation</span>
               </li>
               <li className="flex items-center gap-2">
                 <Check size={13} className="text-emerald-500 shrink-0" />
@@ -714,20 +610,16 @@ export function AdminProfilePage({
               </li>
             </ul>
           </div>
-
         </div>
 
-        {/* ── Right Column: Tabbed Settings & Features ───────────────────── */}
+        {/* ── Right Column: Tabbed Views ─────────────────────────────────── */}
         <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-[#0F1A30]/90 shadow-sm backdrop-blur-md overflow-hidden">
-          
           {/* Subtabs Bar */}
           <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto scrollbar-none bg-slate-50/50 dark:bg-[#162544]/30">
             {[
-              { id: "PERSONAL" as ProfileTab, label: "Staff Profile", icon: User },
-              { id: "PASSWORD" as ProfileTab, label: "Credentials & Password", icon: Key },
-              { id: "SECURITY" as ProfileTab, label: "Active Session & Security", icon: Shield },
-              { id: "NOTIFICATIONS" as ProfileTab, label: "Admin Alerts", icon: Bell },
-              { id: "ACTIVITY" as ProfileTab, label: "Audit Timeline", icon: Clock }
+              { id: "PERSONAL" as ProfileTab, label: "Staff Profile & Clearance", icon: User },
+              { id: "CONNECTIONS" as ProfileTab, label: "Campus Connections & Requests", icon: Users },
+              { id: "ACTIVITY" as ProfileTab, label: "90-Day Audit Timeline", icon: Clock }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -749,7 +641,7 @@ export function AdminProfilePage({
           </div>
 
           <div className="p-6 sm:p-8">
-            {/* ── Tab 1: Personal & Staff Info ───────────────────────────── */}
+            {/* ── Tab 1: Staff Profile & Institutional Clearance ─────────── */}
             {activeTab === "PERSONAL" && (
               <div className="space-y-6">
                 <div>
@@ -757,7 +649,7 @@ export function AdminProfilePage({
                     Administrator Identity & Institutional Affiliation
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Update your official administrative name, department responsibility, and campus bio.
+                    Official administrative contact information and faculty department responsibility.
                   </p>
                 </div>
 
@@ -849,6 +741,68 @@ export function AdminProfilePage({
                   />
                 </div>
 
+                {/* Direct Administrative Quick Action Grid */}
+                <div className="pt-2 space-y-2">
+                  <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 dark:text-slate-500 block">
+                    Institutional Governance Quick Links
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (embedded && onNavigateTab) onNavigateTab("events");
+                        else navigate("/admin?tab=events");
+                      }}
+                      className="flex items-center gap-2.5 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-[#162544]/30 hover:border-[#1E90FF] hover:bg-[#1E90FF]/5 text-left transition-all cursor-pointer group"
+                    >
+                      <div className="p-2 rounded-xl bg-[#1E90FF]/10 text-[#1E90FF]">
+                        <Calendar size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-[#1E90FF]">
+                          Campus Events
+                        </p>
+                        <p className="text-[10px] text-slate-400 truncate">Schedules & Deadlines</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (embedded && onNavigateTab) onNavigateTab("reports");
+                        else navigate("/admin?tab=reports");
+                      }}
+                      className="flex items-center gap-2.5 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-[#162544]/30 hover:border-rose-500 hover:bg-rose-500/5 text-left transition-all cursor-pointer group"
+                    >
+                      <div className="p-2 rounded-xl bg-rose-500/10 text-rose-500">
+                        <ShieldAlert size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-rose-500">
+                          Content Reports
+                        </p>
+                        <p className="text-[10px] text-slate-400 truncate">{stats.pendingReportsCount} in queue</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setBroadcastOpen(true)}
+                      className="flex items-center gap-2.5 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-[#162544]/30 hover:border-amber-500 hover:bg-amber-500/5 text-left transition-all cursor-pointer group"
+                    >
+                      <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500">
+                        <Megaphone size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-500">
+                          Campus Alert
+                        </p>
+                        <p className="text-[10px] text-slate-400 truncate">Dispatch broadcast</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800/80">
                   <button
                     type="button"
@@ -857,7 +811,8 @@ export function AdminProfilePage({
                         isOpen: true,
                         type: "SAVE_PROFILE",
                         title: "Save Administrator Profile?",
-                        message: "Confirm updating your administrator profile details. These changes will reflect immediately across platform governance modules."
+                        message:
+                          "Confirm updating your administrator profile details. These changes will reflect immediately across platform governance modules."
                       })
                     }
                     className="inline-flex items-center gap-2 rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] px-6 py-2.5 text-xs font-bold text-white shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
@@ -869,400 +824,26 @@ export function AdminProfilePage({
               </div>
             )}
 
-            {/* ── Tab 2: Security & Password ─────────────────────────────── */}
-            {activeTab === "PASSWORD" && (
+            {/* ── Tab 2: Campus Connections & Friend Requests ──────────── */}
+            {activeTab === "CONNECTIONS" && (
               <div className="space-y-6">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">
-                    Administrator Security Credentials
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Update your administrative password and ensure compliance with high-assurance password policies.
-                  </p>
-                </div>
-
-                {/* 2FA Enforced Notice */}
-                <div className="rounded-2xl border border-[#1E90FF]/30 bg-[#1E90FF]/10 p-4 flex items-start gap-3.5">
-                  <ShieldCheck size={20} className="text-[#1E90FF] shrink-0 mt-0.5" />
-                  <div className="text-xs space-y-1">
-                    <span className="font-bold text-slate-900 dark:text-slate-50">
-                      Two-Factor Authentication (2FA) Enforced
-                    </span>
-                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
-                      Because your account holds elevated governance clearance, institutional 2FA via authenticator application or institutional SSO is active on this account.
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800/80">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">
+                      Campus Connections & Friend Requests
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Manage incoming requests from campus peers and students, accept or decline invitations, send new requests, or start direct messaging.
                     </p>
                   </div>
                 </div>
 
-                <div className="space-y-4 max-w-md">
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
-                      Current Password
-                    </label>
-                    <input
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Enter current password"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-xs outline-none focus:border-[#1E90FF] focus:bg-white dark:border-slate-800 dark:bg-[#162544]/40 dark:text-white transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
-                      New Password
-                    </label>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Create secure new password"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-xs outline-none focus:border-[#1E90FF] focus:bg-white dark:border-slate-800 dark:bg-[#162544]/40 dark:text-white transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
-                      Confirm New Password
-                    </label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm new password"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-xs outline-none focus:border-[#1E90FF] focus:bg-white dark:border-slate-800 dark:bg-[#162544]/40 dark:text-white transition-all"
-                    />
-                  </div>
-
-                  {/* Password Strength Meter */}
-                  {newPassword && (
-                    <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-                      <div className="flex justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                        <span>Strength: <span className="font-bold text-slate-900 dark:text-slate-50">{passwordStrength.label}</span></span>
-                        <span>{passwordStrength.score}%</span>
-                      </div>
-                      <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
-                        <div
-                          style={{ width: `${passwordStrength.score}%` }}
-                          className={`h-full transition-all duration-300 ${passwordStrength.color}`}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Password Criteria Checklist */}
-                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800/80 p-4 bg-slate-50/50 dark:bg-[#162544]/20 space-y-2 text-xs">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1">
-                      Policy Requirements
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {passwordCriteria.length ? <Check size={13} className="text-emerald-500" /> : <X size={13} className="text-rose-500" />}
-                      <span className={passwordCriteria.length ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
-                        Minimum 8 characters
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {passwordCriteria.uppercase ? <Check size={13} className="text-emerald-500" /> : <X size={13} className="text-rose-500" />}
-                      <span className={passwordCriteria.uppercase ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
-                        At least one uppercase letter (A-Z)
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {passwordCriteria.numbers ? <Check size={13} className="text-emerald-500" /> : <X size={13} className="text-rose-500" />}
-                      <span className={passwordCriteria.numbers ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
-                        At least one numerical digit (0-9)
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {passwordCriteria.symbols ? <Check size={13} className="text-emerald-500" /> : <X size={13} className="text-rose-500" />}
-                      <span className={passwordCriteria.symbols ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
-                        At least one special character (@, #, $, %, etc.)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800/80">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!currentPassword || !newPassword || !confirmPassword) {
-                        addToast("Please fill in all password fields.", "error");
-                        return;
-                      }
-                      if (newPassword !== confirmPassword) {
-                        addToast("New passwords do not match.", "error");
-                        return;
-                      }
-                      if (passwordStrength.score < 75) {
-                        addToast("Password must meet Good or Strong criteria.", "error");
-                        return;
-                      }
-                      setConfirmDialog({
-                        isOpen: true,
-                        type: "PASSWORD",
-                        title: "Confirm Credential Update?",
-                        message: "Are you sure you want to change your administrator password? You will use the new password on future logins."
-                      });
-                    }}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] px-6 py-2.5 text-xs font-bold text-white shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
-                  >
-                    <Key size={14} />
-                    <span>Update Security Password</span>
-                  </button>
-                </div>
+                {/* Direct Embed of ConnectionsTab */}
+                <ConnectionsTab />
               </div>
             )}
 
-            {/* ── Tab 3: Active Device & Session ─────────────────────────── */}
-            {activeTab === "SECURITY" && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">
-                    Active Administrative Session & Environment
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Live browser, operating system, and secure connection parameters for your current workstation.
-                  </p>
-                </div>
-
-                {/* Current Detected Session Card */}
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-5 bg-white dark:bg-[#0F1A30] space-y-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3.5">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1E90FF]/10 text-[#1E90FF] shrink-0 mt-0.5">
-                        <Laptop size={22} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-sm font-extrabold text-slate-900 dark:text-slate-50">
-                            {currentSession.device}
-                          </h4>
-                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[9px] font-bold text-emerald-500 uppercase">
-                            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            Current Session
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold mt-0.5">
-                          {currentSession.browser} • {currentSession.os}
-                        </p>
-                        <p className="text-[11px] text-slate-400 mt-1">
-                          Connected via Secure HTTPS / WSS • Authenticated via In-Memory JWT
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Token Architecture</span>
-                      <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">In-Memory (XSS Protected)</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Transport Protocol</span>
-                      <p className="font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">TLS 1.3 / Encrypted</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Privilege Scope</span>
-                      <p className="font-semibold text-[#1E90FF] mt-0.5">Institutional Admin Root</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Security Advice Alert */}
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3.5">
-                  <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
-                  <div className="text-xs space-y-1 text-amber-800 dark:text-amber-300">
-                    <span className="font-bold">Administrative Security Best Practices</span>
-                    <p className="leading-relaxed text-[11px]">
-                      Never access the governance console from public unmanaged kiosks. All moderation actions, user bans, and broadcasts are signed and permanently logged to the 90-day compliance audit ledger.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800/80">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setConfirmDialog({
-                        isOpen: true,
-                        type: "TERMINATE_OTHERS",
-                        title: "Invalidate Secondary Sessions?",
-                        message: "Are you sure you want to sign out and invalidate tokens on all other devices?"
-                      })
-                    }
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F1A30] hover:border-rose-500/40 hover:text-rose-500 px-5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 shadow-sm cursor-pointer transition-all"
-                  >
-                    <LogOut size={13} />
-                    <span>Invalidate Other Sessions</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Tab 4: Admin Alert Preferences ─────────────────────────── */}
-            {activeTab === "NOTIFICATIONS" && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">
-                    Governance Alert Dispatch Preferences
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Configure real-time notifications for student reports, emergency broadcasts, and account alerts.
-                  </p>
-                </div>
-
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                  {/* Urgent Content Reports */}
-                  <div className="flex items-center justify-between py-4">
-                    <div className="space-y-0.5 pr-4">
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Urgent Student Content Reports
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Receive instant sound and banner alerts when students report severe hate speech, harassment, or security threats.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNotificationPrefs((p: any) => ({ ...p, urgentReports: !p.urgentReports }))
-                      }
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out outline-none ${
-                        notificationPrefs.urgentReports ? "bg-[#1E90FF]" : "bg-slate-200 dark:bg-white/10"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block size-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out mt-0.5 ${
-                          notificationPrefs.urgentReports ? "translate-x-5.5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Emergency Broadcast Confirmations */}
-                  <div className="flex items-center justify-between py-4">
-                    <div className="space-y-0.5 pr-4">
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Emergency Broadcast Confirmation Echoes
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Receive notifications when platform-wide announcements or campus safety banners are dispatched.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNotificationPrefs((p: any) => ({ ...p, broadcastEcho: !p.broadcastEcho }))
-                      }
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out outline-none ${
-                        notificationPrefs.broadcastEcho ? "bg-[#1E90FF]" : "bg-slate-200 dark:bg-white/10"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block size-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out mt-0.5 ${
-                          notificationPrefs.broadcastEcho ? "translate-x-5.5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Security Logins */}
-                  <div className="flex items-center justify-between py-4">
-                    <div className="space-y-0.5 pr-4">
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Administrative Security & Login Alerts
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Immediate notification on new device logins, password updates, or failed elevation attempts.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNotificationPrefs((p: any) => ({ ...p, securityLogins: !p.securityLogins }))
-                      }
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out outline-none ${
-                        notificationPrefs.securityLogins ? "bg-[#1E90FF]" : "bg-slate-200 dark:bg-white/10"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block size-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out mt-0.5 ${
-                          notificationPrefs.securityLogins ? "translate-x-5.5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Role Escalations */}
-                  <div className="flex items-center justify-between py-4">
-                    <div className="space-y-0.5 pr-4">
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        User Role Escalations & Moderator Additions
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Alert when other faculty members promote students or assign circle moderator privileges.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNotificationPrefs((p: any) => ({ ...p, roleEscalations: !p.roleEscalations }))
-                      }
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out outline-none ${
-                        notificationPrefs.roleEscalations ? "bg-[#1E90FF]" : "bg-slate-200 dark:bg-white/10"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block size-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out mt-0.5 ${
-                          notificationPrefs.roleEscalations ? "translate-x-5.5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Weekly Governance Digest */}
-                  <div className="flex items-center justify-between py-4">
-                    <div className="space-y-0.5 pr-4">
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Weekly Platform Governance Digest
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Receive a weekly summary email detailing resolved reports, account registrations, and audit metrics.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNotificationPrefs((p: any) => ({ ...p, weeklyDigest: !p.weeklyDigest }))
-                      }
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out outline-none ${
-                        notificationPrefs.weeklyDigest ? "bg-[#1E90FF]" : "bg-slate-200 dark:bg-white/10"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block size-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out mt-0.5 ${
-                          notificationPrefs.weeklyDigest ? "translate-x-5.5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800/80">
-                  <button
-                    type="button"
-                    onClick={handleSaveNotifications}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] px-6 py-2.5 text-xs font-bold text-white shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
-                  >
-                    <Save size={14} />
-                    <span>Save Alert Preferences</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Tab 5: Live Activity Log ───────────────────────────────── */}
+            {/* ── Tab 3: Live Activity Log ───────────────────────────────── */}
             {activeTab === "ACTIVITY" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -1306,7 +887,6 @@ export function AdminProfilePage({
                   <div className="relative pl-6 border-l-2 border-[#1E90FF]/30 space-y-6">
                     {auditLogs.map((entry) => (
                       <div key={entry.id} className="relative group">
-                        {/* Node circle */}
                         <span className="absolute -left-[31px] top-1 flex size-4 items-center justify-center rounded-full bg-white dark:bg-[#0F1A30] ring-2 ring-[#1E90FF]">
                           <span className="size-2 rounded-full bg-[#1E90FF]" />
                         </span>
@@ -1338,22 +918,17 @@ export function AdminProfilePage({
         </div>
       </div>
 
+      {/* ── Broadcast Modal ────────────────────────────────────────────── */}
+      <BroadcastModal isOpen={broadcastOpen} onClose={() => setBroadcastOpen(false)} />
+
       {/* ── Confirmation Dialog ────────────────────────────────────────── */}
       {confirmDialog && (
         <ConfirmationDialog
           isOpen={confirmDialog.isOpen}
           title={confirmDialog.title}
           message={confirmDialog.message}
-          confirmText={
-            confirmDialog.type === "SAVE_PROFILE"
-              ? "Save Profile"
-              : confirmDialog.type === "PASSWORD"
-              ? "Update Password"
-              : confirmDialog.type === "TERMINATE_OTHERS"
-              ? "Invalidate Sessions"
-              : "Remove Photo"
-          }
-          isDestructive={confirmDialog.type === "TERMINATE_OTHERS" || confirmDialog.type === "REMOVE_PHOTO"}
+          confirmText={confirmDialog.type === "SAVE_PROFILE" ? "Save Profile" : "Remove Photo"}
+          isDestructive={confirmDialog.type === "REMOVE_PHOTO"}
           onConfirm={executeConfirmAction}
           onCancel={() => setConfirmDialog(null)}
         />

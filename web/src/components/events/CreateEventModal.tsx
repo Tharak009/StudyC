@@ -59,51 +59,46 @@ export function CreateEventModal({
     setTags(tags.filter((item) => item !== t));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       addToast("Please provide an event title.", "warning");
       return;
     }
 
-    const initials = user?.fullName
-      ? user.fullName
-          .split(" ")
-          .map((n) => n[0])
-          .join("")
-          .toUpperCase()
-          .slice(0, 2)
-      : "ME";
-
-    const newEv = {
-      id: `ev-${Date.now()}`,
-      title,
+    const payload = {
+      title: title.trim(),
       category,
+      department: dept.trim() || user?.department || "General Campus",
       organizer: organizer.trim() || user?.fullName || "Student Organizer",
-      dateStr,
-      timeStr,
-      venue: isVirtual ? "Drop-in Voice Study Stage 1" : venue || "Campus Classroom",
+      dateStr: dateStr.trim(),
+      timeStr: timeStr.trim(),
+      venue: isVirtual ? "Drop-in Voice Study Stage 1" : (venue.trim() || "Campus Classroom"),
       isVirtual,
       description: description.trim() || "Peer session and study review open to verified students.",
-      tags,
-      attendeesCount: 1,
-      batchAttendeesCount: 1,
-      attendeeInitials: [initials],
-      daysLeft: "Upcoming",
-      isRegistered: true
+      tags
     };
 
-    onCreateEvent(newEv);
-    dispatchCampusNotification({
-      type: "ADMIN_ALERT",
-      title: `Event Scheduled: ${newEv.title}`,
-      message: `${newEv.dateStr} (${newEv.timeStr}) at ${newEv.venue}. Organized by ${newEv.organizer}.`,
-      categoryTag: newEv.category,
-      href: "/events",
-      senderName: newEv.organizer
-    });
-    addToast(`Published "${title}" to the Campus Events calendar!`, "success");
-    onClose();
+    try {
+      setSubmitting(true);
+      await onCreateEvent(payload);
+      dispatchCampusNotification({
+        type: "ADMIN_ALERT",
+        title: `Event Scheduled: ${payload.title}`,
+        message: `${payload.dateStr} (${payload.timeStr}) at ${payload.venue}. Organized by ${payload.organizer}.`,
+        categoryTag: payload.category,
+        href: "/events",
+        senderName: payload.organizer
+      });
+      addToast(`Published "${title}" to the Campus Events calendar!`, "success");
+      onClose();
+    } catch {
+      addToast("Failed to create event. Please try again.", "error");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -304,10 +299,11 @@ export function CreateEventModal({
             </button>
             <button
               type="submit"
-              className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
+              disabled={submitting}
+              className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
             >
               <Check size={14} />
-              <span>Publish Event</span>
+              <span>{submitting ? "Publishing..." : "Publish Event"}</span>
             </button>
           </div>
         </form>

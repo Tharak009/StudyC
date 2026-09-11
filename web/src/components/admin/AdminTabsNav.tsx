@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   Activity,
   Users,
+  Calendar,
   AlertTriangle,
   FileCheck,
   MessageSquare,
@@ -13,6 +14,7 @@ import {
 export type AdminTabKey =
   | "overview"
   | "users"
+  | "events"
   | "reports"
   | "resources"
   | "communities"
@@ -44,6 +46,12 @@ export function AdminTabsNav({
       label: "User Directory & Roles",
       icon: Users,
       count: totalUsersCount
+    },
+    {
+      id: "events" as AdminTabKey,
+      label: "Campus Events & Deadlines",
+      icon: Calendar,
+      count: null
     },
     {
       id: "reports" as AdminTabKey,
