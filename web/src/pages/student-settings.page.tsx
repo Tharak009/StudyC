@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldCheck,
@@ -7,7 +8,8 @@ import {
   Eye,
   Laptop,
   Sparkles,
-  Settings
+  Settings,
+  HelpCircle
 } from "lucide-react";
 import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
@@ -41,17 +43,27 @@ export function StudentSettingsPage() {
         <main className="p-4 sm:p-8 space-y-8 max-w-6xl w-full mx-auto">
           
           {/* ── Page Header ───────────────────────────────────────────── */}
-          <div className="pb-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#1E90FF]/30 bg-[#1E90FF]/10 px-3 py-1 text-xs font-bold text-[#1E90FF] mb-2">
-              <Sparkles size={12} />
-              <span>Campus Account Preferences</span>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#1E90FF]/30 bg-[#1E90FF]/10 px-3 py-1 text-xs font-bold text-[#1E90FF] mb-2">
+                <Sparkles size={12} />
+                <span>Personal Account Management</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
+                Account Settings & Security
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-xl">
+                Configure your personal credentials, notification channels, theme preferences, and active devices.
+              </p>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
-              Account Settings & Campus Privacy
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-xl">
-              Manage your security credentials, notification channels, active devices, and theme preferences.
-            </p>
+
+            <Link
+              to="/help"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold text-[#1E90FF] bg-[#1E90FF]/10 hover:bg-[#1E90FF]/20 border border-[#1E90FF]/25 shadow-sm transition-all self-start sm:self-auto shrink-0 cursor-pointer"
+            >
+              <HelpCircle size={15} />
+              <span>Looking for Help & FAQ? →</span>
+            </Link>
           </div>
 
           {/* ── 2-Column Responsive Layout (Tabs + Form Area) ─────────── */}

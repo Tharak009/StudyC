@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Bot
 } from "lucide-react";
+import { Link } from "react-router";
 
 export interface ChatItem {
   id: string;
@@ -404,7 +405,8 @@ export function GeminiSidebar({
         <div className="shrink-0 p-3 border-t border-slate-200/60 dark:border-white/[0.05] space-y-1 overflow-hidden">
           {/* Help & FAQ */}
           <div className="relative group">
-            <button
+            <Link
+              to="/help"
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-full text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-white/[0.06] transition-colors cursor-pointer ${
                 isCollapsed ? "justify-center px-0" : ""
               }`}
@@ -412,7 +414,7 @@ export function GeminiSidebar({
             >
               <HelpCircle size={17} className="shrink-0 text-slate-500" />
               {!isCollapsed && <span className="truncate">Help & FAQ</span>}
-            </button>
+            </Link>
             {isCollapsed && (
               <span className="absolute left-full ml-3 px-2 py-1 rounded-md bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-medium whitespace-nowrap shadow-md pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50">
                 Help & FAQ
@@ -440,7 +442,8 @@ export function GeminiSidebar({
 
           {/* Settings */}
           <div className="relative group">
-            <button
+            <Link
+              to="/settings"
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-full text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-white/[0.06] transition-colors cursor-pointer ${
                 isCollapsed ? "justify-center px-0" : ""
               }`}
@@ -448,7 +451,7 @@ export function GeminiSidebar({
             >
               <Settings size={17} className="shrink-0 text-slate-500" />
               {!isCollapsed && <span className="truncate">Settings</span>}
-            </button>
+            </Link>
             {isCollapsed && (
               <span className="absolute left-full ml-3 px-2 py-1 rounded-md bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-medium whitespace-nowrap shadow-md pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50">
                 Settings

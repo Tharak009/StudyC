@@ -502,16 +502,23 @@ export function DashboardSidebar({
           {/* Help & Support */}
           <div className="flex justify-center">
             <Link
-              to="/settings"
+              to="/help"
               title={isCollapsed ? "Help & FAQ" : undefined}
-              className={`flex items-center rounded-full text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-white/[0.06] transition-all duration-200 cursor-pointer overflow-hidden ${
+              className={`flex items-center rounded-full text-xs font-medium transition-all duration-200 cursor-pointer overflow-hidden ${
+                location.pathname === "/help"
+                  ? "bg-[#1E90FF]/15 dark:bg-[#1E90FF]/25 text-[#1E90FF] font-bold shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-white/[0.06]"
+              } ${
                 isCollapsed
                   ? "w-10 h-10 justify-center p-0"
                   : "w-full gap-3 px-3 py-1.5"
               }`}
               aria-label="Help & FAQ"
             >
-              <HelpCircle size={16} className="shrink-0 text-slate-500" />
+              <HelpCircle
+                size={16}
+                className={`shrink-0 ${location.pathname === "/help" ? "text-[#1E90FF]" : "text-slate-500"}`}
+              />
               <span
                 className={`truncate transition-all duration-200 whitespace-nowrap ${
                   isCollapsed ? "opacity-0 w-0 hidden" : "opacity-100"
@@ -527,14 +534,21 @@ export function DashboardSidebar({
             <Link
               to="/settings"
               title={isCollapsed ? "Settings" : undefined}
-              className={`flex items-center rounded-full text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-white/[0.06] transition-all duration-200 cursor-pointer overflow-hidden ${
+              className={`flex items-center rounded-full text-xs font-medium transition-all duration-200 cursor-pointer overflow-hidden ${
+                location.pathname === "/settings"
+                  ? "bg-[#1E90FF]/15 dark:bg-[#1E90FF]/25 text-[#1E90FF] font-bold shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-white/[0.06]"
+              } ${
                 isCollapsed
                   ? "w-10 h-10 justify-center p-0"
                   : "w-full gap-3 px-3 py-1.5"
               }`}
               aria-label="Settings"
             >
-              <Settings size={16} className="shrink-0 text-slate-500" />
+              <Settings
+                size={16}
+                className={`shrink-0 ${location.pathname === "/settings" ? "text-[#1E90FF]" : "text-slate-500"}`}
+              />
               <span
                 className={`truncate transition-all duration-200 whitespace-nowrap ${
                   isCollapsed ? "opacity-0 w-0 hidden" : "opacity-100"

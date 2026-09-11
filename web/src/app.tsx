@@ -16,6 +16,7 @@ import { ChatPage } from "./pages/chat.page";
 import { ConnectionsResourcesPage } from "./pages/connections-resources.page";
 import { EventsPage } from "./pages/events.page";
 import { StudentSettingsPage } from "./pages/student-settings.page";
+import { HelpFaqPage } from "./pages/help-faq.page";
 import { AdminPage } from "./pages/admin.page";
 import { AdminProfilePage } from "./pages/admin-profile.page";
 import { ProfilePage } from "./pages/profile.page";
@@ -1143,6 +1144,8 @@ export function App() {
           <Route path="/events" element={<EventsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/settings" element={<StudentSettingsPage />} />
+          <Route path="/help" element={<HelpFaqPage />} />
+          <Route path="/faq" element={<Navigate to="/help" replace />} />
 
           {/* Governance Protected Routes (Admin & Moderator Only) */}
           <Route element={<AdminRoute />}>
