@@ -25,76 +25,29 @@ export interface ClassmateConnection {
   sharedCircles: number;
 }
 
-const SEED_CLASSMATES: ClassmateConnection[] = [
-  {
-    id: "u-meera",
-    name: "Meera Patel",
-    roll: "CS24-102",
-    dept: "Computer Science & Engineering",
-    batch: "2026",
-    isOnline: true,
-    status: "connected",
-    sharedCircles: 4
-  },
-  {
-    id: "u-rohan",
-    name: "Rohan Verma",
-    roll: "CS24-108",
-    dept: "Computer Science & Engineering",
-    batch: "2026",
-    isOnline: true,
-    status: "connected",
-    sharedCircles: 3
-  },
-  {
-    id: "u-ananya",
-    name: "Ananya Patel",
-    roll: "CS24-214",
-    dept: "Data Science & AI",
-    batch: "2026",
-    isOnline: false,
-    status: "pending_incoming",
-    sharedCircles: 2
-  },
-  {
-    id: "u-devansh",
-    name: "Devansh Rao",
-    roll: "CS24-301",
-    dept: "Information Technology",
-    batch: "2026",
-    isOnline: true,
-    status: "none",
-    sharedCircles: 1
-  },
-  {
-    id: "u-priya",
-    name: "Priya Sharma",
-    roll: "CS24-115",
-    dept: "Computer Science & Engineering",
-    batch: "2026",
-    isOnline: false,
-    status: "none",
-    sharedCircles: 2
-  },
-  {
-    id: "u-kabir",
-    name: "Kabir Mehta",
-    roll: "ME24-045",
-    dept: "Mechanical Engineering",
-    batch: "2026",
-    isOnline: true,
-    status: "pending_outgoing",
-    sharedCircles: 1
-  }
-];
+const MOCK_SEED_IDS = new Set([
+  "u-meera",
+  "u-rohan",
+  "u-ananya",
+  "u-devansh",
+  "u-priya",
+  "u-kabir"
+]);
 
 function loadSavedClassmates(): ClassmateConnection[] {
   try {
     const raw = localStorage.getItem("studyconnect_peer_directory");
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((p: any) => ({
+      if (Array.isArray(parsed)) {
+        const real = parsed.filter(
+          (p: any) =>
+            p &&
+            !MOCK_SEED_IDS.has(p.id) &&
+            !p.name?.includes("Meera Patel") &&
+            !p.name?.includes("Rohan Verma")
+        );
+        return real.map((p: any) => ({
           id: p.id,
           name: p.name,
           roll: p.roll || "CS24-100",
@@ -107,7 +60,7 @@ function loadSavedClassmates(): ClassmateConnection[] {
       }
     }
   } catch {}
-  return SEED_CLASSMATES;
+  return [];
 }
 
 export function ConnectionsTab() {

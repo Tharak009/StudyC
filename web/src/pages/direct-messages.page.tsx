@@ -34,98 +34,35 @@ const LOCAL_STORAGE_CONVERSATIONS_KEY = "studyconnect_dm_conversations";
 const LOCAL_STORAGE_DIRECTORY_KEY = "studyconnect_peer_directory";
 const LOCAL_STORAGE_MESSAGES_PREFIX = "studyconnect_dm_messages_";
 
-const SEED_DIRECTORY: PeerSearchResult[] = [
-  { id: "u-meera", name: "Meera Patel", roll: "CS24-102", dept: "Computer Science", isOnline: true },
-  { id: "u-rohan", name: "Rohan Verma", roll: "CS24-108", dept: "Computer Science", isOnline: true },
-  { id: "u-ananya", name: "Ananya Patel", roll: "CS24-214", dept: "Data Science", isOnline: false },
-  { id: "u-devansh", name: "Devansh Rao", roll: "CS24-301", dept: "Information Tech", isOnline: true },
-  { id: "u-priya", name: "Priya Sharma", roll: "CS24-115", dept: "Computer Science", isOnline: true },
-  { id: "u-kabir", name: "Kabir Mehta", roll: "ME24-045", dept: "Mechanical Eng", isOnline: false }
-];
-
-const SEED_CONVERSATIONS: ConversationItem[] = [
-  {
-    id: "conv-meera",
-    peer: {
-      id: "u-meera",
-      name: "Meera Patel",
-      roll: "CS24-102",
-      dept: "Computer Science",
-      isOnline: true
-    },
-    lastMessage: {
-      text: "Hey! Can you share the latest OS lab solution?",
-      senderId: "u-meera",
-      time: "10:42 AM",
-      isRead: true,
-      isDelivered: true
-    },
-    unreadCount: 0,
-    isPinned: true,
-    isFavorite: true
-  },
-  {
-    id: "conv-rohan",
-    peer: {
-      id: "u-rohan",
-      name: "Rohan Verma",
-      roll: "CS24-108",
-      dept: "Computer Science",
-      isOnline: true
-    },
-    lastMessage: {
-      text: "Check out line 42 for the Dijkstra edge case.",
-      senderId: "u-rohan",
-      time: "Yesterday",
-      isRead: true,
-      isDelivered: true
-    },
-    unreadCount: 0
-  }
-];
-
-const SEED_MESSAGES_MEERA: DirectMessageItem[] = [
-  {
-    id: "m-1",
-    senderId: "u-meera",
-    senderName: "Meera Patel",
-    content: "Hey Aarav! Have you looked at the Operating Systems assignment 3?",
-    isRead: true,
-    isDelivered: true,
-    time: "10:30 AM",
-    createdAt: new Date(Date.now() - 3600000).toISOString()
-  },
-  {
-    id: "m-2",
-    senderId: "u-me",
-    senderName: "Aarav Sharma",
-    content: "Yes, I just finished implementing the page replacement simulation!",
-    isRead: true,
-    isDelivered: true,
-    time: "10:35 AM",
-    createdAt: new Date(Date.now() - 3000000).toISOString()
-  },
-  {
-    id: "m-3",
-    senderId: "u-meera",
-    senderName: "Meera Patel",
-    content: "Hey! Can you share the latest OS lab solution?",
-    isRead: true,
-    isDelivered: true,
-    time: "10:42 AM",
-    createdAt: new Date(Date.now() - 2000000).toISOString()
-  }
-];
+const MOCK_SEED_IDS = new Set([
+  "conv-meera",
+  "conv-rohan",
+  "u-meera",
+  "u-rohan",
+  "u-ananya",
+  "u-devansh",
+  "u-priya",
+  "u-kabir"
+]);
 
 const loadSavedConversations = (): ConversationItem[] => {
   try {
     const data = localStorage.getItem(LOCAL_STORAGE_CONVERSATIONS_KEY);
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (c: ConversationItem) =>
+            c &&
+            !MOCK_SEED_IDS.has(c.id) &&
+            !MOCK_SEED_IDS.has(c.peer?.id) &&
+            !c.peer?.name?.includes("Meera Patel") &&
+            !c.peer?.name?.includes("Rohan Verma")
+        );
+      }
     }
   } catch {}
-  return SEED_CONVERSATIONS;
+  return [];
 };
 
 const loadSavedDirectory = (): PeerSearchResult[] => {
@@ -133,10 +70,18 @@ const loadSavedDirectory = (): PeerSearchResult[] => {
     const data = localStorage.getItem(LOCAL_STORAGE_DIRECTORY_KEY);
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (p: PeerSearchResult) =>
+            p &&
+            !MOCK_SEED_IDS.has(p.id) &&
+            !p.name?.includes("Meera Patel") &&
+            !p.name?.includes("Rohan Verma")
+        );
+      }
     }
   } catch {}
-  return SEED_DIRECTORY;
+  return [];
 };
 
 const loadSavedMessages = (convId: string): DirectMessageItem[] => {
@@ -144,10 +89,9 @@ const loadSavedMessages = (convId: string): DirectMessageItem[] => {
     const data = localStorage.getItem(`${LOCAL_STORAGE_MESSAGES_PREFIX}${convId}`);
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch {}
-  if (convId === "conv-meera") return SEED_MESSAGES_MEERA;
   return [];
 };
 
