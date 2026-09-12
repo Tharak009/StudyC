@@ -22,6 +22,9 @@ interface CircleSwitcherProps {
   onSelectCircle: (circle: StudyCircle) => void;
   onExploreCircles?: () => void;
   onCreateCircle?: () => void;
+  activeMode?: "circle" | "dms";
+  onSelectDMs?: () => void;
+  unreadDMsCount?: number;
 }
 
 export function CircleSwitcher({
@@ -29,30 +32,68 @@ export function CircleSwitcher({
   activeCircleId,
   onSelectCircle,
   onExploreCircles,
-  onCreateCircle
+  onCreateCircle,
+  activeMode = "circle",
+  onSelectDMs,
+  unreadDMsCount = 0
 }: CircleSwitcherProps) {
+  const isDMsActive = activeMode === "dms";
+
   return (
     <nav
       aria-label="Study Circles navigation"
       className="w-18 h-full shrink-0 flex flex-col items-center py-3 bg-slate-100/90 dark:bg-[#070C18] border-r border-slate-200/80 dark:border-white/[0.06] select-none justify-between z-10"
     >
-      {/* ── Top: StudyConnect Home / Brand Circle ───────────────────── */}
+      {/* ── Top: Discord Direct Messages (DMs) Hub ───────────────────── */}
       <div className="flex flex-col items-center gap-2 w-full">
-        <button
-          type="button"
-          onClick={onExploreCircles}
-          title="Discover Study Circles"
-          className="group relative flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] text-white shadow-md shadow-[#1E90FF]/25 hover:rounded-xl transition-all cursor-pointer"
-        >
-          <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
-          
-          {/* Tooltip */}
-          <span className="absolute left-16 z-50 whitespace-nowrap rounded-xl bg-slate-900 dark:bg-white px-2.5 py-1 text-xs font-bold text-white dark:text-slate-950 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-lg">
-            Discover Campus Circles
-          </span>
-        </button>
+        <div className="relative group flex items-center justify-center w-full">
+          {/* Active Left Indicator Bar (Discord Style) */}
+          <span
+            className={`absolute left-0 w-1 rounded-r-full bg-[#1E90FF] transition-all duration-200 ${
+              isDMsActive
+                ? "h-9"
+                : "h-2 group-hover:h-5 opacity-0 group-hover:opacity-100"
+            }`}
+          />
 
-        {/* Subtle Divider */}
+          {/* DMs Button */}
+          <button
+            type="button"
+            onClick={onSelectDMs}
+            title="Direct Messages"
+            className={`relative flex h-11 w-11 items-center justify-center transition-all cursor-pointer ${
+              isDMsActive
+                ? "rounded-xl bg-[#1E90FF] text-white shadow-md shadow-[#1E90FF]/30 ring-2 ring-[#1E90FF]/40"
+                : "rounded-2xl bg-white dark:bg-[#0F1A30] text-slate-700 dark:text-slate-300 hover:rounded-xl hover:bg-slate-200 dark:hover:bg-[#162544] border border-slate-200/80 dark:border-white/[0.06]"
+            }`}
+          >
+            <MessageSquare
+              size={20}
+              className={`transition-transform duration-200 ${
+                isDMsActive ? "scale-105" : "group-hover:scale-110"
+              }`}
+            />
+
+            {/* Unread DMs Counter Badge */}
+            {unreadDMsCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold tabular-nums text-white shadow-sm ring-2 ring-white dark:ring-[#070C18]">
+                {unreadDMsCount > 99 ? "99+" : unreadDMsCount}
+              </span>
+            )}
+          </button>
+
+          {/* Tooltip */}
+          <div className="absolute left-16 z-50 whitespace-nowrap rounded-xl bg-slate-900/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl border border-slate-700/80 dark:border-white/10 px-3 py-1.5 text-xs font-bold text-white shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+            <span>Direct Messages</span>
+            {unreadDMsCount > 0 && (
+              <span className="ml-1.5 text-[10px] text-rose-400 font-semibold">
+                ({unreadDMsCount} unread)
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Subtle Divider between DMs and Study Circles */}
         <div className="w-8 h-0.5 rounded-full bg-slate-200 dark:bg-white/10 my-1" />
 
         {/* ── Circle Avatars List (Discord Server Rail Style) ─────────── */}

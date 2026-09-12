@@ -203,7 +203,7 @@ export function DashboardSidebar({
   const primaryNavItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Study Circles", href: "/chat", icon: MessageSquare },
-    { label: "Direct Messages", href: "/direct-messages", icon: Send },
+    { label: "Direct Messages", href: "/chat?mode=dms", icon: Send },
     { label: "Resource Vault", href: "/resources", icon: BookOpen },
     { label: "Campus Events", href: "/events", icon: Calendar },
     {
@@ -329,9 +329,23 @@ export function DashboardSidebar({
           <div className="space-y-1">
             {primaryNavItems.map((item) => {
               const Icon = item.icon;
-              const isActive =
-                location.pathname === item.href ||
-                (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
+              const isDms = item.label === "Direct Messages";
+              const isCircles = item.label === "Study Circles";
+              const searchMode = new URLSearchParams(location.search).get("mode");
+
+              let isActive = false;
+              if (location.pathname === "/chat") {
+                if (isDms) {
+                  isActive = searchMode === "dms";
+                } else if (isCircles) {
+                  isActive = searchMode !== "dms";
+                }
+              } else {
+                const basePath = item.href.split("?")[0];
+                isActive =
+                  location.pathname === basePath ||
+                  (basePath !== "/dashboard" && location.pathname.startsWith(basePath));
+              }
 
               return (
                 <div key={item.href} className="flex justify-center">

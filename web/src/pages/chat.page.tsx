@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSearchParams, useNavigate } from "react-router";
 import {
   Plus,
   Compass,
@@ -13,7 +14,14 @@ import {
   Volume2,
   Bell,
   Coffee,
-  Radio
+  Radio,
+  MessageSquare,
+  Phone,
+  PhoneOff,
+  Video,
+  VideoOff,
+  Mic,
+  MicOff
 } from "lucide-react";
 import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { CircleSwitcher, type StudyCircle } from "../components/chat/CircleSwitcher";
@@ -21,12 +29,23 @@ import { CircleSidebar } from "../components/study-circles/CircleSidebar";
 import { ChatContainer } from "../components/chat/ChatContainer";
 import { ChatInspectorDrawer } from "../components/chat/ChatInspectorDrawer";
 import { VoiceStageDock } from "../components/study-circles/VoiceStageDock";
+import { DMSidebar } from "../components/chat/DMSidebar";
+import { FriendsDashboard } from "../components/chat/FriendsDashboard";
+import { ConversationHeader, type ActivePeer } from "../components/dm/ConversationHeader";
+import { DirectMessageStream, type DirectMessageItem } from "../components/dm/DirectMessageStream";
+import { DirectMessageInput } from "../components/dm/DirectMessageInput";
+import { ContactInfoDrawer } from "../components/dm/ContactInfoDrawer";
+import type { ConversationItem } from "../components/dm/ConversationList";
+import type { Conversation, DirectMessage } from "../types/direct-message";
+
 import { useChatStore } from "../store/chat.store";
 import { useAuthStore } from "../store/auth.store";
 import { useToastStore } from "../store/toast.store";
 import { socketService } from "../services/socket.service";
 import { communitiesApi } from "../api/communities.api";
 import { chatApi } from "../api/chat.api";
+import { directMessagesApi } from "../api/direct-messages.api";
+import { friendsApi } from "../api/friends.api";
 import {
   COMMUNITY_CATEGORIES,
   type Community,
@@ -105,10 +124,98 @@ const getDefaultChannels = (circleId: string): Channel[] => [
   }
 ];
 
-export function ChatPage() {
+const mapBackendConversationToItem = (
+  c: Conversation,
+  currentUserId?: string
+): ConversationItem => {
+  const peerUser =
+    c.participants?.find((p) => p._id !== currentUserId) || c.participants?.[0];
+  return {
+    id: c._id,
+    peer: {
+      id: peerUser?._id || "",
+      name: peerUser?.fullName || "Student",
+      roll: peerUser?.rollNumber || "Campus",
+      dept: (peerUser as any)?.department || "Computer Science",
+      isOnline: true,
+      avatar: peerUser?.profilePicture
+    },
+    lastMessage: c.lastMessage
+      ? {
+          text: c.lastMessage.content || "Attachment",
+          senderId: c.lastMessage.senderId || "",
+          time: c.lastMessage.createdAt
+            ? new Date(c.lastMessage.createdAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit"
+              })
+            : "Recently",
+          isRead: true,
+          isDelivered: true
+        }
+      : null,
+    unreadCount: 0
+  };
+};
+
+const mapBackendMessageToItem = (m: DirectMessage): DirectMessageItem => ({
+  id: m._id,
+  senderId: m.senderId?._id || (m as any).senderId || "",
+  senderName: m.senderId?.fullName || "Classmate",
+  content: m.content || "",
+  attachments: m.attachments?.map((a) => ({
+    name: a.originalName,
+    size: `${(a.size / (1024 * 1024)).toFixed(1)} MB`,
+    type: a.mimeType?.includes("pdf") ? "pdf" : "zip",
+    url: a.url
+  })),
+  replyTo: m.replyTo
+    ? {
+        senderName: m.replyTo.senderId?.fullName || "Classmate",
+        content: m.replyTo.content
+      }
+    : undefined,
+  isRead: m.read,
+  isDelivered: true,
+  time: m.createdAt
+    ? new Date(m.createdAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    : "",
+  createdAt: m.createdAt || new Date().toISOString()
+});
+
+interface ChatPageProps {
+  initialMode?: "circle" | "dms";
+}
+
+export function ChatPage({ initialMode }: ChatPageProps = {}) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const modeParam = searchParams.get("mode");
+  const convParam = searchParams.get("conv");
+
   const user = useAuthStore((state) => state.user);
   const { addToast } = useToastStore();
 
+  // ── Unified View Mode ("circle" | "dms") ──────────────────────────────────
+  const [viewMode, setViewMode] = useState<"circle" | "dms">(
+    initialMode || (modeParam === "dms" ? "dms" : "circle")
+  );
+
+  useEffect(() => {
+    if (modeParam === "dms" && viewMode !== "dms") {
+      setViewMode("dms");
+    } else if (modeParam === "circle" && viewMode !== "circle") {
+      setViewMode("circle");
+    }
+  }, [modeParam, viewMode]);
+
+  // Layout sidebar states
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // ── Study Circles Workspace State ─────────────────────────────────────────
   const {
     activeChannel,
     setSelectedChannel,
@@ -125,10 +232,6 @@ export function ChatPage() {
     updateVoicePeers
   } = useChatStore();
 
-  // Layout sidebar states
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-
-  // Communities and circles
   const [rawCommunities, setRawCommunities] = useState<Community[]>([]);
   const [circles, setCircles] = useState<StudyCircle[]>([]);
   const [activeCircle, setActiveCircle] = useState<StudyCircle | null>(null);
@@ -145,7 +248,29 @@ export function ChatPage() {
     }>
   >([]);
 
-  // Modals
+  // ── Direct Messages & Friends Workspace State ─────────────────────────────
+  const [dmConversations, setDmConversations] = useState<ConversationItem[]>([]);
+  const [activeDmConvId, setActiveDmConvId] = useState<string | null>(convParam || null);
+  const [dmActiveView, setDmActiveView] = useState<"friends" | "conversation">(
+    convParam ? "conversation" : "friends"
+  );
+  const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
+  const [dmMessagesMap, setDmMessagesMap] = useState<Record<string, DirectMessageItem[]>>({});
+  const [isPeerTyping, setIsPeerTyping] = useState(false);
+  const [dmReplyTarget, setDmReplyTarget] = useState<{ senderName: string; content: string } | null>(null);
+
+  const [isContactInfoOpen, setIsContactInfoOpen] = useState(false);
+  const [searchInChatOpen, setSearchInChatOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [isChatEnlarged, setIsChatEnlarged] = useState(false);
+  const [activeCall, setActiveCall] = useState<{
+    isOpen: boolean;
+    type: "audio" | "video";
+    isMuted: boolean;
+    isVideoEnabled: boolean;
+  } | null>(null);
+
+  // Modals for Study Circles
   const [isExploreCirclesOpen, setIsExploreCirclesOpen] = useState(false);
   const [exploreSearch, setExploreSearch] = useState("");
   const [exploreCategory, setExploreCategory] = useState<string>("all");
@@ -257,12 +382,11 @@ export function ChatPage() {
 
   // ── 3. Load Channel Messages & Connect Socket Room ────────────────────────
   useEffect(() => {
-    if (!activeCircle || !activeChannel) return;
+    if (!activeCircle || !activeChannel || viewMode !== "circle") return;
 
     let isMounted = true;
     const chanId = activeChannel._id || activeChannel.name;
 
-    // Fetch message history from backend
     chatApi
       .history(activeCircle.id, {
         channelId: chanId,
@@ -278,7 +402,6 @@ export function ChatPage() {
         console.warn("Failed to load message history:", err);
       });
 
-    // Connect socket and join channel room
     const socket = socketService.connect();
     if (socket) {
       socket.emit("chat:joinRoom", {
@@ -294,13 +417,81 @@ export function ChatPage() {
     return () => {
       isMounted = false;
     };
-  }, [activeCircle, activeChannel, setMessages]);
+  }, [activeCircle, activeChannel, viewMode, setMessages]);
 
-  // ── 4. Global Socket Event Listeners ───────────────────────────────────────
+  // ── 4. Fetch DM Conversations & Pending Requests ──────────────────────────
+  const fetchDmData = useCallback(async () => {
+    if (!user?._id) return;
+    try {
+      const [convsRes, reqsRes] = await Promise.all([
+        directMessagesApi.listConversations({ limit: 50 }).catch(() => null),
+        friendsApi.getRequests().catch(() => null)
+      ]);
+
+      if (convsRes?.items) {
+        const mapped = convsRes.items.map((c) => mapBackendConversationToItem(c, user._id));
+        setDmConversations(mapped);
+      }
+
+      if (reqsRes) {
+        const count = (reqsRes.received?.length || 0) + (reqsRes.sent?.length || 0);
+        setPendingRequestsCount(count);
+      }
+    } catch (err) {
+      console.warn("Could not load DM data:", err);
+    }
+  }, [user?._id]);
+
   useEffect(() => {
+    fetchDmData();
+  }, [fetchDmData]);
+
+  // Sync route convParam to activeDmConvId
+  useEffect(() => {
+    if (convParam && convParam !== activeDmConvId) {
+      setActiveDmConvId(convParam);
+      setDmActiveView("conversation");
+    }
+  }, [convParam, activeDmConvId]);
+
+  // Load messages for active DM conversation
+  useEffect(() => {
+    if (!activeDmConvId) return;
+
     const socket = socketService.get();
+    if (socket) {
+      socket.emit("joinConversation", { conversationId: activeDmConvId });
+    }
+
+    let isMounted = true;
+    directMessagesApi
+      .getMessages(activeDmConvId, { limit: 50, order: "oldest" })
+      .then((res) => {
+        if (isMounted && res?.items) {
+          const mapped = res.items.map(mapBackendMessageToItem);
+          setDmMessagesMap((prev) => ({
+            ...prev,
+            [activeDmConvId]: mapped
+          }));
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load DM history:", err);
+      });
+
+    directMessagesApi.markAsRead(activeDmConvId).catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeDmConvId]);
+
+  // ── 5. Global Real-time Socket Event Listeners ─────────────────────────────
+  useEffect(() => {
+    const socket = socketService.connect();
     if (!socket) return;
 
+    // Circle Chat Events
     const handleMessageReceived = (msg: ChatMessage) => {
       addMessage(msg);
     };
@@ -391,6 +582,61 @@ export function ChatPage() {
       }
     };
 
+    // Direct Messages Events
+    const handleDirectMessage = (data: any) => {
+      const incomingConvId = data.conversationId || activeDmConvId;
+      if (!incomingConvId) return;
+
+      const newMsg: DirectMessageItem = {
+        id: data._id || `dm-${Date.now()}`,
+        senderId: data.senderId?._id || data.senderId || "u-peer",
+        senderName: data.senderId?.fullName || data.senderName || "Classmate",
+        content: data.content || "",
+        attachments: data.attachments?.map((a: any) => ({
+          name: a.originalName || a.name || "Attachment",
+          size: typeof a.size === "number" ? `${(a.size / (1024 * 1024)).toFixed(1)} MB` : a.size || "1 MB",
+          type: a.mimeType?.includes("pdf") ? "pdf" : "zip",
+          url: a.url || "#"
+        })),
+        codeSnippet: data.codeSnippet,
+        isRead: false,
+        isDelivered: true,
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        createdAt: new Date().toISOString()
+      };
+
+      setDmMessagesMap((prev) => {
+        const list = prev[incomingConvId] || [];
+        if (list.some((m) => m.id === newMsg.id)) return prev;
+        return {
+          ...prev,
+          [incomingConvId]: [...list, newMsg]
+        };
+      });
+
+      setDmConversations((prev) =>
+        prev.map((c) =>
+          c.id === incomingConvId
+            ? {
+                ...c,
+                lastMessage: {
+                  text: newMsg.content || "Sent an attachment",
+                  senderId: newMsg.senderId,
+                  time: newMsg.time,
+                  isRead: incomingConvId === activeDmConvId,
+                  isDelivered: true
+                },
+                unreadCount: incomingConvId === activeDmConvId ? 0 : c.unreadCount + 1
+              }
+            : c
+        )
+      );
+    };
+
+    const handleTyping = () => setIsPeerTyping(true);
+    const handleStopTyping = () => setIsPeerTyping(false);
+
+    // Attach listeners
     socket.on("chat:messageReceived", handleMessageReceived);
     socket.on("messageCreated", handleMessageReceived);
     socket.on("newMessage", handleMessageReceived);
@@ -406,6 +652,12 @@ export function ChatPage() {
     socket.on("voice:peerSpeaking", handleVoicePeerSpeaking);
     socket.on("voice:peerMuted", handleVoicePeerMuted);
     socket.on("voice:peerScreenshare", handleVoicePeerScreenshare);
+
+    socket.on("directMessageReceived", handleDirectMessage);
+    socket.on("directMessageCreated", handleDirectMessage);
+    socket.on("dm:messageReceived", handleDirectMessage);
+    socket.on("typing", handleTyping);
+    socket.on("stopTyping", handleStopTyping);
 
     return () => {
       socket.off("chat:messageReceived", handleMessageReceived);
@@ -423,8 +675,15 @@ export function ChatPage() {
       socket.off("voice:peerSpeaking", handleVoicePeerSpeaking);
       socket.off("voice:peerMuted", handleVoicePeerMuted);
       socket.off("voice:peerScreenshare", handleVoicePeerScreenshare);
+
+      socket.off("directMessageReceived", handleDirectMessage);
+      socket.off("directMessageCreated", handleDirectMessage);
+      socket.off("dm:messageReceived", handleDirectMessage);
+      socket.off("typing", handleTyping);
+      socket.off("stopTyping", handleStopTyping);
     };
   }, [
+    activeDmConvId,
     addMessage,
     addThreadReply,
     updateMessagePin,
@@ -435,7 +694,21 @@ export function ChatPage() {
     addToast
   ]);
 
-  // ── 5. Send Message Dispatcher ─────────────────────────────────────────────
+  // Total unread DMs
+  const totalUnreadDMs = useMemo(() => {
+    return dmConversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
+  }, [dmConversations]);
+
+  // Active DM conversation and messages
+  const activeDmConversation = useMemo(() => {
+    return dmConversations.find((c) => c.id === activeDmConvId) || null;
+  }, [dmConversations, activeDmConvId]);
+
+  const activeDmMessages = useMemo(() => {
+    return activeDmConvId ? dmMessagesMap[activeDmConvId] || [] : [];
+  }, [dmMessagesMap, activeDmConvId]);
+
+  // ── 6. Send Circle Message Dispatcher ─────────────────────────────────────
   const handleSendMessage = async (
     content: string,
     codeSnippet?: { language: string; code: string; title?: string },
@@ -449,7 +722,6 @@ export function ChatPage() {
     const socket = socketService.get();
     const chanId = activeChannel._id || activeChannel.name;
 
-    // If files are attached, upload via REST endpoint
     if (files && files.length > 0) {
       try {
         const uploaded = await chatApi.create(activeCircle.id, {
@@ -465,7 +737,6 @@ export function ChatPage() {
       return;
     }
 
-    // Standard / Code / Intent message via Socket.IO
     const payload = {
       communityId: activeCircle.id,
       channelId: chanId,
@@ -481,7 +752,192 @@ export function ChatPage() {
     });
   };
 
-  // ── 6. Create Channel Handler ──────────────────────────────────────────────
+  // ── 7. Send Direct Message Dispatcher ─────────────────────────────────────
+  const handleSelectDmConversation = (convId: string) => {
+    setActiveDmConvId(convId);
+    setDmActiveView("conversation");
+    setSearchParams({ mode: "dms", conv: convId });
+    setSearchInChatOpen(false);
+    setChatSearchQuery("");
+    setDmConversations((prev) =>
+      prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
+    );
+  };
+
+  const handleStartNewDm = async (
+    peerId: string,
+    customPeer?: { name: string; roll?: string; dept?: string }
+  ) => {
+    const existing = dmConversations.find((c) => c.peer.id === peerId);
+    if (existing) {
+      handleSelectDmConversation(existing.id);
+      return;
+    }
+
+    try {
+      const backendConv = await directMessagesApi.startConversation(peerId);
+      if (!backendConv) {
+        addToast("Unable to start conversation with this student", "error");
+        return;
+      }
+
+      const mappedConv = mapBackendConversationToItem(backendConv, user?._id);
+      if (customPeer && (!mappedConv.peer.name || mappedConv.peer.name === "Student")) {
+        mappedConv.peer.name = customPeer.name;
+        mappedConv.peer.roll = customPeer.roll || mappedConv.peer.roll;
+        mappedConv.peer.dept = customPeer.dept || mappedConv.peer.dept;
+      }
+
+      setDmConversations((prev) => {
+        const found = prev.find((c) => c.id === mappedConv.id || c.peer.id === mappedConv.peer.id);
+        if (found) return prev;
+        return [mappedConv, ...prev];
+      });
+
+      setActiveDmConvId(mappedConv.id);
+      setDmActiveView("conversation");
+      setSearchParams({ mode: "dms", conv: mappedConv.id });
+      addToast(`Connected with ${mappedConv.peer.name}`, "success");
+    } catch (err: any) {
+      console.error("Failed to start conversation:", err);
+      const msg = err?.response?.data?.message || err?.message || "Failed to start conversation";
+      addToast(msg, "error");
+    }
+  };
+
+  const handleSendDirectMessage = async (
+    content: string,
+    codeSnippet?: { language: string; code: string },
+    files?: File[],
+    voiceNote?: { duration: string; url?: string }
+  ) => {
+    if (!activeDmConvId) return;
+
+    const student = user?.fullName || "Student";
+    const studentId = user?._id || "u-me";
+
+    const tempId = `dm-opt-${Date.now()}`;
+    const newMsg: DirectMessageItem = {
+      id: tempId,
+      senderId: studentId,
+      senderName: student,
+      content,
+      codeSnippet,
+      voiceNote,
+      attachments: files?.map((f) => ({
+        name: f.name,
+        size: `${(f.size / (1024 * 1024)).toFixed(1)} MB`,
+        type: f.name.endsWith(".pdf") ? "pdf" : "zip",
+        url: "#"
+      })),
+      replyTo: dmReplyTarget || undefined,
+      isRead: false,
+      isDelivered: true,
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      createdAt: new Date().toISOString()
+    };
+
+    setDmMessagesMap((prev) => ({
+      ...prev,
+      [activeDmConvId]: [...(prev[activeDmConvId] || []), newMsg]
+    }));
+
+    setDmConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeDmConvId
+          ? {
+              ...c,
+              lastMessage: {
+                text: content || (voiceNote ? "🎙️ Voice Note" : "Sent an attachment"),
+                senderId: studentId,
+                time: newMsg.time,
+                isRead: true,
+                isDelivered: true,
+                hasAttachment: !!(files && files.length > 0),
+                hasCodeSnippet: !!codeSnippet
+              }
+            }
+          : c
+      )
+    );
+
+    try {
+      const sent = await directMessagesApi.sendMessage(activeDmConvId, {
+        content,
+        attachments: files
+      });
+
+      if (sent) {
+        const mappedSent = mapBackendMessageToItem(sent);
+        setDmMessagesMap((prev) => ({
+          ...prev,
+          [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
+            m.id === tempId ? mappedSent : m
+          )
+        }));
+      }
+
+      const socket = socketService.get();
+      const activeConv = dmConversations.find((c) => c.id === activeDmConvId);
+      if (socket && activeConv) {
+        socket.emit("sendDirectMessage", {
+          receiverId: activeConv.peer.id,
+          conversationId: activeDmConvId,
+          content,
+          codeSnippet
+        });
+      }
+    } catch (err: any) {
+      console.warn("Could not persist message to backend API:", err?.message || err);
+      const socket = socketService.get();
+      const activeConv = dmConversations.find((c) => c.id === activeDmConvId);
+      if (socket && activeConv) {
+        socket.emit("sendDirectMessage", {
+          receiverId: activeConv.peer.id,
+          conversationId: activeDmConvId,
+          content,
+          codeSnippet
+        });
+      }
+    }
+  };
+
+  const handleDmReact = (messageId: string, emoji: string) => {
+    if (!activeDmConvId) return;
+    const student = user?.fullName || "Scholar";
+
+    setDmMessagesMap((prev) => {
+      const currentList = prev[activeDmConvId] || [];
+      const updated = currentList.map((m) => {
+        if (m.id !== messageId) return m;
+        const currentReactions = { ...(m.reactions || {}) };
+        const users = currentReactions[emoji] || [];
+
+        if (users.includes(student)) {
+          const filtered = users.filter((u) => u !== student);
+          if (filtered.length === 0) delete currentReactions[emoji];
+          else currentReactions[emoji] = filtered;
+        } else {
+          currentReactions[emoji] = [...users, student];
+        }
+
+        return { ...m, reactions: currentReactions };
+      });
+
+      return { ...prev, [activeDmConvId]: updated };
+    });
+  };
+
+  const handleStartCall = (type: "audio" | "video") => {
+    setActiveCall({
+      isOpen: true,
+      type,
+      isMuted: false,
+      isVideoEnabled: type === "video"
+    });
+  };
+
+  // ── 8. Create Channel Handler ──────────────────────────────────────────────
   const handleCreateChannelSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newChannelName.trim() || !activeCircle) return;
@@ -506,7 +962,7 @@ export function ChatPage() {
     addToast(`Channel #${formattedName} created!`, "success");
   };
 
-  // ── 7. Create Circle Handler ───────────────────────────────────────────────
+  // ── 9. Create Circle Handler ───────────────────────────────────────────────
   const handleCreateCircle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCircleName.trim()) return;
@@ -535,7 +991,7 @@ export function ChatPage() {
     }
   };
 
-  // ── 8. Join Circle Handler ─────────────────────────────────────────────────
+  // ── 10. Join Circle Handler ────────────────────────────────────────────────
   const handleJoinCircle = async (circle: StudyCircle) => {
     try {
       setIsJoiningCircleId(circle.id);
@@ -561,78 +1017,233 @@ export function ChatPage() {
 
       {/* ── High-Density Slack / Discord Grade Split Layout ── */}
       <div className="flex-1 flex h-full overflow-hidden">
-        {/* Rail: Discord-Style Circle Switcher */}
+        {/* Rail: Discord-Style Circle Switcher with Top DMs Hub */}
         <CircleSwitcher
           circles={circles}
           activeCircleId={activeCircle?.id || ""}
-          onSelectCircle={(circle) => setActiveCircle(circle)}
+          activeMode={viewMode}
+          onSelectDMs={() => {
+            setViewMode("dms");
+            setSearchParams({ mode: "dms" });
+          }}
+          onSelectCircle={(circle) => {
+            setViewMode("circle");
+            setActiveCircle(circle);
+            setSearchParams({ mode: "circle", circle: circle.id });
+          }}
           onExploreCircles={() => setIsExploreCirclesOpen(true)}
           onCreateCircle={() => setIsCreateCircleOpen(true)}
+          unreadDMsCount={totalUnreadDMs}
         />
 
-        {activeCircle && activeChannel ? (
-          <>
-            {/* Pane 1: Circle Channels Sidebar (4-Tier Categorization) */}
-            <CircleSidebar
-              community={{
-                _id: activeCircle.id,
-                name: activeCircle.name,
-                memberCount: activeCircle.memberCount
-              }}
-              channels={circleChannels}
-              activeChannelId={activeChannel._id || activeChannel.name}
-              onSelectChannel={(ch) => setSelectedChannel(ch)}
-              onCreateChannel={() => setIsCreateChannelOpen(true)}
-              currentUserId={user?._id}
-            />
+        {viewMode === "circle" ? (
+          /* ── Study Circles Workspace ── */
+          activeCircle && activeChannel ? (
+            <>
+              {/* Pane 1: Circle Channels Sidebar (4-Tier Categorization) */}
+              <CircleSidebar
+                community={{
+                  _id: activeCircle.id,
+                  name: activeCircle.name,
+                  memberCount: activeCircle.memberCount
+                }}
+                channels={circleChannels}
+                activeChannelId={activeChannel._id || activeChannel.name}
+                onSelectChannel={(ch) => setSelectedChannel(ch)}
+                onCreateChannel={() => setIsCreateChannelOpen(true)}
+                currentUserId={user?._id}
+              />
 
-            {/* Pane 2: Core Chat Container (Frosted Ambient Header, Math, Code Sandbox, ChatInput) */}
-            <ChatContainer
-              community={{
-                _id: activeCircle.id,
-                name: activeCircle.name
-              }}
-              channel={activeChannel}
-              currentUserId={user?._id}
-              currentUserName={user?.fullName}
-              onSendMessage={handleSendMessage}
-            />
+              {/* Pane 2: Core Chat Container (Frosted Ambient Header, Math, Code Sandbox, ChatInput) */}
+              <ChatContainer
+                community={{
+                  _id: activeCircle.id,
+                  name: activeCircle.name
+                }}
+                channel={activeChannel}
+                currentUserId={user?._id}
+                currentUserName={user?.fullName}
+                onSendMessage={handleSendMessage}
+              />
 
-            {/* Pane 3: Inspector Drawer (Threads, Shared Vault, Roster & Presence) */}
-            <ChatInspectorDrawer
-              communityId={activeCircle.id}
-              channelId={activeChannel._id || activeChannel.name}
-              currentUserId={user?._id}
-              currentUserName={user?.fullName}
-              members={circleMembers}
-            />
-          </>
+              {/* Pane 3: Inspector Drawer (Threads, Shared Vault, Roster & Presence) */}
+              <ChatInspectorDrawer
+                communityId={activeCircle.id}
+                channelId={activeChannel._id || activeChannel.name}
+                currentUserId={user?._id}
+                currentUserName={user?.fullName}
+                members={circleMembers}
+              />
+            </>
+          ) : (
+            /* Empty / Welcome State when no circles exist */
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#080D1A]">
+              <div className="w-16 h-16 rounded-3xl bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mb-4 shadow-xl">
+                <Compass className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-bold text-white mb-2">Select or Discover a Study Circle</h2>
+              <p className="text-sm text-gray-400 max-w-md mb-6 leading-relaxed">
+                Study Circles are collaborative campus workspaces with synchronized study sprints, LaTeX
+                math rendering, and drop-in audio stages.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsExploreCirclesOpen(true)}
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-900/30 transition-all"
+                >
+                  Explore Campus Circles
+                </button>
+                <button
+                  onClick={() => setIsCreateCircleOpen(true)}
+                  className="px-5 py-2.5 rounded-xl bg-[#0F1A30] hover:bg-[#162544] text-gray-200 border border-[#162544] font-bold text-xs transition-all"
+                >
+                  Create Circle
+                </button>
+              </div>
+            </div>
+          )
         ) : (
-          /* Empty / Welcome State when no circles exist */
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#080D1A]">
-            <div className="w-16 h-16 rounded-3xl bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mb-4 shadow-xl">
-              <Compass className="w-8 h-8" />
-            </div>
-            <h2 className="text-xl font-bold text-white mb-2">Select or Discover a Study Circle</h2>
-            <p className="text-sm text-gray-400 max-w-md mb-6 leading-relaxed">
-              Study Circles are collaborative campus workspaces with synchronized study sprints, LaTeX
-              math rendering, and drop-in audio stages.
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsExploreCirclesOpen(true)}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-900/30 transition-all"
-              >
-                Explore Campus Circles
-              </button>
-              <button
-                onClick={() => setIsCreateCircleOpen(true)}
-                className="px-5 py-2.5 rounded-xl bg-[#0F1A30] hover:bg-[#162544] text-gray-200 border border-[#162544] font-bold text-xs transition-all"
-              >
-                Create Circle
-              </button>
-            </div>
-          </div>
+          /* ── Direct Messages & Friends Workspace (Discord Architecture) ── */
+          <>
+            {/* Pane 1: Direct Messages Sidebar */}
+            <DMSidebar
+              conversations={dmConversations}
+              activeConversationId={activeDmConvId}
+              activeView={dmActiveView}
+              pendingRequestsCount={pendingRequestsCount}
+              onSelectFriends={() => {
+                setDmActiveView("friends");
+                setActiveDmConvId(null);
+                setSearchParams({ mode: "dms" });
+              }}
+              onSelectConversation={(convId) => handleSelectDmConversation(convId)}
+              onOpenNewChat={() => {
+                setDmActiveView("friends");
+                setActiveDmConvId(null);
+              }}
+              currentUser={user}
+            />
+
+            {/* Pane 2 & 3: 1-on-1 Conversation OR Friends Dashboard */}
+            {dmActiveView === "conversation" && activeDmConversation ? (
+              <div className="flex-1 flex flex-row min-w-0 h-full overflow-hidden">
+                {/* Pane 2: 1-on-1 Direct Message Stream */}
+                <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#080D1A]">
+                  <ConversationHeader
+                    peer={activeDmConversation.peer}
+                    onBack={() => {
+                      setDmActiveView("friends");
+                      setActiveDmConvId(null);
+                      setSearchParams({ mode: "dms" });
+                    }}
+                    onOpenContactInfo={() => setIsContactInfoOpen((prev) => !prev)}
+                    onStartCall={handleStartCall}
+                    onSearchInChat={() => setSearchInChatOpen((prev) => !prev)}
+                    isPeerTyping={isPeerTyping}
+                    isEnlarged={isChatEnlarged}
+                    onToggleEnlarge={() => setIsChatEnlarged((prev) => !prev)}
+                  />
+
+                  {/* In-Chat Search Bar */}
+                  <AnimatePresence>
+                    {searchInChatOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="p-2.5 px-4 bg-[#0B132B] border-b border-[#162544] flex items-center justify-between gap-3 z-10"
+                      >
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder={`Search messages with ${activeDmConversation.peer.name}...`}
+                            value={chatSearchQuery}
+                            onChange={(e) => setChatSearchQuery(e.target.value)}
+                            className="w-full rounded-xl border border-[#162544] bg-[#080D1A] pl-9 pr-8 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            autoFocus
+                          />
+                          {chatSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setChatSearchQuery("")}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchInChatOpen(false);
+                            setChatSearchQuery("");
+                          }}
+                          className="text-xs font-bold text-gray-400 hover:text-white"
+                        >
+                          Close
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Real-time Direct Message Stream */}
+                  <DirectMessageStream
+                    messages={activeDmMessages}
+                    currentUser={user}
+                    onReply={(msg) =>
+                      setDmReplyTarget({ senderName: msg.senderName, content: msg.content })
+                    }
+                    onReact={handleDmReact}
+                    searchQuery={chatSearchQuery}
+                  />
+
+                  {/* Input Dock */}
+                  <DirectMessageInput
+                    peerName={activeDmConversation.peer.name}
+                    onSendMessage={handleSendDirectMessage}
+                    onTyping={(isTyping) => {
+                      const socket = socketService.get();
+                      if (socket && activeDmConversation) {
+                        socket.emit(isTyping ? "typing" : "stopTyping", {
+                          conversationId: activeDmConvId,
+                          receiverId: activeDmConversation.peer.id
+                        });
+                      }
+                    }}
+                    isPeerTyping={isPeerTyping}
+                    replyTarget={dmReplyTarget}
+                    onCancelReply={() => setDmReplyTarget(null)}
+                  />
+                </div>
+
+                {/* Pane 3: Contact Info Drawer */}
+                <ContactInfoDrawer
+                  isOpen={isContactInfoOpen}
+                  onClose={() => setIsContactInfoOpen(false)}
+                  peer={activeDmConversation.peer}
+                  messages={activeDmMessages}
+                  onStartCall={handleStartCall}
+                  onSearchInChat={() => {
+                    setIsContactInfoOpen(false);
+                    setSearchInChatOpen(true);
+                  }}
+                />
+              </div>
+            ) : (
+              /* Friends Management Dashboard */
+              <FriendsDashboard
+                currentUser={user}
+                onStartChat={handleStartNewDm}
+                activeCircles={circles}
+                onSelectCircle={(circle) => {
+                  setViewMode("circle");
+                  setActiveCircle(circle);
+                  setSearchParams({ mode: "circle", circle: circle.id });
+                }}
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -641,6 +1252,94 @@ export function ChatPage() {
         currentUserId={user?._id}
         currentUserName={user?.fullName}
       />
+
+      {/* ── Call Simulation Modal ── */}
+      <AnimatePresence>
+        {activeCall && activeCall.isOpen && activeDmConversation && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="relative w-full max-w-sm rounded-3xl border border-[#162544] bg-[#0B132B] text-white p-8 shadow-2xl flex flex-col items-center text-center"
+            >
+              <span className="text-[11px] font-bold text-[#1E90FF] uppercase tracking-wider mb-6 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[#1E90FF] animate-ping" />
+                {activeCall.type === "video" ? "StudyConnect Video Call" : "StudyConnect Voice Call"}
+              </span>
+
+              <div className="relative mb-4">
+                <div className="h-24 w-24 rounded-full overflow-hidden border-4 border-[#1E90FF]/30 bg-[#1E90FF] flex items-center justify-center text-2xl font-black shadow-xl">
+                  {activeDmConversation.peer.avatar ? (
+                    <img
+                      src={activeDmConversation.peer.avatar}
+                      alt={activeDmConversation.peer.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    activeDmConversation.peer.name.charAt(0).toUpperCase()
+                  )}
+                </div>
+                <div className="absolute inset-0 rounded-full border border-[#1E90FF]/50 animate-ping pointer-events-none" />
+              </div>
+
+              <h3 className="text-lg font-bold text-white mb-0.5">
+                {activeDmConversation.peer.name}
+              </h3>
+              <p className="text-xs text-gray-400 font-medium mb-6">
+                {activeDmConversation.peer.roll} • {activeDmConversation.peer.dept}
+              </p>
+
+              <div className="text-xs text-[#1E90FF]/80 font-medium mb-8">
+                Ringing... (End-to-End Encrypted)
+              </div>
+
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveCall((prev) => (prev ? { ...prev, isMuted: !prev.isMuted } : null))
+                  }
+                  className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors ${
+                    activeCall.isMuted
+                      ? "bg-rose-500 text-white"
+                      : "bg-[#162544] text-gray-200 hover:bg-[#1f335c]"
+                  }`}
+                  title={activeCall.isMuted ? "Unmute" : "Mute"}
+                >
+                  {activeCall.isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveCall(null)}
+                  className="h-14 w-14 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-lg shadow-rose-600/30 transition-transform hover:scale-105"
+                  title="End Call"
+                >
+                  <PhoneOff size={24} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveCall((prev) =>
+                      prev ? { ...prev, isVideoEnabled: !prev.isVideoEnabled } : null
+                    )
+                  }
+                  className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors ${
+                    !activeCall.isVideoEnabled
+                      ? "bg-rose-500 text-white"
+                      : "bg-[#162544] text-gray-200 hover:bg-[#1f335c]"
+                  }`}
+                  title={activeCall.isVideoEnabled ? "Turn off camera" : "Turn on camera"}
+                >
+                  {activeCall.isVideoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ── Create Channel Modal ── */}
       <AnimatePresence>
@@ -1025,7 +1724,7 @@ export function ChatPage() {
                         </div>
 
                         <div className="shrink-0">
-                          {isSelected ? (
+                          {isSelected && viewMode === "circle" ? (
                             <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 flex items-center gap-1">
                               <Check className="w-3 h-3" />
                               <span>Active</span>
@@ -1033,7 +1732,9 @@ export function ChatPage() {
                           ) : isMemberAlready ? (
                             <button
                               onClick={() => {
+                                setViewMode("circle");
                                 setActiveCircle(circle);
+                                setSearchParams({ mode: "circle", circle: circle.id });
                                 setIsExploreCirclesOpen(false);
                               }}
                               className="px-3.5 py-1.5 rounded-xl bg-[#162544] hover:bg-blue-600 hover:text-white text-gray-200 text-xs font-bold transition-all"
