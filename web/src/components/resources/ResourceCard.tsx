@@ -98,7 +98,17 @@ export function ResourceCard({
   const badgeInfo = getFormatBadge(resource.format);
   const FormatIcon = badgeInfo.icon;
 
-  const getInitials = (name: string) => {
+  const getUploaderName = (uploader: any): string => {
+    if (!uploader) return "Scholar";
+    if (typeof uploader === "string") return uploader;
+    if (typeof uploader === "object" && uploader !== null) {
+      return uploader.name || uploader.fullName || uploader.uploader || "Scholar";
+    }
+    return String(uploader);
+  };
+
+  const getInitials = (uploader: any) => {
+    const name = getUploaderName(uploader);
     return name
       .split(" ")
       .map((n) => n[0])
@@ -175,11 +185,11 @@ export function ResourceCard({
         <div className="pt-3 border-t border-slate-200/70 dark:border-slate-800/60 flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2 overflow-hidden">
             <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#1E90FF] text-white font-bold text-[10px] shrink-0">
-              {getInitials(resource.uploader.name)}
+              {getInitials(resource.uploader)}
             </div>
             <div className="flex flex-col overflow-hidden">
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                {resource.uploader.name}
+                {getUploaderName(resource.uploader)}
               </span>
               <span className="text-[9px] text-slate-400">
                 {resource.createdAt}

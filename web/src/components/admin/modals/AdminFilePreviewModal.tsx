@@ -81,7 +81,7 @@ export function AdminFilePreviewModal({
             </h3>
 
             <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-              Uploaded by <strong className="text-slate-700 dark:text-slate-200">{resource.uploaderName}</strong> ({resource.uploaderRoll} • {resource.uploaderDept})
+              Uploaded by <strong className="text-slate-700 dark:text-slate-200">{typeof (resource as any).uploader === "object" ? (resource as any).uploader?.name || (resource as any).uploader?.fullName || resource.uploaderName : resource.uploaderName || (resource as any).uploader}</strong> ({resource.uploaderRoll || (resource as any).uploader?.roll || "CS"} • {resource.uploaderDept || (resource as any).uploader?.dept || "Campus"})
             </p>
           </div>
 

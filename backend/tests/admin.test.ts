@@ -36,7 +36,9 @@ const userData = {
 };
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryServer.create({
+    instance: { launchTimeout: 120000 }
+  });
   await connectDatabase(mongo.getUri());
   server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, resolve));

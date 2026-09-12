@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Calendar, MapPin, Users, Clock, FileText, Download, CheckCircle, Search, Trash2 } from "lucide-react";
 import type { Event, Participant } from "../types/event";
+import { getOrganizerName } from "../types/event";
 import { useToastStore } from "../store/toast.store";
 
 interface EventDetailsDrawerProps {
@@ -124,12 +125,12 @@ export function EventDetailsDrawer({
           <div className="flex-1 overflow-y-auto py-4 space-y-5 pr-1">
             {activeTab === "details" ? (
               <>
-                {/* Event Banner */}
-                {event.bannerImage ? (
+                {/* Event Banner / Poster */}
+                {event.eventImage?.url || event.bannerImage ? (
                   <img
-                    src={event.bannerImage}
+                    src={event.eventImage?.url || event.bannerImage}
                     alt={event.title}
-                    className="w-full h-36 object-cover rounded-xl border border-slate-200 dark:border-white/5"
+                    className="w-full h-44 object-cover rounded-xl border border-slate-200 dark:border-white/5"
                   />
                 ) : (
                   <div className="w-full h-36 bg-gradient-to-tr from-indigo-500/10 to-violet-500/10 rounded-xl flex items-center justify-center border border-slate-200 dark:border-white/5">
@@ -225,7 +226,7 @@ export function EventDetailsDrawer({
                       Organizer / Club
                     </span>
                     <span className="block font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {event.organizer}
+                      {getOrganizerName(event.organizer)}
                     </span>
                   </div>
                   <div>

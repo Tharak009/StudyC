@@ -31,7 +31,9 @@ let token: string;
 let userId: string;
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryServer.create({
+    instance: { launchTimeout: 120000 }
+  });
   await connectDatabase(mongo.getUri());
   httpServer = createServer(app);
   initializeSockets(httpServer);
@@ -54,9 +56,13 @@ afterEach(async () => {
 
 afterAll(async () => {
   await User.deleteMany({});
-  await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+  if (httpServer) {
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+  }
   await disconnectDatabase();
-  await mongo.stop();
+  if (mongo) {
+    await mongo.stop();
+  }
 });
 
 describe("Notification Socket.IO events", () => {

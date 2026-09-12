@@ -8,8 +8,12 @@ export class EventController {
     const category = request.query.category as EventCategory | undefined;
     const search = request.query.search as string | undefined;
     const limit = request.query.limit ? Number(request.query.limit) : 50;
+    const approvalStatus = request.query.approvalStatus as any;
 
-    const events = await eventService.listEvents({ category, search, limit });
+    const events = await eventService.listEvents(
+      { category, search, limit, approvalStatus },
+      request.user?.role
+    );
     response.json(new ApiResponse(200, events, "Events retrieved successfully"));
   }
 
@@ -19,7 +23,7 @@ export class EventController {
   }
 
   async create(request: Request, response: Response) {
-    const event = await eventService.createEvent(request.user!.id, request.body);
+    const event = await eventService.createEvent(request.user!.id, request.body, request.file);
     response.status(201).json(new ApiResponse(201, event, "Event created successfully"));
   }
 
@@ -28,9 +32,28 @@ export class EventController {
       request.user!.id,
       request.user!.role,
       request.params.id as string,
-      request.body
+      request.body,
+      request.file
     );
     response.json(new ApiResponse(200, event, "Event updated successfully"));
+  }
+
+  async approve(request: Request, response: Response) {
+    const event = await eventService.approveEvent(
+      request.user!.id,
+      request.user!.role,
+      request.params.id as string
+    );
+    response.json(new ApiResponse(200, event, "Event approved successfully"));
+  }
+
+  async reject(request: Request, response: Response) {
+    const event = await eventService.rejectEvent(
+      request.user!.id,
+      request.user!.role,
+      request.params.id as string
+    );
+    response.json(new ApiResponse(200, event, "Event rejected successfully"));
   }
 
   async delete(request: Request, response: Response) {

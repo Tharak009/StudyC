@@ -21,6 +21,7 @@ import { usersApi } from "../../api/users.api";
 import { eventsApi } from "../../api/events.api";
 import { directMessagesApi } from "../../api/direct-messages.api";
 import { useAuthStore } from "../../store/auth.store";
+import { getOrganizerName } from "../../types/event";
 
 interface CircleResult {
   id: string;
@@ -133,7 +134,7 @@ export function UniversalSearchMenu() {
             category: ev.category,
             dateStr: ev.dateStr,
             timeStr: ev.timeStr,
-            organizer: ev.organizer,
+            organizer: getOrganizerName(ev.organizer),
             urgency: ev.category === "deadlines" ? "Urgent" : undefined
           }));
         }

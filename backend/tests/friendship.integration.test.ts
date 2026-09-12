@@ -26,7 +26,9 @@ const userB = {
 };
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryServer.create({
+    instance: { launchTimeout: 120000 }
+  });
   await connectDatabase(mongo.getUri());
 }, 120000);
 

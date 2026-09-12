@@ -35,6 +35,10 @@ export class StorageService {
     return this.provider.save(file, "resources");
   }
 
+  uploadEventPoster(file: Express.Multer.File): Promise<StoredFile> {
+    return this.provider.save(file, "events");
+  }
+
   delete(key: string): Promise<void> {
     return this.provider.delete(key);
   }

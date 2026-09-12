@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { X, Plus, Trash2 } from "lucide-react";
+import { X, Plus, Trash2, Upload } from "lucide-react";
 import { Button } from "./button";
 import { Input } from "./input";
-import { EVENT_CATEGORIES, type Event, type EventCategory } from "../types/event";
+import { EVENT_CATEGORIES, getOrganizerName, type Event, type EventCategory } from "../types/event";
 
 interface EventFormModalProps {
   event: Event | null; // null for Create, object for Edit
@@ -33,6 +33,9 @@ export function EventFormModal({ event, onClose, onSave }: EventFormModalProps) 
   const [registrationDeadline, setRegistrationDeadline] = useState("");
   const [maxParticipants, setMaxParticipants] = useState(100);
   const [bannerImage, setBannerImage] = useState("");
+  const [eventImageFile, setEventImageFile] = useState<File | null>(null);
+  const [eventImagePreview, setEventImagePreview] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -42,13 +45,17 @@ export function EventFormModal({ event, onClose, onSave }: EventFormModalProps) 
       setDescription(event.description || "");
       setCategory(event.category || "Workshop");
       setDepartment(event.department || "Computer Science");
-      setOrganizer(event.organizer || "");
+      setOrganizer(getOrganizerName(event.organizer));
       setVenue(event.venue || "");
       setDate(event.date || "");
       setTime(event.time || "");
       setRegistrationDeadline(event.registrationDeadline || "");
       setMaxParticipants(event.maxParticipants || 100);
       setBannerImage(event.bannerImage || "");
+      const existingUrl = event.eventImage?.url || event.bannerImage || null;
+      setEventImagePreview(existingUrl);
+      setEventImageFile(null);
+      setRemoveImage(false);
       setAttachments(event.attachments || []);
       setErrors({});
     } else {
@@ -63,10 +70,44 @@ export function EventFormModal({ event, onClose, onSave }: EventFormModalProps) 
       setRegistrationDeadline("");
       setMaxParticipants(100);
       setBannerImage("");
+      setEventImagePreview(null);
+      setEventImageFile(null);
+      setRemoveImage(false);
       setAttachments([]);
       setErrors({});
     }
   }, [event]);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setErrors((prev) => ({ ...prev, eventImage: "Only JPEG, PNG, and WebP images are allowed" }));
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors((prev) => ({ ...prev, eventImage: "Image file size must be less than 5 MB" }));
+      return;
+    }
+
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.eventImage;
+      return next;
+    });
+
+    setEventImageFile(file);
+    setEventImagePreview(URL.createObjectURL(file));
+    setRemoveImage(false);
+  };
+
+  const handleRemoveImage = () => {
+    setEventImageFile(null);
+    setEventImagePreview(null);
+    setRemoveImage(true);
+  };
 
   const handleAddAttachment = () => {
     setAttachments((prev) => [...prev, { name: "", url: "" }]);
@@ -112,6 +153,8 @@ export function EventFormModal({ event, onClose, onSave }: EventFormModalProps) 
       registrationDeadline,
       maxParticipants,
       bannerImage: bannerImage.trim() || undefined,
+      eventImage: eventImageFile,
+      removeImage,
       attachments: attachments.filter((att) => att.name.trim() && att.url.trim()),
     });
   };
@@ -240,12 +283,60 @@ export function EventFormModal({ event, onClose, onSave }: EventFormModalProps) 
             />
           </div>
 
-          <Input
-            label="Banner Image URL (Optional)"
-            value={bannerImage}
-            onChange={(e) => setBannerImage(e.target.value)}
-            placeholder="https://images.unsplash.com/photo-..."
-          />
+          {/* Event Photo / Event Poster Upload */}
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-550 dark:text-slate-400">
+              Event Photo / Event Poster (Optional)
+            </label>
+            {eventImagePreview ? (
+              <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 group">
+                <img
+                  src={eventImagePreview}
+                  alt="Event Poster Preview"
+                  className="w-full h-36 object-cover"
+                />
+                <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-3 transition-opacity">
+                  <label className="cursor-pointer rounded-lg bg-white/90 dark:bg-slate-800/90 px-3 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-white transition-all">
+                    Change
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleImageChange}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRemoveImage}
+                    className="rounded-lg bg-rose-500/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600 transition-all cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-white/[0.02] hover:bg-slate-100/50 dark:hover:bg-white/[0.04] transition-all">
+                <div className="flex flex-col items-center justify-center pt-3 pb-3">
+                  <Upload size={20} className="mb-1.5 text-slate-400 dark:text-slate-500" />
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <span className="font-semibold text-indigo-600 dark:text-indigo-400">Select Image</span> or drag & drop
+                  </p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                    JPEG, PNG, or WebP (Max 5 MB)
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleImageChange}
+                />
+              </label>
+            )}
+            {errors.eventImage && (
+              <span className="mt-1 block text-[10px] text-rose-500">{errors.eventImage}</span>
+            )}
+          </div>
 
           {/* Attachments Section */}
           <div>

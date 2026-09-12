@@ -550,7 +550,7 @@ export const registerChatHandlers = (
         const existingIdx = message.reactions.findIndex((r) => r.emoji === emoji);
 
         if (existingIdx !== -1 && message.reactions[existingIdx]) {
-          const rx = message.reactions[existingIdx]!;
+          const rx = message.reactions[existingIdx];
           const userIndex = rx.users.findIndex((u) => u.toString() === userId);
           if (userIndex !== -1) {
             rx.users.splice(userIndex, 1);

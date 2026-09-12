@@ -22,7 +22,9 @@ const userData = {
 };
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryServer.create({
+    instance: { launchTimeout: 120000 }
+  });
   await connectDatabase(mongo.getUri());
   server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -34,9 +36,13 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (server) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
   await disconnectDatabase();
-  await mongo.stop();
+  if (mongo) {
+    await mongo.stop();
+  }
 });
 
 const register = async () => {

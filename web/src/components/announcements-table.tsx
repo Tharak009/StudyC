@@ -173,7 +173,9 @@ export function AnnouncementsTable({
 
                 {/* Created By */}
                 <td className="px-6 py-4 text-slate-550 dark:text-slate-400 font-semibold truncate max-w-[110px]">
-                  {ann.createdBy}
+                  {typeof ann.createdBy === "object" && ann.createdBy !== null
+                    ? (ann.createdBy as any).fullName || (ann.createdBy as any).name || "Campus Admin"
+                    : ann.createdBy}
                 </td>
 
                 {/* Publish Window */}

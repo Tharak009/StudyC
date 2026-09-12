@@ -80,6 +80,7 @@ const imageUpload = multer({
 
 export const profilePictureUpload = imageUpload.single("profilePicture");
 export const communityBannerUpload = imageUpload.single("bannerImage");
+export const eventImageUpload = imageUpload.single("eventImage");
 
 export const chatAttachmentUpload = multer({
   storage: multer.memoryStorage(),

@@ -873,7 +873,11 @@ function Chat({ go, dark, tog }: { go: (p: Page) => void; dark: boolean; tog: ()
                 <Ava init={m.init} color={m.color} size="md" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-sm font-bold text-foreground">{m.user}</span>
+                    <span className="text-sm font-bold text-foreground">
+                      {typeof m.user === "object" && m.user !== null
+                        ? (m.user as any).fullName || (m.user as any).name || "User"
+                        : m.user}
+                    </span>
                     <span className="text-xs text-muted-foreground">{m.time}</span>
                   </div>
                   <p className="text-sm text-foreground leading-relaxed">{m.text}</p>

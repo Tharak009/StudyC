@@ -9,6 +9,17 @@ export const EVENT_CATEGORIES = [
 
 export type EventCategory = (typeof EVENT_CATEGORIES)[number];
 
+export const EVENT_APPROVAL_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+export type EventApprovalStatus = (typeof EVENT_APPROVAL_STATUSES)[number];
+
+export interface EventImage {
+  key: string;
+  url: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface IEvent {
   title: string;
   description: string;
@@ -20,9 +31,11 @@ export interface IEvent {
   timeStr: string;
   isVirtual: boolean;
   tags: string[];
+  eventImage?: EventImage | null;
   attendeesCount: number;
   attendees: Types.ObjectId[];
   createdBy: Types.ObjectId;
+  approvalStatus: EventApprovalStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,9 +60,22 @@ const eventSchema = new Schema<IEvent, EventModel>(
     timeStr: { type: String, required: true, trim: true },
     isVirtual: { type: Boolean, default: false },
     tags: { type: [{ type: String, trim: true }], default: [] },
+    eventImage: {
+      key: { type: String },
+      url: { type: String },
+      originalName: { type: String },
+      mimeType: { type: String },
+      size: { type: Number }
+    },
     attendeesCount: { type: Number, default: 1, min: 0 },
     attendees: [{ type: Schema.Types.ObjectId, ref: "User" }],
-    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true }
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    approvalStatus: {
+      type: String,
+      enum: EVENT_APPROVAL_STATUSES,
+      default: "PENDING",
+      index: true
+    }
   },
   {
     timestamps: true,
@@ -58,6 +84,7 @@ const eventSchema = new Schema<IEvent, EventModel>(
 );
 
 eventSchema.index({ createdAt: -1 });
+eventSchema.index({ approvalStatus: 1, createdAt: -1 });
 eventSchema.index({ category: 1, createdAt: -1 });
 eventSchema.index({ title: "text", description: "text", organizer: "text" });
 

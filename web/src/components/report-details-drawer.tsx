@@ -308,7 +308,10 @@ export function ReportDetailsDrawer({
                         </div>
                         {event.moderator && (
                           <span className="block text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                            Moderator: {event.moderator}
+                            Moderator:{" "}
+                            {typeof event.moderator === "object" && event.moderator !== null
+                              ? (event.moderator as any).fullName || (event.moderator as any).name || "Moderator"
+                              : event.moderator}
                           </span>
                         )}
                         {event.details && (
@@ -334,7 +337,11 @@ export function ReportDetailsDrawer({
                     {report.internalNotes.map((note) => (
                       <div key={note.id} className="rounded-xl border border-slate-150 p-3 bg-slate-50/30 dark:border-white/5 dark:bg-white/[0.01] text-xs">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-indigo-650 dark:text-indigo-400">{note.author}</span>
+                          <span className="font-bold text-indigo-650 dark:text-indigo-400">
+                            {typeof note.author === "object" && note.author !== null
+                              ? (note.author as any).fullName || (note.author as any).name || "Admin"
+                              : note.author}
+                          </span>
                           <span className="text-[9px] text-slate-400">{new Date(note.date).toLocaleDateString()}</span>
                         </div>
                         <p className="text-slate-700 dark:text-slate-350 leading-relaxed">{note.content}</p>

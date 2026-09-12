@@ -5,6 +5,7 @@ import { useAuthStore } from "../store/auth.store";
 import { useToastStore } from "../store/toast.store";
 import { Avatar } from "../components/avatar";
 import type { Event, EventCategory } from "../types/event";
+import { getOrganizerName } from "../types/event";
 
 const CATEGORIES: EventCategory[] = ["Workshop", "Seminar", "Hackathon", "Cultural", "Sports", "Webinar", "Other"];
 
@@ -49,7 +50,7 @@ export function StudentEventsPage() {
       const matchesSearch =
         e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         e.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.organizer.toLowerCase().includes(searchQuery.toLowerCase());
+        getOrganizerName(e.organizer).toLowerCase().includes(searchQuery.toLowerCase());
       
       const matchesCategory = !categoryFilter || e.category === categoryFilter;
 
@@ -250,57 +251,53 @@ export function StudentEventsPage() {
               <div
                 key={evt._id}
                 onClick={() => setSelectedEvent(evt)}
-                className="group relative rounded-3xl border border-slate-200 bg-white overflow-hidden p-4 shadow-sm hover:shadow-lg dark:border-white/5 dark:bg-ink-900 transition-all duration-200 hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
+                className="group relative flex flex-row items-center gap-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md dark:border-white/5 dark:bg-ink-900 transition-all duration-200 hover:-translate-y-0.5 cursor-pointer"
               >
-                <div>
-                  {/* Banner Image */}
-                  <div className="h-36 overflow-hidden rounded-2xl bg-slate-950 relative">
-                    {evt.bannerImage ? (
-                      <img src={evt.bannerImage} alt="" className="size-full object-cover opacity-85 group-hover:scale-102 transition-transform duration-300" />
-                    ) : (
-                      <div className="size-full bg-[linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899)]" />
-                    )}
-                    <span className="absolute top-3 left-3 rounded-lg bg-white/20 border border-white/10 backdrop-blur-md px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                      {evt.category}
-                    </span>
-                    {isRegistered && (
-                      <span className="absolute top-3 right-3 rounded-lg bg-emerald-500 border border-emerald-450 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                        Registered
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Body Content */}
-                  <div className="mt-4 space-y-2">
-                    <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">{evt.organizer}</span>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight truncate group-hover:text-indigo-650 dark:group-hover:text-indigo-400 transition-colors">
-                      {evt.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed min-h-8">
-                      {evt.description}
-                    </p>
-                  </div>
+                {/* Thumbnail Poster (Left) */}
+                <div className="relative h-24 w-24 sm:h-28 sm:w-28 shrink-0 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-black/20 flex items-center justify-center">
+                  {evt.eventImage?.url || evt.bannerImage ? (
+                    <img src={evt.eventImage?.url || evt.bannerImage} alt="" className="size-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  ) : (
+                    <CalendarIcon size={24} className="text-indigo-500/60" />
+                  )}
                 </div>
 
-                {/* Footer Info details */}
-                <div className="mt-5 border-t border-slate-100 dark:border-white/5 pt-3 space-y-2.5">
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-405 font-medium">
-                    <span className="flex items-center gap-1"><CalendarIcon size={12} /> {new Date(evt.date).toLocaleDateString()}</span>
-                    <span className="flex items-center gap-1"><MapPin size={12} /> {evt.venue}</span>
+                {/* Event Summary Info (Right) */}
+                <div className="flex-1 min-w-0 flex flex-col justify-between space-y-1.5 py-0.5">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-none px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                        {evt.category}
+                      </span>
+                      {isRegistered && (
+                        <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+                          Registered
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                      {evt.title}
+                    </h3>
                   </div>
-                  
-                  {/* Seats progress bar */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                      <span>Seat Occupancy</span>
-                      <span>{evt.currentRegistrations}/{evt.maxParticipants}</span>
+
+                  <div className="space-y-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <MapPin size={13} className="text-rose-500 shrink-0" />
+                      <span className="truncate">{evt.venue}</span>
                     </div>
-                    <div className="h-1 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-600 dark:bg-indigo-500"
-                        style={{ width: `${(evt.currentRegistrations / evt.maxParticipants) * 100}%` }}
-                      />
+                    <div className="flex items-center gap-1.5 truncate">
+                      <CalendarIcon size={13} className="text-indigo-500 shrink-0" />
+                      <span className="tabular-nums">{new Date(evt.date).toLocaleDateString()} · {evt.time}</span>
                     </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] font-medium text-slate-400 truncate max-w-[140px]">
+                      {getOrganizerName(evt.organizer)}
+                    </span>
+                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                      View Details →
+                    </span>
                   </div>
                 </div>
               </div>
@@ -370,132 +367,122 @@ export function StudentEventsPage() {
 
       {/* EVENT DETAILS OVERLAY DRAWER */}
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/20 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm animate-fade-in">
           <div className="fixed inset-0" onClick={() => setSelectedEvent(null)} />
           
-          <div className="relative w-full max-w-lg bg-white shadow-2xl dark:bg-ink-900 border-l border-slate-200 dark:border-white/5 h-full overflow-y-auto flex flex-col justify-between animate-slide-in">
+          <div className="relative w-full max-w-xl bg-white shadow-2xl dark:bg-ink-900 border-l border-slate-200 dark:border-white/5 h-full overflow-y-auto flex flex-col justify-between animate-slide-in">
             
-            {/* Upper Section */}
-            <div>
-              {/* Banner with close */}
-              <div className="h-48 overflow-hidden bg-slate-950 relative">
-                {selectedEvent.bannerImage ? (
-                  <img src={selectedEvent.bannerImage} alt="" className="size-full object-cover opacity-85" />
-                ) : (
-                  <div className="size-full bg-[linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899)]" />
-                )}
+            {/* Header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200/80 bg-white/95 p-4 dark:border-white/5 dark:bg-ink-900/95 backdrop-blur-md">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setSelectedEvent(null)}
-                  className="absolute right-4 top-4 rounded-full bg-black/20 p-2 text-white hover:bg-black/40 transition cursor-pointer"
+                  className="rounded-xl p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
                 >
-                  <X size={16} />
+                  <ChevronLeft size={20} />
                 </button>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">Event Details</h2>
+              </div>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+              
+              {/* 1. Large Complete Event Poster */}
+              {selectedEvent.eventImage?.url || selectedEvent.bannerImage ? (
+                <div className="w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-white/5 bg-slate-100/50 dark:bg-black/20 p-1 flex items-center justify-center">
+                  <img
+                    src={selectedEvent.eventImage?.url || selectedEvent.bannerImage}
+                    alt={selectedEvent.title}
+                    className="w-full max-h-[480px] object-contain rounded-xl mx-auto"
+                  />
+                </div>
+              ) : (
+                <div className="w-full h-44 rounded-2xl border border-slate-200 dark:border-white/5 bg-gradient-to-br from-indigo-500/10 to-pink-500/10 flex items-center justify-center">
+                  <CalendarIcon size={40} className="text-indigo-500/60" />
+                </div>
+              )}
+
+              {/* 2. Summary Box */}
+              <div className="bg-slate-100/80 dark:bg-white/[0.03] p-4 sm:p-5 rounded-2xl space-y-1.5 border border-slate-200/60 dark:border-white/5">
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-snug">
+                  {selectedEvent.title}
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
+                  Organized by <span className="font-semibold text-slate-800 dark:text-slate-200">{getOrganizerName(selectedEvent.organizer)}</span>
+                </p>
               </div>
 
-              {/* Drawer content */}
-              <div className="p-6 space-y-6">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded bg-indigo-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-750 dark:bg-white/5 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/5">
-                      {selectedEvent.category}
-                    </span>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-600 dark:bg-white/5 dark:text-slate-400">
-                      {selectedEvent.department}
-                    </span>
-                  </div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">{selectedEvent.title}</h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Organized by <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedEvent.organizer}</span></p>
-                </div>
-
-                {/* Quick Info Grid */}
-                <div className="grid grid-cols-2 gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-black/15 border border-slate-100 dark:border-white/5">
-                  <div className="flex items-center gap-3">
-                    <CalendarIcon size={16} className="text-indigo-650 dark:text-indigo-400" />
-                    <div>
-                      <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Date & Time</span>
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{selectedEvent.date} · {selectedEvent.time}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <MapPin size={16} className="text-indigo-650 dark:text-indigo-400" />
-                    <div>
-                      <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Venue Location</span>
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block max-w-[160px]">{selectedEvent.venue}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Users size={16} className="text-indigo-650 dark:text-indigo-400" />
-                    <div>
-                      <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Seat Availability</span>
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{selectedEvent.maxParticipants - selectedEvent.currentRegistrations} seats left</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Clock size={16} className="text-indigo-650 dark:text-indigo-400" />
-                    <div>
-                      <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Register Deadline</span>
-                      <span className="text-xs font-bold text-slate-850 dark:text-slate-300">{selectedEvent.registrationDeadline}</span>
-                    </div>
+              {/* 3. Venue & Date Info */}
+              <div className="space-y-4 pt-1">
+                <div>
+                  <span className="block text-xs font-semibold text-slate-400 dark:text-slate-500 mb-1">
+                    Event Venue
+                  </span>
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                    <MapPin size={18} className="text-rose-500 shrink-0" />
+                    <span>{selectedEvent.venue}</span>
                   </div>
                 </div>
 
-                {/* Description */}
-                <div className="space-y-2">
-                  <h3 className="text-xs font-bold text-slate-800 dark:text-slate-250 uppercase tracking-wider">About the Event</h3>
-                  <p className="text-xs leading-relaxed text-slate-650 dark:text-slate-350">{selectedEvent.description}</p>
-                </div>
-
-                {/* Schedule Timeline */}
-                <div className="space-y-3">
-                  <h3 className="text-xs font-bold text-slate-800 dark:text-slate-250 uppercase tracking-wider">Event Timeline</h3>
-                  <div className="space-y-3">
-                    <div className="flex gap-3 relative">
-                      <div className="flex flex-col items-center shrink-0">
-                        <span className="z-10 flex size-2 items-center justify-center rounded-full bg-indigo-600 dark:bg-indigo-400" />
-                        <span className="absolute bottom-0 top-2 w-0.5 bg-slate-100 dark:bg-slate-800 h-8" />
-                      </div>
-                      <div className="text-xs leading-none">
-                        <span className="font-bold text-slate-800 dark:text-slate-250">{selectedEvent.time}</span>
-                        <span className="text-slate-450 ml-3">Opening Ceremony & Welcome Address</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 relative">
-                      <div className="flex flex-col items-center shrink-0">
-                        <span className="z-10 flex size-2 items-center justify-center rounded-full bg-indigo-600 dark:bg-indigo-400" />
-                      </div>
-                      <div className="text-xs leading-none">
-                        <span className="font-bold text-slate-800 dark:text-slate-250">{(parseInt(selectedEvent.time.split(":")[0]) + 1).toString().padStart(2, "0")}:00</span>
-                        <span className="text-slate-455 ml-3">Technical Presentation & Workshops</span>
-                      </div>
-                    </div>
+                <div>
+                  <span className="block text-xs font-semibold text-slate-400 dark:text-slate-500 mb-1">
+                    Event Date & Time
+                  </span>
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                    <CalendarIcon size={18} className="text-indigo-500 shrink-0" />
+                    <span className="tabular-nums">{new Date(selectedEvent.date).toLocaleDateString()} {selectedEvent.time}</span>
                   </div>
                 </div>
+              </div>
 
-                {/* Attachments */}
-                {selectedEvent.attachments && selectedEvent.attachments.length > 0 && (
-                  <div className="space-y-2 pt-2">
-                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-250 uppercase tracking-wider">Resource Attachments</h3>
-                    <div className="space-y-1.5">
-                      {selectedEvent.attachments.map((attach, idx) => (
-                        <div key={idx} className="flex items-center justify-between rounded-xl bg-slate-50 border p-3 dark:bg-black/15 dark:border-white/5 text-xs text-slate-705">
-                          <span className="truncate flex-1 font-semibold dark:text-slate-350">{attach.name}</span>
-                          <button className="flex size-7 items-center justify-center rounded-lg border border-slate-200 dark:border-white/5 text-slate-550 hover:bg-slate-100 cursor-pointer">
-                            <Download size={13} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              {/* 4. About This Event with Formatted HTML Description */}
+              <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-white/5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  About This Event
+                </h3>
+                {/<[a-z][\s\S]*>/i.test(selectedEvent.description) ? (
+                  <div
+                    className="prose prose-slate dark:prose-invert max-w-none text-xs leading-relaxed [&_p]:mb-2 [&_strong]:font-bold [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1 text-slate-650 dark:text-slate-350"
+                    dangerouslySetInnerHTML={{ __html: selectedEvent.description }}
+                  />
+                ) : (
+                  <p className="text-xs leading-relaxed text-slate-650 dark:text-slate-350 whitespace-pre-line">
+                    {selectedEvent.description}
+                  </p>
                 )}
-
               </div>
+
+              {/* Attachments */}
+              {selectedEvent.attachments && selectedEvent.attachments.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-white/5">
+                  <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Resource Attachments</h3>
+                  <div className="space-y-1.5">
+                    {selectedEvent.attachments.map((attach, idx) => (
+                      <div key={idx} className="flex items-center justify-between rounded-xl bg-slate-50 border p-3 dark:bg-black/15 dark:border-white/5 text-xs text-slate-705">
+                        <span className="truncate flex-1 font-semibold dark:text-slate-350">{attach.name}</span>
+                        <a href={attach.url} target="_blank" rel="noreferrer" className="flex size-7 items-center justify-center rounded-lg border border-slate-200 dark:border-white/5 text-slate-500 hover:bg-slate-100 cursor-pointer">
+                          <Download size={13} />
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Footer actions bar */}
-            <div className="border-t border-slate-200 bg-slate-50/50 p-4 dark:border-white/5 dark:bg-ink-950 flex gap-3">
+            <div className="border-t border-slate-200 bg-slate-50/50 p-4 dark:border-white/5 dark:bg-ink-950 flex gap-3 sticky bottom-0">
               <button
                 onClick={() => handleAddToCalendar(selectedEvent)}
-                className="secondary-button text-xs py-2 px-4 flex-1 flex items-center justify-center gap-1.5"
+                className="secondary-button text-xs py-2.5 px-4 flex-1 flex items-center justify-center gap-1.5"
               >
                 <CalendarCheck size={14} />
                 Add to Calendar
@@ -504,7 +491,7 @@ export function StudentEventsPage() {
               {selectedEvent.registeredUsers?.some((u) => u.rollNumber === user.rollNumber) ? (
                 <button
                   onClick={() => handleCancelRegistration(selectedEvent)}
-                  className="rounded-xl border border-red-200 bg-red-50 hover:bg-red-100/60 py-2 px-4 text-xs font-bold text-red-600 flex-1 cursor-pointer shadow-sm text-center"
+                  className="rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100/60 py-2.5 px-4 text-xs font-bold text-rose-600 flex-1 cursor-pointer text-center"
                 >
                   Cancel Registration
                 </button>
@@ -512,7 +499,7 @@ export function StudentEventsPage() {
                 <button
                   onClick={() => handleRegister(selectedEvent)}
                   disabled={selectedEvent.currentRegistrations >= selectedEvent.maxParticipants}
-                  className="primary-button text-xs py-2 px-4 flex-1 flex items-center justify-center"
+                  className="primary-button text-xs py-2.5 px-4 flex-1 flex items-center justify-center"
                 >
                   Register Now
                 </button>
