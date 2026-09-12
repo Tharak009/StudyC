@@ -2,15 +2,12 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   ShieldCheck,
   Shield,
-  FolderOpen,
   ArrowLeft,
   MoreVertical,
   Phone,
   Video,
   Search,
   Info,
-  Maximize2,
-  Minimize2,
   CheckSquare,
   BellOff,
   Bell,
@@ -34,7 +31,6 @@ import {
   AlertTriangle,
   Check
 } from "lucide-react";
-import { Link } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToastStore } from "../../store/toast.store";
 
@@ -417,32 +413,6 @@ export function ConversationHeader({
           >
             <Search size={18} />
           </button>
-
-          {/* Campus Vault Link */}
-          <Link
-            to="/resources"
-            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-[#1E90FF] transition-colors"
-            title="Campus Vault Resources"
-          >
-            <FolderOpen size={13} />
-            <span className="hidden lg:inline">Vault</span>
-          </Link>
-
-          {/* Enlarge / Full View */}
-          {onToggleEnlarge && (
-            <button
-              type="button"
-              onClick={onToggleEnlarge}
-              className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                isEnlarged
-                  ? "bg-[#1E90FF]/15 text-[#1E90FF] ring-1 ring-[#1E90FF]/40 hover:bg-[#1E90FF]/25 shadow-xs"
-                  : "text-slate-500 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
-              }`}
-              title={isEnlarged ? "Restore View" : "Enlarge Chat"}
-            >
-              {isEnlarged ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-          )}
 
           {/* ── 17-Item Three-Dots Dropdown Trigger ───────────────────── */}
           <div className="relative" ref={menuRef}>
