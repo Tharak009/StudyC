@@ -12,7 +12,8 @@ import {
   UserMinus,
   RotateCcw,
   Clock,
-  ArrowRight
+  ArrowRight,
+  Eye
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useToastStore } from "../../store/toast.store";
@@ -21,6 +22,7 @@ import { usersApi } from "../../api/users.api";
 import { friendsApi, type FriendRecord, type FriendRequestsResult } from "../../api/friends.api";
 import { directMessagesApi } from "../../api/direct-messages.api";
 import type { User as AuthUser } from "../../types/auth";
+import { ImageViewerModal } from "../chat/media/ImageViewerModal";
 
 export function ConnectionsTab() {
   const navigate = useNavigate();
@@ -32,6 +34,7 @@ export function ConnectionsTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"friends" | "received" | "sent">("friends");
   const [search, setSearch] = useState("");
+  const [viewingPhoto, setViewingPhoto] = useState<{ url: string; name: string; subtitle?: string } | null>(null);
 
   // Search registered classmates modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -353,9 +356,28 @@ export function ConnectionsTab() {
                 >
                   <div>
                     <div className="flex items-start gap-3.5 mb-3">
-                      <div className="h-11 w-11 rounded-2xl bg-[#1E90FF] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm overflow-hidden">
+                      <div
+                        onClick={() => {
+                          if (u.profilePicture) {
+                            setViewingPhoto({
+                              url: u.profilePicture,
+                              name: u.fullName,
+                              subtitle: `${u.rollNumber || "CSE"} • ${u.department || "Engineering"}`
+                            });
+                          }
+                        }}
+                        className={`h-11 w-11 rounded-2xl bg-[#1E90FF] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm overflow-hidden relative ${
+                          u.profilePicture ? "cursor-pointer group/avatar" : ""
+                        }`}
+                        title={u.profilePicture ? "Click to view profile photo" : undefined}
+                      >
                         {u.profilePicture ? (
-                          <img src={u.profilePicture} alt={u.fullName} className="h-full w-full object-cover" />
+                          <>
+                            <img src={u.profilePicture} alt={u.fullName} className="h-full w-full object-cover transition-transform duration-200 group-hover/avatar:scale-105" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                              <Eye size={16} className="text-white" />
+                            </div>
+                          </>
                         ) : (
                           getInitials(u.fullName || "Student")
                         )}
@@ -422,9 +444,28 @@ export function ConnectionsTab() {
                   className="p-5 rounded-3xl border border-amber-500/25 bg-amber-500/5 dark:bg-amber-500/10 backdrop-blur-xl shadow-md flex flex-col justify-between"
                 >
                   <div className="flex items-start gap-3.5 mb-3">
-                    <div className="h-11 w-11 rounded-2xl bg-amber-500 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm">
+                    <div
+                      onClick={() => {
+                        if (sender.profilePicture) {
+                          setViewingPhoto({
+                            url: sender.profilePicture,
+                            name: sender.fullName || "User",
+                            subtitle: `${sender.rollNumber || "CSE"} • ${sender.department || "Campus Scholar"}`
+                          });
+                        }
+                      }}
+                      className={`h-11 w-11 rounded-2xl bg-amber-500 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm overflow-hidden relative ${
+                        sender.profilePicture ? "cursor-pointer group/avatar" : ""
+                      }`}
+                      title={sender.profilePicture ? "Click to view profile photo" : undefined}
+                    >
                       {sender.profilePicture ? (
-                        <img src={sender.profilePicture} alt={sender.fullName} className="h-full w-full object-cover rounded-2xl" />
+                        <>
+                          <img src={sender.profilePicture} alt={sender.fullName} className="h-full w-full object-cover transition-transform duration-200 group-hover/avatar:scale-105" />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                            <Eye size={16} className="text-white" />
+                          </div>
+                        </>
                       ) : (
                         getInitials(sender.fullName || "User")
                       )}
@@ -491,9 +532,28 @@ export function ConnectionsTab() {
                   className="p-5 rounded-3xl border border-indigo-500/25 bg-indigo-500/5 dark:bg-indigo-500/10 backdrop-blur-xl shadow-md flex flex-col justify-between"
                 >
                   <div className="flex items-start gap-3.5 mb-3">
-                    <div className="h-11 w-11 rounded-2xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm">
+                    <div
+                      onClick={() => {
+                        if (target.profilePicture) {
+                          setViewingPhoto({
+                            url: target.profilePicture,
+                            name: target.fullName || "User",
+                            subtitle: `${target.rollNumber || "CSE"} • ${target.department || "Campus Scholar"}`
+                          });
+                        }
+                      }}
+                      className={`h-11 w-11 rounded-2xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm overflow-hidden relative ${
+                        target.profilePicture ? "cursor-pointer group/avatar" : ""
+                      }`}
+                      title={target.profilePicture ? "Click to view profile photo" : undefined}
+                    >
                       {target.profilePicture ? (
-                        <img src={target.profilePicture} alt={target.fullName} className="h-full w-full object-cover rounded-2xl" />
+                        <>
+                          <img src={target.profilePicture} alt={target.fullName} className="h-full w-full object-cover transition-transform duration-200 group-hover/avatar:scale-105" />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                            <Eye size={16} className="text-white" />
+                          </div>
+                        </>
                       ) : (
                         getInitials(target.fullName || "User")
                       )}
@@ -612,13 +672,32 @@ export function ConnectionsTab() {
                           className="flex items-center justify-between p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-[#080D1A]/50 hover:bg-slate-100/80 dark:hover:bg-white/[0.04] transition-colors"
                         >
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-[#1E90FF] to-[#187bcd] text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
+                            <div
+                              onClick={() => {
+                                if (user.profilePicture) {
+                                  setViewingPhoto({
+                                    url: user.profilePicture,
+                                    name: user.fullName,
+                                    subtitle: `${user.rollNumber || "CSE"} • ${user.department || "Engineering"}`
+                                  });
+                                }
+                              }}
+                              className={`h-9 w-9 rounded-xl bg-gradient-to-tr from-[#1E90FF] to-[#187bcd] text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs overflow-hidden relative ${
+                                user.profilePicture ? "cursor-pointer group/avatar" : ""
+                              }`}
+                              title={user.profilePicture ? "Click to view profile photo" : undefined}
+                            >
                               {user.profilePicture ? (
-                                <img
-                                  src={user.profilePicture}
-                                  alt={user.fullName}
-                                  className="h-full w-full object-cover rounded-xl"
-                                />
+                                <>
+                                  <img
+                                    src={user.profilePicture}
+                                    alt={user.fullName}
+                                    className="h-full w-full object-cover rounded-xl transition-transform duration-200 group-hover/avatar:scale-105"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                                    <Eye size={14} className="text-white" />
+                                  </div>
+                                </>
                               ) : (
                                 getInitials(user.fullName)
                               )}
@@ -712,6 +791,20 @@ export function ConnectionsTab() {
           </div>
         )}
       </AnimatePresence>
+
+      {viewingPhoto && (
+        <ImageViewerModal
+          isOpen={!!viewingPhoto}
+          images={[
+            {
+              url: viewingPhoto.url,
+              originalName: `${viewingPhoto.name}'s Profile Photo`,
+              caption: `${viewingPhoto.name} ${viewingPhoto.subtitle ? `(${viewingPhoto.subtitle})` : ""}`
+            }
+          ]}
+          onClose={() => setViewingPhoto(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -9,9 +9,7 @@ import {
   Video,
   User,
   Search,
-  Camera,
-  Upload,
-  Trash2,
+  Eye,
   FileText,
   FileCode,
   Download,
@@ -31,13 +29,13 @@ import {
 import { Link } from "react-router";
 import type { ActivePeer } from "./ConversationHeader";
 import type { DirectMessageItem } from "./DirectMessageStream";
+import { ImageViewerModal } from "../chat/media/ImageViewerModal";
 
 interface ContactInfoDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   peer: ActivePeer;
   messages: DirectMessageItem[];
-  onUpdatePeerAvatar?: (peerId: string, avatarUrl: string | undefined) => void;
   onStartCall?: (type: "audio" | "video") => void;
   onSearchInChat?: () => void;
 }
@@ -47,7 +45,6 @@ export function ContactInfoDrawer({
   onClose,
   peer,
   messages,
-  onUpdatePeerAvatar,
   onStartCall,
   onSearchInChat
 }: ContactInfoDrawerProps) {
@@ -56,8 +53,7 @@ export function ContactInfoDrawer({
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [copiedSafetyNumber, setCopiedSafetyNumber] = useState(false);
   const [copiedSnippetId, setCopiedSnippetId] = useState<string | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isPhotoViewerOpen, setIsPhotoViewerOpen] = useState(false);
 
   // Derive shared media and documents from messages
   const sharedDocs = messages.flatMap((m) =>
@@ -88,22 +84,6 @@ export function ContactInfoDrawer({
       .toUpperCase();
   };
 
-  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Image size exceeds 5MB limit");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      onUpdatePeerAvatar?.(peer.id, result);
-    };
-    reader.readAsDataURL(file);
-  };
 
   const handleCopyEmail = (email: string) => {
     navigator.clipboard.writeText(email);
@@ -170,14 +150,20 @@ export function ContactInfoDrawer({
               {/* ── 1. Hero Profile Card ─────────────────────────────────── */}
               <div className="p-6 border-b border-slate-200/80 dark:border-slate-800/80 flex flex-col items-center text-center bg-gradient-to-b from-slate-50/50 to-transparent dark:from-[#0F1A30]/40 dark:to-transparent">
                 
-                {/* Peer Avatar with Live Ring & Hover Upload Trigger */}
-                <div className="relative group mb-3">
+                {/* Peer Avatar with Live Ring & View Photo Click/Hover */}
+                <div
+                  className={`relative group mb-3 ${peer.avatar ? "cursor-pointer" : ""}`}
+                  onClick={() => {
+                    if (peer.avatar) setIsPhotoViewerOpen(true);
+                  }}
+                  title={peer.avatar ? "Click to view full profile photo" : undefined}
+                >
                   <div className="h-24 w-24 rounded-3xl overflow-hidden shadow-xl shadow-blue-600/15 border-2 border-white dark:border-slate-800 bg-[#1E90FF] flex items-center justify-center text-white text-2xl font-black">
                     {peer.avatar ? (
                       <img
                         src={peer.avatar}
                         alt={peer.name}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                     ) : (
                       getInitials(peer.name)
@@ -192,35 +178,25 @@ export function ContactInfoDrawer({
                     title={peer.isOnline ? "Active Now" : "Offline"}
                   />
 
-                  {/* WhatsApp Custom Avatar Upload Button on Hover */}
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute inset-0 rounded-3xl bg-slate-950/70 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer backdrop-blur-xs"
-                    title="Change Contact Photo"
-                  >
-                    <Camera size={20} className="mb-0.5 text-[#1E90FF]" />
-                    <span className="text-[10px] font-bold">Change Photo</span>
-                  </button>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarFileChange}
-                    className="hidden"
-                  />
+                  {/* View Photo Overlay on Hover */}
+                  {peer.avatar && (
+                    <div className="absolute inset-0 rounded-3xl bg-slate-950/60 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs">
+                      <Eye size={22} className="mb-0.5 text-white" />
+                      <span className="text-[10px] font-bold">View Photo</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Optional remove custom avatar */}
+                {/* View Profile Photo Button */}
                 {peer.avatar && (
                   <button
                     type="button"
-                    onClick={() => onUpdatePeerAvatar?.(peer.id, undefined)}
-                    className="mb-2 text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 font-semibold cursor-pointer"
+                    onClick={() => setIsPhotoViewerOpen(true)}
+                    className="mb-2 px-3 py-1 rounded-full text-xs font-semibold text-[#1E90FF] bg-[#1E90FF]/10 hover:bg-[#1E90FF]/20 border border-[#1E90FF]/25 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="View full profile photo"
                   >
-                    <Trash2 size={12} />
-                    <span>Reset Default Photo</span>
+                    <Eye size={13} />
+                    <span>View Profile Photo</span>
                   </button>
                 )}
 
@@ -633,9 +609,23 @@ export function ContactInfoDrawer({
                 )}
 
               </div>
-
             </div>
           </motion.aside>
+
+          {/* Lightbox / Full Profile Photo Viewer */}
+          {peer.avatar && (
+            <ImageViewerModal
+              isOpen={isPhotoViewerOpen}
+              images={[
+                {
+                  url: peer.avatar,
+                  originalName: `${peer.name}'s Profile Photo`,
+                  caption: `${peer.name} (${peer.roll} • ${peer.dept})`
+                }
+              ]}
+              onClose={() => setIsPhotoViewerOpen(false)}
+            />
+          )}
         </>
       )}
     </AnimatePresence>

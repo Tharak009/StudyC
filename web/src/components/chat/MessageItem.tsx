@@ -35,7 +35,8 @@ import {
   Star,
   CornerUpRight,
   Edit2,
-  Forward
+  Forward,
+  Eye
 } from "lucide-react";
 import type { ChatMessage, CodeSnippet } from "../../types/chat";
 import { useChatStore } from "../../store/chat.store";
@@ -216,6 +217,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const senderName = message.senderName || message.senderId?.fullName || "Student";
   const senderRoll = message.senderRoll || message.senderId?.rollNumber || "CS24";
   const senderKarma = message.senderId?.karma || 0;
+  const senderAvatar = (message.senderId as any)?.profilePicture;
   const initial = senderName.charAt(0).toUpperCase();
 
   // Copy code handler
@@ -487,8 +489,33 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
       {/* ── Author Avatar ── */}
       <div className="flex-shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#1E90FF] via-indigo-600 to-cyan-500 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-[#1E90FF]/25">
-          {initial}
+        <div
+          onClick={() => {
+            if (senderAvatar && onOpenLightbox) {
+              onOpenLightbox([{ url: senderAvatar, originalName: `${senderName}'s Profile Photo`, caption: `${senderName} (${senderRoll})` }]);
+            }
+          }}
+          className={`relative w-9 h-9 rounded-xl bg-gradient-to-br from-[#1E90FF] via-indigo-600 to-cyan-500 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-[#1E90FF]/25 overflow-hidden ${
+            senderAvatar && onOpenLightbox ? "cursor-pointer group/msgavatar" : ""
+          }`}
+          title={senderAvatar && onOpenLightbox ? `Click to view ${senderName}'s profile photo` : undefined}
+        >
+          {senderAvatar ? (
+            <>
+              <img
+                src={senderAvatar}
+                alt={senderName}
+                className="w-full h-full object-cover transition-transform duration-200 group-hover/msgavatar:scale-110"
+              />
+              {onOpenLightbox && (
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/msgavatar:opacity-100 transition-opacity">
+                  <Eye size={12} className="text-white" />
+                </div>
+              )}
+            </>
+          ) : (
+            initial
+          )}
         </div>
       </div>
 

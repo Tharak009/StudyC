@@ -16,9 +16,11 @@ import {
   Sparkles,
   Camera,
   Upload,
-  Trash2
+  Trash2,
+  Eye
 } from "lucide-react";
 import type { User as AuthUser } from "../../types/auth";
+import { ImageViewerModal } from "../chat/media/ImageViewerModal";
 
 export interface StudentProfileData {
   fullName: string;
@@ -52,6 +54,7 @@ export function ProfileHeader({
   onUploadAvatar,
   onRemoveAvatar
 }: ProfileHeaderProps) {
+  const [isPhotoViewerOpen, setIsPhotoViewerOpen] = React.useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const getInitials = (name: string) => {
     return name
@@ -76,7 +79,16 @@ export function ProfileHeader({
           
           {/* Avatar with Status Ring & Upload Overlay */}
           <div className="relative shrink-0 group">
-            <div className="relative flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-3xl bg-[#1E90FF] text-white font-extrabold text-2xl sm:text-3xl shadow-lg shadow-[#1E90FF]/30 overflow-hidden">
+            <div
+              onClick={() => {
+                if (profile.profilePicture && !onUploadAvatar) {
+                  setIsPhotoViewerOpen(true);
+                }
+              }}
+              className={`relative flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-3xl bg-[#1E90FF] text-white font-extrabold text-2xl sm:text-3xl shadow-lg shadow-[#1E90FF]/30 overflow-hidden ${
+                profile.profilePicture && !onUploadAvatar ? "cursor-pointer" : ""
+              }`}
+            >
               {profile.profilePicture ? (
                 <img
                   src={profile.profilePicture}
@@ -87,40 +99,56 @@ export function ProfileHeader({
                 getInitials(profile.fullName)
               )}
 
-              {/* Camera Hover Overlay */}
+              {/* Upload Overlay for Owner, or View Overlay for Viewer */}
+              {onUploadAvatar ? (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Change custom profile picture"
+                  className="absolute inset-0 bg-black/55 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer backdrop-blur-xs"
+                >
+                  <Camera size={22} />
+                  <span className="text-[10px] font-bold mt-1">Upload</span>
+                </button>
+              ) : profile.profilePicture ? (
+                <button
+                  type="button"
+                  onClick={() => setIsPhotoViewerOpen(true)}
+                  title="View profile photo"
+                  className="absolute inset-0 bg-black/50 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer backdrop-blur-xs"
+                >
+                  <Eye size={22} />
+                  <span className="text-[10px] font-bold mt-1">View</span>
+                </button>
+              ) : null}
+            </div>
+
+            {/* Quick Change Badge on Corner for Owner Only */}
+            {onUploadAvatar && (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                title="Change custom profile picture"
-                className="absolute inset-0 bg-black/55 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer backdrop-blur-xs"
+                title="Upload custom photo"
+                className="absolute -top-1 -left-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#1E90FF] hover:bg-[#187bcd] text-white shadow-md border-2 border-white dark:border-[#0F1A30] transition-transform hover:scale-110 cursor-pointer"
               >
-                <Camera size={22} />
-                <span className="text-[10px] font-bold mt-1">Upload</span>
+                <Camera size={13} />
               </button>
-            </div>
+            )}
 
-            {/* Quick Change Badge on Corner */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title="Upload custom photo"
-              className="absolute -top-1 -left-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#1E90FF] hover:bg-[#187bcd] text-white shadow-md border-2 border-white dark:border-[#0F1A30] transition-transform hover:scale-110 cursor-pointer"
-            >
-              <Camera size={13} />
-            </button>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  onUploadAvatar?.(file);
-                }
-              }}
-            />
+            {onUploadAvatar && (
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    onUploadAvatar?.(file);
+                  }
+                }}
+              />
+            )}
 
             {/* Verified .EDU Badge */}
             <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#1E90FF] text-white shadow-md border-2 border-white dark:border-[#0F1A30]" title="Verified Institutional Student">
@@ -157,15 +185,30 @@ export function ProfileHeader({
                 <span>{profile.email}</span>
               </p>
               <div className="flex items-center gap-2 text-[11px] font-bold">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-[#1E90FF] hover:underline flex items-center gap-1 cursor-pointer"
-                >
-                  <Upload size={12} />
-                  <span>{profile.profilePicture ? "Change photo" : "Upload photo"}</span>
-                </button>
                 {profile.profilePicture && (
+                  <button
+                    type="button"
+                    onClick={() => setIsPhotoViewerOpen(true)}
+                    className="text-slate-600 dark:text-slate-300 hover:text-[#1E90FF] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Eye size={12} />
+                    <span>View photo</span>
+                  </button>
+                )}
+                {onUploadAvatar && (
+                  <>
+                    {profile.profilePicture && <span className="text-slate-400">•</span>}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-[#1E90FF] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Upload size={12} />
+                      <span>{profile.profilePicture ? "Change photo" : "Upload photo"}</span>
+                    </button>
+                  </>
+                )}
+                {onRemoveAvatar && profile.profilePicture && (
                   <>
                     <span className="text-slate-400">•</span>
                     <button
@@ -284,9 +327,21 @@ export function ProfileHeader({
           </div>
 
         </div>
-
       </div>
 
+      {profile.profilePicture && (
+        <ImageViewerModal
+          isOpen={isPhotoViewerOpen}
+          images={[
+            {
+              url: profile.profilePicture,
+              originalName: `${profile.fullName}'s Profile Photo`,
+              caption: `${profile.fullName} (${profile.rollNumber} • ${profile.department})`
+            }
+          ]}
+          onClose={() => setIsPhotoViewerOpen(false)}
+        />
+      )}
     </div>
   );
 }

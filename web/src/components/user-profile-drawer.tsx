@@ -1,5 +1,7 @@
-import { X, Mail, BookOpen, GraduationCap, Calendar, ShieldCheck, UserCheck, ShieldAlert, Award } from "lucide-react";
+import React, { useState } from "react";
+import { X, Mail, BookOpen, GraduationCap, Calendar, ShieldCheck, UserCheck, ShieldAlert, Award, Eye } from "lucide-react";
 import type { User } from "../types/auth";
+import { ImageViewerModal } from "./chat/media/ImageViewerModal";
 
 interface UserProfileDrawerProps {
   user: User | null;
@@ -7,6 +9,7 @@ interface UserProfileDrawerProps {
 }
 
 export function UserProfileDrawer({ user, onClose }: UserProfileDrawerProps) {
+  const [isPhotoViewerOpen, setIsPhotoViewerOpen] = useState(false);
   if (!user) return null;
 
   const initials = user.fullName
@@ -71,13 +74,42 @@ export function UserProfileDrawer({ user, onClose }: UserProfileDrawerProps) {
           <div className="flex-1 overflow-y-auto py-5 space-y-6 scrollbar-thin">
             {/* Profile Brief Card */}
             <div className="flex flex-col items-center text-center p-4 rounded-2xl bg-slate-50/50 dark:bg-white/[0.01] border border-slate-150/40 dark:border-white/5">
-              <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-500 to-violet-500 text-lg font-bold text-white shadow-lg overflow-hidden">
+              <div
+                onClick={() => {
+                  if (user.profilePicture) setIsPhotoViewerOpen(true);
+                }}
+                className={`relative flex size-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-500 to-violet-500 text-lg font-bold text-white shadow-lg overflow-hidden group ${
+                  user.profilePicture ? "cursor-pointer" : ""
+                }`}
+                title={user.profilePicture ? "Click to view full profile photo" : undefined}
+              >
                 {user.profilePicture ? (
-                  <img src={user.profilePicture} alt={user.fullName} className="h-full w-full object-cover" />
+                  <>
+                    <img
+                      src={user.profilePicture}
+                      alt={user.fullName}
+                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Eye size={18} />
+                    </div>
+                  </>
                 ) : (
                   initials
                 )}
               </div>
+
+              {user.profilePicture && (
+                <button
+                  type="button"
+                  onClick={() => setIsPhotoViewerOpen(true)}
+                  className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Eye size={12} />
+                  <span>View Profile Photo</span>
+                </button>
+              )}
+
               <h3 className="mt-3 text-base font-bold text-slate-900 dark:text-white">
                 {user.fullName}
               </h3>
@@ -224,6 +256,20 @@ export function UserProfileDrawer({ user, onClose }: UserProfileDrawerProps) {
           </div>
         </div>
       </div>
+
+      {user.profilePicture && (
+        <ImageViewerModal
+          isOpen={isPhotoViewerOpen}
+          images={[
+            {
+              url: user.profilePicture,
+              originalName: `${user.fullName}'s Profile Photo`,
+              caption: `${user.fullName} (${user.rollNumber} • ${user.department})`
+            }
+          ]}
+          onClose={() => setIsPhotoViewerOpen(false)}
+        />
+      )}
     </div>
   );
 }
