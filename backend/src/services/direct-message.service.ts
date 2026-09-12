@@ -5,6 +5,7 @@ import { directMessageRepository, type DirectMessageRepository } from "../reposi
 import { userRepository, type UserRepository } from "../repositories/user.repository.js";
 import { LocalStorageProvider } from "../uploads/local-storage.provider.js";
 import { ApiError } from "../utils/api-error.js";
+import { dmBus } from "./dm-bus.service.js";
 import { StorageService, type StoredFile } from "./storage.service.js";
 
 export class DirectMessageService {
@@ -92,6 +93,13 @@ export class DirectMessageService {
     const hydrated = await this.messages.findById(created.id);
     if (!hydrated) throw new ApiError(500, "Message could not be loaded", [], "MESSAGE_LOAD_FAILED");
 
+    const messagePayload = hydrated.toJSON?.() ?? hydrated;
+    dmBus.messageCreated(conversationId, {
+      ...messagePayload,
+      conversationId,
+      receiverId
+    });
+
     return { message: hydrated, receiverId };
   }
 
@@ -122,6 +130,7 @@ export class DirectMessageService {
       $set: { content, edited: true, editedAt: new Date() }
     });
     if (!updated) throw new ApiError(404, "Message not found", [], "MESSAGE_NOT_FOUND");
+    dmBus.messageUpdated(message.conversationId.toString(), updated.toJSON?.() ?? updated);
     return updated;
   }
 
@@ -145,6 +154,10 @@ export class DirectMessageService {
       }
     });
     if (!deleted) throw new ApiError(404, "Message not found", [], "MESSAGE_NOT_FOUND");
+    dmBus.messageDeleted(message.conversationId.toString(), {
+      messageId,
+      conversationId: message.conversationId.toString()
+    });
     return deleted;
   }
 
@@ -155,6 +168,7 @@ export class DirectMessageService {
     }
     this.ensureParticipant(conversation, userId);
     await this.messages.markAsRead(conversationId, userId);
+    dmBus.messageRead(conversationId, { conversationId, readerId: userId });
   }
 
   async markMessageRead(messageId: string, userId: string) {

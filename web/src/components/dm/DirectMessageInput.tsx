@@ -49,6 +49,7 @@ export function DirectMessageInput({
   const [codeText, setCodeText] = useState("");
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   // Voice recording simulation state
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
@@ -144,14 +145,16 @@ export function DirectMessageInput({
     addToast("Voice note sent", "success");
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (isSending) return;
     if (!content.trim() && !codeText.trim() && selectedFiles.length === 0) return;
 
     const codeObj = codeDrawerOpen && codeText.trim()
       ? { language: codeLang, code: codeText.trim() }
       : undefined;
 
-    onSendMessage(content.trim(), codeObj, selectedFiles.length > 0 ? selectedFiles : undefined);
+    const toSend = content.trim();
+    const filesToSend = selectedFiles.length > 0 ? selectedFiles : undefined;
 
     setContent("");
     setCodeText("");
@@ -161,6 +164,13 @@ export function DirectMessageInput({
     setEmojiPickerOpen(false);
     onTyping?.(false);
     onCancelReply?.();
+
+    setIsSending(true);
+    try {
+      await onSendMessage(toSend, codeObj, filesToSend);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const hasContentToSend = content.trim().length > 0 || codeText.trim().length > 0 || selectedFiles.length > 0;

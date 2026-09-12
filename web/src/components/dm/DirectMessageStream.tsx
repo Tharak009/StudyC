@@ -14,7 +14,8 @@ import {
   Pause,
   Volume2,
   Mic,
-  MoreHorizontal
+  MoreHorizontal,
+  MessageSquare
 } from "lucide-react";
 import type { User } from "../../types/auth";
 
@@ -97,28 +98,28 @@ export function DirectMessageStream({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 relative bg-[#080D1A]/30 select-text scrollbar-none">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 relative bg-slate-100/60 dark:bg-[#080D1A]/60 select-text scrollbar-none transition-colors duration-200">
       
-      {/* ── WhatsApp Doodle Background Texture Overlay ─────────────────── */}
+      {/* ── Modern Dot Texture Overlay ─────────────────── */}
       <div
-        className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none bg-repeat"
+        className="absolute inset-0 opacity-[0.035] dark:opacity-[0.06] pointer-events-none bg-repeat"
         style={{
-          backgroundImage: `radial-gradient(currentColor 1px, transparent 1px)`,
-          backgroundSize: "24px 24px"
+          backgroundImage: `radial-gradient(currentColor 1.2px, transparent 1.2px)`,
+          backgroundSize: "20px 20px"
         }}
       />
 
       {/* Empty State when no messages in conversation */}
       {messages.length === 0 && (
         <div className="flex flex-col items-center justify-center min-h-[320px] text-center p-8 select-none">
-          <div className="h-14 w-14 rounded-2xl bg-[#1E90FF]/10 text-[#1E90FF] flex items-center justify-center mb-3">
-            <Mic size={26} className="text-[#1E90FF]" />
+          <div className="h-16 w-16 rounded-3xl bg-[#1E90FF]/10 text-[#1E90FF] border border-[#1E90FF]/20 flex items-center justify-center mb-4 shadow-sm">
+            <MessageSquare size={28} className="text-[#1E90FF]" />
           </div>
-          <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-1">
-            No Messages in this Conversation Yet
+          <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
+            Start of this conversation
           </h4>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs leading-relaxed">
-            Send a message, attach a note or syllabus from the vault, or share a code snippet to start collaborating.
+            Send a message, share lecture notes, or ask questions to collaborate with your classmate.
           </p>
         </div>
       )}
@@ -199,12 +200,12 @@ export function DirectMessageStream({
                 )}
               </AnimatePresence>
 
-              {/* ── WhatsApp Message Bubble ───────────────────────────── */}
+              {/* ── Message Bubble ───────────────────────────── */}
               <div
-                className={`relative max-w-[85%] sm:max-w-md md:max-w-lg p-3 shadow-sm transition-all select-text ${
+                className={`relative max-w-[85%] sm:max-w-md md:max-w-lg p-3 sm:px-4 sm:py-2.5 shadow-sm transition-all select-text ${
                   isMe
-                    ? "bg-[#1E90FF] text-white rounded-2xl rounded-tr-xs shadow-[0_2px_12px_rgba(30,144,255,0.25)]"
-                    : "bg-white/95 dark:bg-[#111C33]/95 border border-slate-200/80 dark:border-slate-800/80 text-slate-900 dark:text-slate-100 rounded-2xl rounded-tl-xs shadow-slate-200/50 dark:shadow-none"
+                    ? "bg-gradient-to-br from-[#1E90FF] to-[#187bcd] text-white rounded-2xl rounded-tr-xs shadow-[0_2px_12px_rgba(30,144,255,0.22)]"
+                    : "bg-white/95 dark:bg-[#111C33]/95 border border-slate-200/80 dark:border-slate-800/80 text-slate-900 dark:text-slate-100 rounded-2xl rounded-tl-xs shadow-slate-200/40 dark:shadow-none"
                 }`}
               >
                 {/* Quoted Reply Context */}

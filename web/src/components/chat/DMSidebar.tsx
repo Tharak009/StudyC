@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Users,
   Plus,
   Search,
   X,
@@ -15,9 +14,6 @@ import type { User as AuthUser } from "../../types/auth";
 interface DMSidebarProps {
   conversations: ConversationItem[];
   activeConversationId: string | null;
-  activeView: "friends" | "conversation";
-  pendingRequestsCount?: number;
-  onSelectFriends: () => void;
   onSelectConversation: (convId: string) => void;
   onOpenNewChat: () => void;
   onCloseConversation?: (convId: string, e: React.MouseEvent) => void;
@@ -27,9 +23,6 @@ interface DMSidebarProps {
 export function DMSidebar({
   conversations,
   activeConversationId,
-  activeView,
-  pendingRequestsCount = 0,
-  onSelectFriends,
   onSelectConversation,
   onOpenNewChat,
   onCloseConversation,
@@ -68,31 +61,7 @@ export function DMSidebar({
       </div>
 
       {/* ── Navigation & Direct Messages List ─────────────────────────── */}
-      <div className="flex-1 overflow-y-auto no-scrollbar px-2 py-3 space-y-4">
-        {/* Friends Primary Navigation Button */}
-        <div>
-          <button
-            type="button"
-            onClick={onSelectFriends}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeView === "friends"
-                ? "bg-[#1E90FF] text-white shadow-md shadow-[#1E90FF]/25"
-                : "hover:bg-slate-100 dark:hover:bg-[#162544] text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <Users className="w-4 h-4" />
-              <span>Friends</span>
-            </div>
-
-            {pendingRequestsCount > 0 && (
-              <span className="flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[10px] font-extrabold text-white">
-                {pendingRequestsCount}
-              </span>
-            )}
-          </button>
-        </div>
-
+      <div className="flex-1 overflow-y-auto no-scrollbar px-2 py-3 space-y-2">
         {/* Direct Messages Section Header */}
         <div className="space-y-1">
           <div className="flex items-center justify-between px-2 pt-1 pb-1 text-[11px] font-bold text-slate-500 dark:text-slate-400 tracking-wider">
@@ -100,8 +69,8 @@ export function DMSidebar({
             <button
               type="button"
               onClick={onOpenNewChat}
-              title="Create DM / Add Friend"
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors cursor-pointer"
+              title="Start New Direct Message"
+              className="p-1 rounded-lg text-slate-400 hover:text-[#1E90FF] dark:hover:text-[#1E90FF] hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
@@ -115,8 +84,7 @@ export function DMSidebar({
           ) : (
             <div className="space-y-0.5">
               {filteredConversations.map((conv) => {
-                const isActive =
-                  activeView === "conversation" && activeConversationId === conv.id;
+                const isActive = activeConversationId === conv.id;
                 const peerInitial = (conv.peer.name || "S").charAt(0).toUpperCase();
 
                 return (

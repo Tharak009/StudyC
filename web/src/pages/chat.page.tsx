@@ -16,6 +16,7 @@ import {
   Coffee,
   Radio,
   MessageSquare,
+  Send,
   Phone,
   PhoneOff,
   Video,
@@ -30,7 +31,6 @@ import { ChatContainer } from "../components/chat/ChatContainer";
 import { ChatInspectorDrawer } from "../components/chat/ChatInspectorDrawer";
 import { VoiceStageDock } from "../components/study-circles/VoiceStageDock";
 import { DMSidebar } from "../components/chat/DMSidebar";
-import { FriendsDashboard } from "../components/chat/FriendsDashboard";
 import { ConversationHeader, type ActivePeer } from "../components/dm/ConversationHeader";
 import { DirectMessageStream, type DirectMessageItem } from "../components/dm/DirectMessageStream";
 import { DirectMessageInput } from "../components/dm/DirectMessageInput";
@@ -45,7 +45,7 @@ import { socketService } from "../services/socket.service";
 import { communitiesApi } from "../api/communities.api";
 import { chatApi } from "../api/chat.api";
 import { directMessagesApi } from "../api/direct-messages.api";
-import { friendsApi } from "../api/friends.api";
+import { usersApi } from "../api/users.api";
 import {
   COMMUNITY_CATEGORIES,
   type Community,
@@ -248,16 +248,18 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     }>
   >([]);
 
-  // ── Direct Messages & Friends Workspace State ─────────────────────────────
+  // ── Direct Messages Workspace State ─────────────────────────────
   const [dmConversations, setDmConversations] = useState<ConversationItem[]>([]);
   const [activeDmConvId, setActiveDmConvId] = useState<string | null>(convParam || null);
-  const [dmActiveView, setDmActiveView] = useState<"friends" | "conversation">(
-    convParam ? "conversation" : "friends"
-  );
-  const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [dmMessagesMap, setDmMessagesMap] = useState<Record<string, DirectMessageItem[]>>({});
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [dmReplyTarget, setDmReplyTarget] = useState<{ senderName: string; content: string } | null>(null);
+
+  // New Chat Modal state
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [newChatSearch, setNewChatSearch] = useState("");
+  const [searchedStudents, setSearchedStudents] = useState<any[]>([]);
+  const [isSearchingStudents, setIsSearchingStudents] = useState(false);
 
   const [isContactInfoOpen, setIsContactInfoOpen] = useState(false);
   const [searchInChatOpen, setSearchInChatOpen] = useState(false);
@@ -419,28 +421,23 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     };
   }, [activeCircle, activeChannel, viewMode, setMessages]);
 
-  // ── 4. Fetch DM Conversations & Pending Requests ──────────────────────────
+  // ── 4. Fetch DM Conversations ──────────────────────────
   const fetchDmData = useCallback(async () => {
     if (!user?._id) return;
     try {
-      const [convsRes, reqsRes] = await Promise.all([
-        directMessagesApi.listConversations({ limit: 50 }).catch(() => null),
-        friendsApi.getRequests().catch(() => null)
-      ]);
+      const convsRes = await directMessagesApi.listConversations({ limit: 50 }).catch(() => null);
 
       if (convsRes?.items) {
         const mapped = convsRes.items.map((c) => mapBackendConversationToItem(c, user._id));
         setDmConversations(mapped);
-      }
-
-      if (reqsRes) {
-        const count = (reqsRes.received?.length || 0) + (reqsRes.sent?.length || 0);
-        setPendingRequestsCount(count);
+        if (!convParam && !activeDmConvId && mapped.length > 0) {
+          setActiveDmConvId(mapped[0].id);
+        }
       }
     } catch (err) {
       console.warn("Could not load DM data:", err);
     }
-  }, [user?._id]);
+  }, [user?._id, convParam, activeDmConvId]);
 
   useEffect(() => {
     fetchDmData();
@@ -450,9 +447,35 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
   useEffect(() => {
     if (convParam && convParam !== activeDmConvId) {
       setActiveDmConvId(convParam);
-      setDmActiveView("conversation");
     }
   }, [convParam, activeDmConvId]);
+
+  // Search campus students for New Direct Message Modal
+  useEffect(() => {
+    if (!isNewChatModalOpen) return;
+    let isCancelled = false;
+    setIsSearchingStudents(true);
+    const timer = setTimeout(() => {
+      usersApi
+        .search(newChatSearch.trim())
+        .then((res) => {
+          if (!isCancelled && res) {
+            setSearchedStudents(res.filter((u: any) => u._id !== user?._id));
+          }
+        })
+        .catch(() => {
+          if (!isCancelled) setSearchedStudents([]);
+        })
+        .finally(() => {
+          if (!isCancelled) setIsSearchingStudents(false);
+        });
+    }, 250);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [newChatSearch, isNewChatModalOpen, user?._id]);
 
   // Load messages for active DM conversation
   useEffect(() => {
@@ -607,7 +630,21 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
       setDmMessagesMap((prev) => {
         const list = prev[incomingConvId] || [];
-        if (list.some((m) => m.id === newMsg.id)) return prev;
+        const existingIdx = list.findIndex(
+          (m) =>
+            m.id === newMsg.id ||
+            (m.id.startsWith("dm-opt-") &&
+              m.senderId === newMsg.senderId &&
+              m.content === newMsg.content)
+        );
+        if (existingIdx !== -1) {
+          const updated = [...list];
+          updated[existingIdx] = newMsg;
+          return {
+            ...prev,
+            [incomingConvId]: updated
+          };
+        }
         return {
           ...prev,
           [incomingConvId]: [...list, newMsg]
@@ -654,8 +691,6 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     socket.on("voice:peerScreenshare", handleVoicePeerScreenshare);
 
     socket.on("directMessageReceived", handleDirectMessage);
-    socket.on("directMessageCreated", handleDirectMessage);
-    socket.on("dm:messageReceived", handleDirectMessage);
     socket.on("typing", handleTyping);
     socket.on("stopTyping", handleStopTyping);
 
@@ -677,8 +712,6 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       socket.off("voice:peerScreenshare", handleVoicePeerScreenshare);
 
       socket.off("directMessageReceived", handleDirectMessage);
-      socket.off("directMessageCreated", handleDirectMessage);
-      socket.off("dm:messageReceived", handleDirectMessage);
       socket.off("typing", handleTyping);
       socket.off("stopTyping", handleStopTyping);
     };
@@ -755,7 +788,6 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
   // ── 7. Send Direct Message Dispatcher ─────────────────────────────────────
   const handleSelectDmConversation = (convId: string) => {
     setActiveDmConvId(convId);
-    setDmActiveView("conversation");
     setSearchParams({ mode: "dms", conv: convId });
     setSearchInChatOpen(false);
     setChatSearchQuery("");
@@ -795,7 +827,6 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       });
 
       setActiveDmConvId(mappedConv.id);
-      setDmActiveView("conversation");
       setSearchParams({ mode: "dms", conv: mappedConv.id });
       addToast(`Connected with ${mappedConv.peer.name}`, "success");
     } catch (err: any) {
@@ -876,29 +907,13 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
           )
         }));
       }
-
-      const socket = socketService.get();
-      const activeConv = dmConversations.find((c) => c.id === activeDmConvId);
-      if (socket && activeConv) {
-        socket.emit("sendDirectMessage", {
-          receiverId: activeConv.peer.id,
-          conversationId: activeDmConvId,
-          content,
-          codeSnippet
-        });
-      }
     } catch (err: any) {
       console.warn("Could not persist message to backend API:", err?.message || err);
-      const socket = socketService.get();
-      const activeConv = dmConversations.find((c) => c.id === activeDmConvId);
-      if (socket && activeConv) {
-        socket.emit("sendDirectMessage", {
-          receiverId: activeConv.peer.id,
-          conversationId: activeDmConvId,
-          content,
-          codeSnippet
-        });
-      }
+      addToast(err?.response?.data?.message || "Failed to send message", "error");
+      setDmMessagesMap((prev) => ({
+        ...prev,
+        [activeDmConvId]: (prev[activeDmConvId] || []).filter((m) => m.id !== tempId)
+      }));
     }
   };
 
@@ -1103,36 +1118,25 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
             </div>
           )
         ) : (
-          /* ── Direct Messages & Friends Workspace (Discord Architecture) ── */
+          /* ── Direct Messages Workspace (Discord Architecture) ── */
           <>
             {/* Pane 1: Direct Messages Sidebar */}
             <DMSidebar
               conversations={dmConversations}
               activeConversationId={activeDmConvId}
-              activeView={dmActiveView}
-              pendingRequestsCount={pendingRequestsCount}
-              onSelectFriends={() => {
-                setDmActiveView("friends");
-                setActiveDmConvId(null);
-                setSearchParams({ mode: "dms" });
-              }}
               onSelectConversation={(convId) => handleSelectDmConversation(convId)}
-              onOpenNewChat={() => {
-                setDmActiveView("friends");
-                setActiveDmConvId(null);
-              }}
+              onOpenNewChat={() => setIsNewChatModalOpen(true)}
               currentUser={user}
             />
 
-            {/* Pane 2 & 3: 1-on-1 Conversation OR Friends Dashboard */}
-            {dmActiveView === "conversation" && activeDmConversation ? (
+            {/* Pane 2 & 3: 1-on-1 Conversation OR Direct Messages Welcome State */}
+            {activeDmConversation ? (
               <div className="flex-1 flex flex-row min-w-0 h-full overflow-hidden">
                 {/* Pane 2: 1-on-1 Direct Message Stream */}
                 <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-50 dark:bg-[#080D1A]">
                   <ConversationHeader
                     peer={activeDmConversation.peer}
                     onBack={() => {
-                      setDmActiveView("friends");
                       setActiveDmConvId(null);
                       setSearchParams({ mode: "dms" });
                     }}
@@ -1231,17 +1235,26 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                 />
               </div>
             ) : (
-              /* Friends Management Dashboard */
-              <FriendsDashboard
-                currentUser={user}
-                onStartChat={handleStartNewDm}
-                activeCircles={circles}
-                onSelectCircle={(circle) => {
-                  setViewMode("circle");
-                  setActiveCircle(circle);
-                  setSearchParams({ mode: "circle", circle: circle.id });
-                }}
-              />
+              /* Clean Welcome State for Direct Messages */
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-[#080D1A]">
+                <div className="w-16 h-16 rounded-3xl bg-[#1E90FF]/10 border border-[#1E90FF]/20 text-[#1E90FF] flex items-center justify-center mb-4 shadow-xl">
+                  <MessageSquare className="w-8 h-8" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                  Your Direct Messages
+                </h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mb-6 leading-relaxed">
+                  Select a conversation from the sidebar or start a new direct message with any classmate across your campus.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsNewChatModalOpen(true)}
+                  className="px-5 py-2.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white font-bold text-xs shadow-md shadow-[#1E90FF]/25 transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Start New Chat</span>
+                </button>
+              </div>
             )}
           </>
         )}
@@ -1777,6 +1790,142 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                   <Plus className="w-3.5 h-3.5" />
                   <span>Create New Circle</span>
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Start New Chat Modal ── */}
+      <AnimatePresence>
+        {isNewChatModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl text-slate-700 dark:text-slate-200 flex flex-col max-h-[85vh]"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200/80 dark:border-slate-800/80 mb-4 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-[#1E90FF]/10 text-[#1E90FF] flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Start Direct Message</h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Search and connect with campus peers</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsNewChatModalOpen(false);
+                    setNewChatSearch("");
+                  }}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative mb-4 shrink-0">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search students by name, roll number, or department..."
+                  value={newChatSearch}
+                  onChange={(e) => setNewChatSearch(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-[#080D1A] pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] focus:ring-1 focus:ring-[#1E90FF] transition-all"
+                  autoFocus
+                />
+                {isSearchingStudents && (
+                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                    <Sparkles className="w-4 h-4 text-[#1E90FF] animate-spin" />
+                  </div>
+                )}
+              </div>
+
+              {/* Students List */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[220px]">
+                {isSearchingStudents ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-2">
+                    <Sparkles className="w-6 h-6 text-[#1E90FF] animate-spin" />
+                    <span className="text-xs">Searching campus scholars...</span>
+                  </div>
+                ) : searchedStudents.length > 0 ? (
+                  searchedStudents.map((student) => (
+                    <div
+                      key={student._id}
+                      className="p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#080D1A]/80 hover:border-[#1E90FF]/40 dark:hover:border-[#1E90FF]/40 transition-all flex items-center justify-between gap-3 shadow-xs"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-sm font-bold shrink-0 shadow-xs">
+                          {student.avatarUrl ? (
+                            <img
+                              src={student.avatarUrl}
+                              alt={student.fullName}
+                              className="h-full w-full rounded-xl object-cover"
+                            />
+                          ) : (
+                            student.fullName?.charAt(0).toUpperCase() || "S"
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                              {student.fullName}
+                            </span>
+                            {student.role === "ADMIN" && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                ADMIN
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            {student.rollNumber || "Student"} • {student.department || "Academic Scholar"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsNewChatModalOpen(false);
+                          setNewChatSearch("");
+                          handleStartNewDm(student._id, {
+                            name: student.fullName,
+                            roll: student.rollNumber,
+                            dept: student.department
+                          });
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold transition-all shadow-xs shadow-[#1E90FF]/20 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>Chat</span>
+                      </button>
+                    </div>
+                  ))
+                ) : newChatSearch.trim() ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center">
+                    <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                      No classmates found matching &ldquo;{newChatSearch}&rdquo;
+                    </p>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                      Try searching with their full name or college roll number
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center">
+                    <Users className="w-8 h-8 text-slate-300 dark:text-slate-600 mb-2" />
+                    <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                      Find any student on campus
+                    </p>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                      Type their name, department, or roll number above to initiate a direct message.
+                    </p>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>

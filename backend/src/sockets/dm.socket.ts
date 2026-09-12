@@ -68,13 +68,7 @@ export const registerDmHandlers = (
           isRead: false
         };
 
-        // Dispatch directly to recipient user room & shared dm room
-        io.to(dmRoomFor(conversationId)).emit("dm:messageReceived", messageData);
-        io.to(dmRoomFor(conversationId)).emit("directMessageCreated", messageData);
-        io.to(dmRoomFor(conversationId)).emit("directMessageReceived", messageData);
-        io.to(userRoomFor(recipientId)).emit("dm:messageReceived", messageData);
-        io.to(userRoomFor(recipientId)).emit("directMessageCreated", messageData);
-        io.to(userRoomFor(recipientId)).emit("directMessageReceived", messageData);
+        // dmBus automatically broadcasts to dm room & recipient user room
 
         // Optimistic single-checkmark response to sender
         if (typeof acknowledge === "function") {
@@ -105,12 +99,7 @@ export const registerDmHandlers = (
         []
       );
 
-      const conversationRoom = dmRoomFor(input.conversationId);
       const data = message.toJSON?.() ?? message;
-
-      io.to(conversationRoom).emit("directMessageCreated", data);
-      io.to(conversationRoom).emit("dm:messageReceived", data);
-      io.to(conversationRoom).emit("directMessageReceived", data);
 
       if (typeof acknowledge === "function") {
         acknowledge({ success: true, data });

@@ -217,6 +217,12 @@ export const initializeSockets = (server: HttpServer): Server => {
     io.to(`dm:${conversationId}`).emit("directMessageCreated", message);
     io.to(`dm:${conversationId}`).emit("dm:messageReceived", message);
     io.to(`dm:${conversationId}`).emit("directMessageReceived", message);
+
+    const receiverId = (message as any)?.receiverId;
+    if (receiverId) {
+      io.to(`user:${receiverId}`).emit("directMessageReceived", message);
+      io.to(`user:${receiverId}`).emit("directMessageCreated", message);
+    }
   });
   dmBus.onUpdated((conversationId, message) => {
     io.to(`dm:${conversationId}`).emit("directMessageUpdated", message);
