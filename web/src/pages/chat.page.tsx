@@ -32,6 +32,7 @@ import { VoiceStageDock } from "../components/study-circles/VoiceStageDock";
 import { DMSidebar } from "../components/chat/DMSidebar";
 import { ConversationHeader, type ActivePeer } from "../components/dm/ConversationHeader";
 import { DirectMessageStream, type DirectMessageItem } from "../components/dm/DirectMessageStream";
+import type { PinnedMessageData } from "../components/dm/PinnedMessageBanner";
 import { DirectMessageInput } from "../components/dm/DirectMessageInput";
 import { ContactInfoDrawer } from "../components/dm/ContactInfoDrawer";
 import type { ConversationItem } from "../components/dm/ConversationList";
@@ -267,6 +268,21 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     isMuted: boolean;
     isVideoEnabled: boolean;
   } | null>(null);
+
+  // DM Selection, Pinning & Customization State
+  const [isDmSelectionMode, setIsDmSelectionMode] = useState(false);
+  const [selectedDmMessageIds, setSelectedDmMessageIds] = useState<string[]>([]);
+  const [pinnedMessagesMap, setPinnedMessagesMap] = useState<Record<string, PinnedMessageData | null>>({
+    default: {
+      id: "pin-default",
+      title: "Three Days of Happiness.pdf",
+      type: "document",
+      url: "#"
+    }
+  });
+  const [favoriteConversations, setFavoriteConversations] = useState<Record<string, boolean>>({});
+  const [lockedConversations, setLockedConversations] = useState<Record<string, boolean>>({});
+  const [mutedConversations, setMutedConversations] = useState<Record<string, boolean>>({});
 
   // Modals for Study Circles
   const [isExploreCirclesOpen, setIsExploreCirclesOpen] = useState(false);
@@ -1047,6 +1063,126 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     });
   };
 
+  // Selection mode handlers
+  const handleToggleSelectDmMessage = (msgId: string) => {
+    setSelectedDmMessageIds((prev) =>
+      prev.includes(msgId) ? prev.filter((id) => id !== msgId) : [...prev, msgId]
+    );
+  };
+
+  const handleDeleteSelectedDmMessages = () => {
+    if (!activeDmConvId) return;
+    const count = selectedDmMessageIds.length;
+    setDmMessagesMap((prev) => ({
+      ...prev,
+      [activeDmConvId]: (prev[activeDmConvId] || []).filter(
+        (m) => !selectedDmMessageIds.includes(m.id)
+      )
+    }));
+    addToast(`${count} message${count > 1 ? "s" : ""} deleted`, "info");
+    setSelectedDmMessageIds([]);
+    setIsDmSelectionMode(false);
+  };
+
+  const handleCancelDmSelection = () => {
+    setIsDmSelectionMode(false);
+    setSelectedDmMessageIds([]);
+  };
+
+  // Pinning handlers
+  const handlePinDmMessage = (msg: DirectMessageItem) => {
+    if (!activeDmConvId) return;
+    const docTitle = msg.attachments?.[0]?.name || (msg.content.slice(0, 35) + "...");
+    const pinData: PinnedMessageData = {
+      id: msg.id,
+      title: docTitle,
+      type: msg.attachments?.length ? "document" : "text",
+      url: msg.attachments?.[0]?.url
+    };
+    setPinnedMessagesMap((prev) => ({
+      ...prev,
+      [activeDmConvId]: pinData
+    }));
+    addToast(`Pinned: "${docTitle}"`, "success");
+  };
+
+  const handleUnpinDmMessage = () => {
+    if (!activeDmConvId) return;
+    setPinnedMessagesMap((prev) => ({
+      ...prev,
+      [activeDmConvId]: null,
+      default: null
+    }));
+    addToast("Message unpinned", "info");
+  };
+
+  // Export Chat handler
+  const handleExportChat = () => {
+    if (!activeDmConversation || !activeDmConvId) return;
+    const msgs = dmMessagesMap[activeDmConvId] || [];
+    let text = `====================================================\n`;
+    text += `STUDYCONNECT CONVERSATION EXPORT\n`;
+    text += `Classmate: ${activeDmConversation.peer.name} (${activeDmConversation.peer.roll})\n`;
+    text += `Department: ${activeDmConversation.peer.dept}\n`;
+    text += `Export Date: ${new Date().toLocaleString()}\n`;
+    text += `Total Messages: ${msgs.length}\n`;
+    text += `====================================================\n\n`;
+
+    msgs.forEach((m) => {
+      text += `[${m.time} | ${new Date(m.createdAt).toLocaleDateString()}] ${m.senderName}:\n`;
+      if (m.content) text += `${m.content}\n`;
+      if (m.attachments?.length) {
+        m.attachments.forEach((a) => {
+          text += `  [Attachment: ${a.name} (${a.size})]\n`;
+        });
+      }
+      if (m.codeSnippet) {
+        text += `  [Code (${m.codeSnippet.language})]:\n${m.codeSnippet.code}\n`;
+      }
+      if (m.voiceNote) {
+        text += `  [Voice Note (${m.voiceNote.duration})]\n`;
+      }
+      text += `\n`;
+    });
+
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `StudyConnect_${activeDmConversation.peer.name.replace(/\s+/g, "_")}_Chat.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addToast("Chat history downloaded", "success");
+  };
+
+  // Clear Chat handler
+  const handleClearChat = () => {
+    if (!activeDmConvId) return;
+    setDmMessagesMap((prev) => ({
+      ...prev,
+      [activeDmConvId]: []
+    }));
+    setDmConversations((prev) =>
+      prev.map((c) => (c.id === activeDmConvId ? { ...c, lastMessage: null } : c))
+    );
+  };
+
+  // Delete Chat handler
+  const handleDeleteChat = () => {
+    if (!activeDmConvId) return;
+    const removedId = activeDmConvId;
+    setDmConversations((prev) => prev.filter((c) => c.id !== removedId));
+    setDmMessagesMap((prev) => {
+      const updated = { ...prev };
+      delete updated[removedId];
+      return updated;
+    });
+    setActiveDmConvId(null);
+    setSearchParams({ mode: "dms" });
+  };
+
   // ── 8. Create Channel Handler ──────────────────────────────────────────────
   const handleCreateChannelSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1235,6 +1371,42 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     isPeerTyping={isPeerTyping}
                     isEnlarged={isChatEnlarged}
                     onToggleEnlarge={() => setIsChatEnlarged((prev) => !prev)}
+                    onSelectMessagesMode={() => setIsDmSelectionMode((prev) => !prev)}
+                    onExportChat={handleExportChat}
+                    onCloseChat={() => {
+                      setActiveDmConvId(null);
+                      setSearchParams({ mode: "dms" });
+                    }}
+                    onClearChat={handleClearChat}
+                    onDeleteChat={handleDeleteChat}
+                    onBlockPeer={handleDeleteChat}
+                    onReportPeer={(_reason, _details) => {}}
+                    isFavorite={!!favoriteConversations[activeDmConvId || ""]}
+                    onToggleFavorite={() => {
+                      if (!activeDmConvId) return;
+                      setFavoriteConversations((prev) => ({
+                        ...prev,
+                        [activeDmConvId]: !prev[activeDmConvId]
+                      }));
+                    }}
+                    isLocked={!!lockedConversations[activeDmConvId || ""]}
+                    onToggleLock={() => {
+                      if (!activeDmConvId) return;
+                      setLockedConversations((prev) => ({
+                        ...prev,
+                        [activeDmConvId]: !prev[activeDmConvId]
+                      }));
+                    }}
+                    isMuted={!!mutedConversations[activeDmConvId || ""]}
+                    onMute={(dur) => {
+                      if (!activeDmConvId) return;
+                      setMutedConversations((prev) => ({
+                        ...prev,
+                        [activeDmConvId]: dur !== "unmute"
+                      }));
+                    }}
+                    onDisappearingMessages={(_timer) => {}}
+                    onScheduleCall={(_details) => {}}
                   />
 
                   {/* In-Chat Search Bar */}
@@ -1289,6 +1461,14 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     }
                     onReact={handleDmReact}
                     searchQuery={chatSearchQuery}
+                    pinnedMessage={pinnedMessagesMap[activeDmConvId || ""] ?? pinnedMessagesMap.default}
+                    onPinMessage={handlePinDmMessage}
+                    onUnpinMessage={handleUnpinDmMessage}
+                    isSelectionMode={isDmSelectionMode}
+                    selectedMessageIds={selectedDmMessageIds}
+                    onToggleSelectMessage={handleToggleSelectDmMessage}
+                    onDeleteSelected={handleDeleteSelectedDmMessages}
+                    onCancelSelection={handleCancelDmSelection}
                   />
 
                   {/* Input Dock */}

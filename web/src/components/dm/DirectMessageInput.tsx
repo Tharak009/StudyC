@@ -425,20 +425,6 @@ export function DirectMessageInput({
         /* Regular Input Dock */
         <div className="relative flex items-center gap-2 rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/80 dark:bg-[#080D1A]/90 px-3 py-1.5 shadow-sm backdrop-blur-2xl transition-all focus-within:border-[#1E90FF]/50">
           
-          {/* Emoji Toggle */}
-          <button
-            type="button"
-            onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
-            className={`p-1.5 rounded-xl transition-colors cursor-pointer shrink-0 ${
-              emojiPickerOpen
-                ? "text-[#1E90FF] bg-[#1E90FF]/10"
-                : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-            }`}
-            title="Emoji"
-          >
-            <Smile size={18} />
-          </button>
-
           {/* Paperclip Attachment Menu Toggle */}
           <button
             type="button"
@@ -450,17 +436,31 @@ export function DirectMessageInput({
             }`}
             title="Attach file or code"
           >
-            <Paperclip size={18} />
+            <Paperclip size={19} />
+          </button>
+
+          {/* Emoji Toggle */}
+          <button
+            type="button"
+            onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
+            className={`p-1.5 rounded-xl transition-colors cursor-pointer shrink-0 ${
+              emojiPickerOpen
+                ? "text-[#1E90FF] bg-[#1E90FF]/10"
+                : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            }`}
+            title="Emoji"
+          >
+            <Smile size={19} />
           </button>
 
           {/* Message Textarea */}
           <textarea
             rows={1}
-            placeholder={`Message ${peerName}...`}
+            placeholder="Type a message"
             value={content}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent py-1.5 text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none resize-none max-h-32 leading-relaxed"
+            className="flex-1 bg-transparent py-1.5 text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-400 focus:outline-none resize-none max-h-32 leading-relaxed"
           />
 
           {/* Dynamic Action Button: Mic when empty, Send when text/attachments ready */}
