@@ -261,13 +261,13 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
   return (
     <div className={`relative ${className}`}>
       {/* ── Collapsed / Quick Glance Bar ── */}
-      <div className="flex items-center gap-2 bg-[#0F1A30]/80 backdrop-blur-md border border-[#162544] hover:border-emerald-500/40 rounded-xl px-3 py-1.5 shadow-lg transition-all">
+      <div className="flex items-center gap-2 bg-white/95 dark:bg-[#0F1A30]/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 hover:border-emerald-500/40 rounded-xl px-3 py-1.5 shadow-sm transition-all">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-2 text-left group"
+          className="flex items-center gap-2 text-left group cursor-pointer"
           title="Study Sprint & Ambient Focus Soundscape"
         >
-          <div className="relative flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
+          <div className="relative flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
             <Timer className="w-4 h-4" />
             {activeSprint?.isActive && (
               <span className="absolute -top-1 -right-1 flex h-2 w-2">
@@ -278,28 +278,28 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
           </div>
 
           <div className="flex flex-col">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-200">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
               {activeSprint?.isActive ? (
-                <span className="font-mono text-emerald-400 font-bold">{formatTime(secondsRemaining)}</span>
+                <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{formatTime(secondsRemaining)}</span>
               ) : (
                 <span>Study Sprint</span>
               )}
-              <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
             </div>
-            <span className="text-[10px] text-gray-400 truncate max-w-[120px]">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[120px]">
               {activeSprint?.isActive ? activeSprint.topic : "Start Pomodoro"}
             </span>
           </div>
         </button>
 
         {/* Quick Ambient Sound Toggle */}
-        <div className="h-4 w-px bg-[#162544] mx-1" />
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
         <button
           onClick={() => playSoundscape(activeSound === "none" ? "rain" : "none")}
-          className={`p-1.5 rounded-lg text-xs transition-colors ${
+          className={`p-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
             activeSound !== "none"
-              ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-              : "text-gray-400 hover:text-gray-200 hover:bg-[#162544]"
+              ? "bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 font-bold"
+              : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#162544]"
           }`}
           title={activeSound !== "none" ? `Soundscape: ${activeSound} (Click to mute)` : "Play Ambient Focus Audio"}
         >
@@ -310,10 +310,10 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
         {activeSprint?.isActive && (
           <button
             onClick={isUserParticipating ? handleLeaveSprint : handleJoinSprint}
-            className={`text-[11px] font-medium px-2 py-0.5 rounded-md transition-all ${
+            className={`text-[11px] font-medium px-2 py-0.5 rounded-md transition-all cursor-pointer ${
               isUserParticipating
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
-                : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
+                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
+                : "bg-[#1E90FF] hover:bg-[#187bcd] text-white shadow-xs"
             }`}
           >
             {isUserParticipating ? "Joined" : "Join"}
@@ -329,15 +329,15 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.96 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full left-0 mt-2 w-80 bg-[#0B132B] border border-[#162544] rounded-2xl p-4 shadow-2xl z-50 backdrop-blur-xl text-gray-200"
+            className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-2xl z-50 backdrop-blur-xl text-slate-900 dark:text-slate-100"
           >
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#162544]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <span className="text-sm font-bold tracking-wide text-white">Study Sprint (Pomodoro)</span>
+                <Sparkles className="w-4 h-4 text-emerald-500" />
+                <span className="text-sm font-bold tracking-wide text-slate-900 dark:text-white">Study Sprint (Pomodoro)</span>
               </div>
-              <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">
                 +15 Karma on Finish
               </span>
             </div>
@@ -351,7 +351,8 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
                       cx="50"
                       cy="50"
                       r="42"
-                      stroke="#162544"
+                      stroke="currentColor"
+                      className="text-slate-200 dark:text-slate-800"
                       strokeWidth="8"
                       fill="transparent"
                     />
@@ -369,20 +370,20 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
                     />
                   </svg>
                   <div className="absolute flex flex-col items-center justify-center text-center">
-                    <span className="font-mono text-2xl font-black tracking-tight text-white">
+                    <span className="font-mono text-2xl font-black tracking-tight text-slate-900 dark:text-white">
                       {formatTime(secondsRemaining)}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-medium">remaining</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">remaining</span>
                   </div>
                 </div>
 
-                <p className="mt-2 text-xs font-semibold text-center text-gray-300 max-w-[240px]">
+                <p className="mt-2 text-xs font-semibold text-center text-slate-700 dark:text-slate-300 max-w-[240px]">
                   "{activeSprint.topic}"
                 </p>
 
                 {/* Participants Roster */}
-                <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
-                  <Users className="w-3.5 h-3.5 text-emerald-400" />
+                <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <Users className="w-3.5 h-3.5 text-emerald-500" />
                   <span>
                     {activeSprint.participants?.length || 1} student
                     {(activeSprint.participants?.length || 1) > 1 ? "s" : ""} sprinting
@@ -393,9 +394,9 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
                 <div className="mt-4 flex w-full gap-2">
                   <button
                     onClick={isUserParticipating ? handleLeaveSprint : handleJoinSprint}
-                    className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all shadow-md ${
+                    className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all shadow-md cursor-pointer ${
                       isUserParticipating
-                        ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30"
+                        ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-600 dark:text-rose-300 border border-rose-500/30"
                         : "bg-emerald-600 hover:bg-emerald-500 text-white"
                     }`}
                   >
@@ -407,7 +408,7 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
               /* Idle / Start Sprint Controls */
               <div className="my-3 space-y-3">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-400 mb-1">
+                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
                     Sprint Focus Goal / Topic
                   </label>
                   <input
@@ -415,12 +416,12 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
                     value={topicInput}
                     onChange={(e) => setTopicInput(e.target.value)}
                     placeholder="e.g. Solve 3 LeetCode Graph problems"
-                    className="w-full bg-[#0F1A30] border border-[#162544] rounded-xl px-3 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 dark:bg-[#0F1A30] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-400 mb-1">
+                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
                     Duration
                   </label>
                   <div className="grid grid-cols-3 gap-1.5">
@@ -428,10 +429,10 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
                       <button
                         key={mins}
                         onClick={() => setCustomMinutes(mins)}
-                        className={`py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        className={`py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                           customMinutes === mins
-                            ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                            : "bg-[#0F1A30] hover:bg-[#162544] text-gray-300 border border-[#162544]"
+                            ? "bg-[#1E90FF] text-white shadow-md shadow-[#1E90FF]/25"
+                            : "bg-slate-100 dark:bg-[#0F1A30] hover:bg-slate-200 dark:hover:bg-[#162544] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
                         }`}
                       >
                         {mins}m
@@ -442,7 +443,7 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
 
                 <button
                   onClick={() => handleStartSprint(customMinutes)}
-                  className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-1.5 transition-all"
+                  className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
                   Start Circle Study Sprint
@@ -451,13 +452,13 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
             )}
 
             {/* ── Generative Web Audio Soundscape Hub ── */}
-            <div className="mt-4 pt-3 border-t border-[#162544] space-y-2">
+            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-300">
-                  <Headphones className="w-3.5 h-3.5 text-cyan-400" />
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <Headphones className="w-3.5 h-3.5 text-[#1E90FF]" />
                   <span>Synthesized Focus Audio</span>
                 </div>
-                <span className="text-[10px] text-gray-500">Pure Web Audio</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500">Pure Web Audio</span>
               </div>
 
               <div className="grid grid-cols-3 gap-1.5">
@@ -469,10 +470,10 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
                   <button
                     key={sound.id}
                     onClick={() => playSoundscape(activeSound === sound.id ? "none" : (sound.id as SoundscapeType))}
-                    className={`py-1.5 px-2 rounded-lg text-[11px] font-medium transition-all ${
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
                       activeSound === sound.id
-                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
-                        : "bg-[#0F1A30] hover:bg-[#162544] text-gray-400 border border-[#162544]"
+                        ? "bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40 shadow-xs font-bold"
+                        : "bg-slate-100 dark:bg-[#0F1A30] hover:bg-slate-200 dark:hover:bg-[#162544] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
                     }`}
                   >
                     {sound.label}
@@ -482,7 +483,7 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
 
               {activeSound !== "none" && (
                 <div className="flex items-center gap-2 pt-1">
-                  <Volume2 className="w-3 h-3 text-gray-400" />
+                  <Volume2 className="w-3 h-3 text-slate-400" />
                   <input
                     type="range"
                     min="0"
@@ -490,11 +491,11 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
                     step="0.05"
                     value={volume}
                     onChange={(e) => setVolume(parseFloat(e.target.value))}
-                    className="w-full h-1 bg-[#162544] rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                    className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-[#1E90FF]"
                   />
                   <button
                     onClick={() => playSoundscape("none")}
-                    className="text-[10px] text-rose-400 hover:text-rose-300"
+                    className="text-[10px] text-rose-500 hover:text-rose-600 cursor-pointer font-bold"
                   >
                     Mute
                   </button>

@@ -347,7 +347,7 @@ export function ChatInput({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="mb-2 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-900 p-3 shadow-xl space-y-2 overflow-hidden"
+            className="mb-2 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-900 dark:bg-[#0B1324] p-3 shadow-xl space-y-2 overflow-hidden"
           >
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
@@ -358,7 +358,7 @@ export function ChatInput({
                 <select
                   value={codeLang}
                   onChange={(e) => setCodeLang(e.target.value)}
-                  className="rounded-lg bg-slate-800 border border-slate-700 px-2 py-0.5 text-xs font-semibold text-[#1E90FF] focus:outline-none"
+                  className="rounded-lg bg-slate-800 dark:bg-slate-900 border border-slate-700 px-2 py-0.5 text-xs font-semibold text-[#1E90FF] focus:outline-none"
                 >
                   {supportedLanguages.map((lang) => (
                     <option key={lang} value={lang}>
@@ -370,7 +370,7 @@ export function ChatInput({
 
               <button
                 onClick={() => setCodeDrawerOpen(false)}
-                className="p-1 text-slate-400 hover:text-white"
+                className="p-1 text-slate-400 hover:text-white cursor-pointer"
               >
                 <X size={14} />
               </button>
@@ -381,7 +381,7 @@ export function ChatInput({
               onChange={(e) => setCodeText(e.target.value)}
               placeholder={`// Paste your ${codeLang} code or algorithm here...`}
               rows={4}
-              className="w-full p-2.5 font-mono text-xs rounded-xl bg-slate-950/80 border border-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#1E90FF]"
+              className="w-full p-2.5 font-mono text-xs rounded-xl bg-slate-950/80 dark:bg-[#080D1A] border border-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#1E90FF]"
             />
           </motion.div>
         )}
@@ -394,7 +394,7 @@ export function ChatInput({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="mb-2 rounded-2xl border border-[#1E90FF]/30 bg-white dark:bg-[#0c1322] p-4 shadow-xl space-y-3"
+            className="mb-2 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#0B1324] p-4 shadow-xl space-y-3"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -405,7 +405,7 @@ export function ChatInput({
               </div>
               <button
                 onClick={() => setPollOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
               >
                 <X size={14} />
               </button>
@@ -416,7 +416,7 @@ export function ChatInput({
               placeholder="Ask a question (e.g. When should we meet for Lab 4?)"
               value={pollQuestion}
               onChange={(e) => setPollQuestion(e.target.value)}
-              className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
+              className="w-full p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
             />
 
             <div className="space-y-1.5">
@@ -427,7 +427,7 @@ export function ChatInput({
                   placeholder={`Option ${i + 1}`}
                   value={opt}
                   onChange={(e) => updatePollOption(i, e.target.value)}
-                  className="w-full p-1.5 text-xs rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
+                  className="w-full p-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
                 />
               ))}
             </div>
@@ -436,7 +436,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={addPollOption}
-                className="text-[11px] font-bold text-[#1E90FF] hover:underline"
+                className="text-[11px] font-bold text-[#1E90FF] hover:underline cursor-pointer"
               >
                 + Add another option
               </button>
@@ -444,7 +444,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={handleSendPoll}
-                className="px-3 py-1 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-md shadow-[#1E90FF]/20"
+                className="px-3 py-1 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-md shadow-[#1E90FF]/20 cursor-pointer"
               >
                 Post Poll
               </button>
@@ -511,10 +511,10 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => setIntent("chat")}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all ${
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                   intent === "chat"
-                    ? "bg-blue-600/20 text-blue-300 border border-blue-500/30"
-                    : "text-gray-400 hover:text-gray-300"
+                    ? "bg-[#1E90FF]/15 text-[#1E90FF] border border-[#1E90FF]/30 font-bold"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                 }`}
               >
                 Chat
@@ -522,10 +522,10 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => setIntent("question")}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all ${
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                   intent === "question"
-                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
-                    : "text-gray-400 hover:text-gray-300"
+                    ? "bg-purple-500/20 text-purple-600 dark:text-purple-300 border border-purple-500/30 font-bold"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                 }`}
               >
                 ❓ Question
@@ -533,10 +533,10 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => setIntent("solution")}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all ${
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                   intent === "solution"
-                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                    : "text-gray-400 hover:text-gray-300"
+                    ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30 font-bold"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                 }`}
               >
                 💡 Solution
@@ -547,10 +547,10 @@ export function ChatInput({
                   setIntent("code");
                   setCodeDrawerOpen(true);
                 }}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all ${
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                   intent === "code"
-                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                    : "text-gray-400 hover:text-gray-300"
+                    ? "bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 font-bold"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                 }`}
               >
                 💻 Code
@@ -558,11 +558,11 @@ export function ChatInput({
             </div>
 
             {/* Markdown Action Hotkeys */}
-            <div className="flex items-center gap-1 text-gray-400">
+            <div className="flex items-center gap-1 text-slate-400 dark:text-slate-500">
               <button
                 type="button"
                 onClick={() => insertMarkdown("**")}
-                className="p-1 hover:text-white hover:bg-white/5 rounded transition-colors"
+                className="p-1 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544] rounded transition-colors cursor-pointer"
                 title="Bold (**text**)"
               >
                 <Bold size={13} />
@@ -570,7 +570,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => insertMarkdown("*")}
-                className="p-1 hover:text-white hover:bg-white/5 rounded transition-colors"
+                className="p-1 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544] rounded transition-colors cursor-pointer"
                 title="Italic (*text*)"
               >
                 <Italic size={13} />
@@ -578,7 +578,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => insertMarkdown("`")}
-                className="p-1 hover:text-white hover:bg-white/5 rounded transition-colors"
+                className="p-1 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544] rounded transition-colors cursor-pointer"
                 title="Inline Code (`code`)"
               >
                 <Code size={13} />
@@ -586,7 +586,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => insertMarkdown("$")}
-                className="px-1 py-0.5 font-mono text-[10px] hover:text-cyan-300 hover:bg-white/5 rounded transition-colors"
+                className="px-1 py-0.5 font-mono text-[10px] hover:text-[#1E90FF] hover:bg-slate-100 dark:hover:bg-[#162544] rounded transition-colors cursor-pointer"
                 title="LaTeX Math ($x^2$ or $$\sum$$)"
               >
                 $x$
@@ -594,7 +594,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => insertMarkdown("[", "](url)")}
-                className="p-1 hover:text-white hover:bg-white/5 rounded transition-colors"
+                className="p-1 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544] rounded transition-colors cursor-pointer"
                 title="Link ([title](url))"
               >
                 <Link size={13} />
@@ -606,7 +606,7 @@ export function ChatInput({
           <motion.div
             animate={isShaking ? { x: [-12, 12, -10, 10, -6, 6, -2, 2, 0] } : {}}
             transition={{ duration: 0.5, ease: "easeInOut" }}
-            className="relative flex items-end gap-2 rounded-3xl border border-slate-200/90 dark:border-white/[0.08] bg-white/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl p-2 shadow-[0_10px_35px_rgba(0,0,0,0.06)] dark:shadow-[0_10px_40px_rgba(0,0,0,0.3)]"
+            className="relative flex items-end gap-2 rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-[#0B1324]/95 backdrop-blur-xl p-2 shadow-lg"
           >
           {/* ── Left Action Sheet Trigger (+) ─────────────────────────── */}
           <div className="relative">
@@ -617,7 +617,7 @@ export function ChatInput({
               className={`p-2 rounded-2xl transition-all cursor-pointer ${
                 menuOpen
                   ? "bg-[#1E90FF] text-white rotate-45 shadow-sm"
-                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] hover:text-slate-800 dark:hover:text-white"
+                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#162544] hover:text-slate-800 dark:hover:text-white"
               }`}
             >
               <Plus size={18} />
@@ -630,7 +630,7 @@ export function ChatInput({
                   initial={{ opacity: 0, scale: 0.9, y: -10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                  className="absolute bottom-12 left-0 w-52 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0c1322] shadow-2xl p-1.5 z-50 text-xs space-y-0.5"
+                  className="absolute bottom-12 left-0 w-52 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#0B1324] shadow-2xl p-1.5 z-50 text-xs space-y-0.5"
                 >
                   <button
                     type="button"
@@ -638,7 +638,7 @@ export function ChatInput({
                       fileInputRef.current?.click();
                       setMenuOpen(false);
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.06] font-bold text-left cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#162544] font-bold text-left cursor-pointer"
                   >
                     <FileText size={15} className="text-red-500" />
                     <span>Upload Study Note / PDF</span>
@@ -650,7 +650,7 @@ export function ChatInput({
                       setCodeDrawerOpen(true);
                       setMenuOpen(false);
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.06] font-bold text-left cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#162544] font-bold text-left cursor-pointer"
                   >
                     <Code2 size={15} className="text-[#1E90FF]" />
                     <span>Attach Code Snippet</span>
@@ -662,7 +662,7 @@ export function ChatInput({
                       setPollOpen(true);
                       setMenuOpen(false);
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.06] font-bold text-left cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#162544] font-bold text-left cursor-pointer"
                   >
                     <Vote size={15} className="text-emerald-500" />
                     <span>Create Campus Poll</span>
@@ -698,7 +698,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => setEmojiOpen(!emojiOpen)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors cursor-pointer"
                 title="Add Emoji"
               >
                 <Smile size={18} />
@@ -711,7 +711,7 @@ export function ChatInput({
                     initial={{ opacity: 0, scale: 0.9, y: -10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                    className="absolute bottom-12 right-0 w-64 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0c1322] shadow-2xl p-2.5 z-50"
+                    className="absolute bottom-12 right-0 w-64 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#0B1324] shadow-2xl p-2.5 z-50"
                   >
                     <div className="grid grid-cols-5 gap-1.5 text-lg">
                       {emojiOptions.map((em) => (
@@ -719,7 +719,7 @@ export function ChatInput({
                           key={em}
                           type="button"
                           onClick={() => addEmoji(em)}
-                          className="h-9 w-9 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center transition-transform hover:scale-110 cursor-pointer"
+                          className="h-9 w-9 rounded-xl hover:bg-slate-100 dark:hover:bg-[#162544] flex items-center justify-center transition-transform hover:scale-110 cursor-pointer"
                         >
                           {em}
                         </button>

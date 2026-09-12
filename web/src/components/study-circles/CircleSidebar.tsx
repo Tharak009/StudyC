@@ -11,9 +11,7 @@ import {
   Sparkles,
   ChevronDown,
   ChevronRight,
-  Radio,
-  Lock,
-  Compass
+  Radio
 } from "lucide-react";
 import type { Channel } from "../../types/chat";
 import { useChatStore } from "../../store/chat.store";
@@ -84,7 +82,6 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
       ) {
         watercooler.push(ch);
       } else {
-        // Default to Academic Focus Rooms
         focus.push(ch);
       }
     });
@@ -98,17 +95,22 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
 
     socket?.emit(
       "voice:joinStage",
-      { stageId, communityId: community._id },
+      {
+        communityId: community._id,
+        stageId,
+        userName: "Scholar"
+      },
       (res: any) => {
         if (res?.success) {
           setActiveVoiceStage({
             stageId,
+            communityId: community._id,
             channelName: channel.name,
             isConnected: true,
-            isMuted: false,
             isSpeaking: false,
+            isMuted: false,
             isScreenSharing: false,
-            peers: res.participants || []
+            peers: res.peers || []
           });
         }
       }
@@ -117,21 +119,21 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
 
   return (
     <div
-      className={`w-72 flex-shrink-0 flex flex-col bg-[#0B132B] border-r border-[#162544] h-full select-none ${className}`}
+      className={`w-72 flex-shrink-0 flex flex-col bg-white/95 dark:bg-[#0B1324]/95 border-r border-slate-200/80 dark:border-slate-800/80 h-full select-none text-slate-700 dark:text-slate-300 transition-colors duration-200 ${className}`}
     >
       {/* ── Circle Header & Banner ── */}
-      <div className="p-3 border-b border-[#162544] relative overflow-hidden group">
+      <div className="p-3 border-b border-slate-200/80 dark:border-slate-800/80 relative overflow-hidden group">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center font-black text-white text-sm shadow-md shadow-blue-500/20">
               {community.name.charAt(0).toUpperCase()}
             </div>
             <div className="flex flex-col">
-              <h2 className="text-sm font-bold text-white tracking-wide truncate max-w-[140px]">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-wide truncate max-w-[140px]">
                 {community.name}
               </h2>
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
                 <span>{community.memberCount || 1} Scholars</span>
               </div>
             </div>
@@ -140,7 +142,7 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
           {onCreateChannel && (
             <button
               onClick={onCreateChannel}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#162544] transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors cursor-pointer"
               title="Create Study Channel"
             >
               <Plus className="w-4 h-4" />
@@ -150,13 +152,13 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
 
         {/* Quick Search Jump Bar (Cmd+K) */}
         <div className="mt-3 relative">
-          <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Jump to channel (Cmd+K)..."
-            className="w-full bg-[#080D1A] border border-[#162544] rounded-lg pl-8 pr-3 py-1 text-xs text-gray-300 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+            className="w-full bg-slate-100 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-700/80 rounded-lg pl-8 pr-3 py-1 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] transition-colors"
           />
         </div>
       </div>
@@ -168,10 +170,10 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
           <div>
             <button
               onClick={() => toggleCategory("announcements")}
-              className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-200 transition-colors"
+              className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer"
             >
               <span className="flex items-center gap-1.5">
-                <Bell className="w-3 h-3 text-amber-400" />
+                <Bell className="w-3 h-3 text-amber-500" />
                 Syllabus & Notices
               </span>
               {collapsedCategories.announcements ? (
@@ -189,10 +191,10 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
                     <button
                       key={ch._id || ch.name}
                       onClick={() => onSelectChannel(ch)}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                         isSelected
-                          ? "bg-blue-600/20 text-blue-300 border border-blue-500/30 font-semibold"
-                          : "text-gray-400 hover:text-gray-200 hover:bg-[#0F1A30]"
+                          ? "bg-[#1E90FF] text-white font-semibold shadow-md shadow-[#1E90FF]/25"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-[#0F1A30]"
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">
@@ -211,10 +213,10 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
         <div>
           <button
             onClick={() => toggleCategory("focus")}
-            className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-200 transition-colors"
+            className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer"
           >
             <span className="flex items-center gap-1.5">
-              <Shield className="w-3 h-3 text-emerald-400" />
+              <Shield className="w-3 h-3 text-emerald-500" />
               Academic Focus Rooms
             </span>
             {collapsedCategories.focus ? (
@@ -227,7 +229,7 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
           {!collapsedCategories.focus && (
             <div className="mt-1 space-y-0.5">
               {categorizedChannels.focus.length === 0 ? (
-                <div className="px-2 py-2 text-[11px] text-gray-500 italic">
+                <div className="px-2 py-2 text-[11px] text-slate-400 dark:text-slate-500 italic">
                   No focus channels found
                 </div>
               ) : (
@@ -237,27 +239,26 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
                     <button
                       key={ch._id || ch.name}
                       onClick={() => onSelectChannel(ch)}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all group ${
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all group cursor-pointer ${
                         isSelected
-                          ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-900/40"
-                          : "text-gray-300 hover:text-white hover:bg-[#0F1A30]"
+                          ? "bg-[#1E90FF] text-white font-semibold shadow-md shadow-[#1E90FF]/25"
+                          : "text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-[#0F1A30]"
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">
                         <Hash
                           className={`w-3.5 h-3.5 flex-shrink-0 ${
-                            isSelected ? "text-white" : "text-gray-500 group-hover:text-gray-300"
+                            isSelected ? "text-white" : "text-slate-400 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300"
                           }`}
                         />
                         <span className="truncate">{ch.name}</span>
                       </div>
 
-                      {/* Strict Study Mode Shield Indicator */}
                       {ch.isStrictStudyMode !== false && (
                         <div
                           title="Strict Study Mode: Off-topic messages are automatically filtered."
                           className={`p-0.5 rounded ${
-                            isSelected ? "text-blue-200" : "text-emerald-400/80 group-hover:text-emerald-300"
+                            isSelected ? "text-blue-100" : "text-emerald-500 dark:text-emerald-400"
                           }`}
                         >
                           <Shield className="w-3 h-3" />
@@ -276,7 +277,7 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
           <div>
             <button
               onClick={() => toggleCategory("watercooler")}
-              className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-200 transition-colors"
+              className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer"
             >
               <span className="flex items-center gap-1.5">
                 <Coffee className="w-3 h-3 text-amber-500" />
@@ -297,14 +298,14 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
                     <button
                       key={ch._id || ch.name}
                       onClick={() => onSelectChannel(ch)}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all group ${
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all group cursor-pointer ${
                         isSelected
-                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold"
-                          : "text-gray-400 hover:text-gray-200 hover:bg-[#0F1A30]"
+                          ? "bg-[#1E90FF] text-white font-semibold shadow-md shadow-[#1E90FF]/25"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-[#0F1A30]"
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">
-                        <Coffee className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                        <Coffee className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
                         <span className="truncate">{ch.name}</span>
                       </div>
                     </button>
@@ -319,10 +320,10 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
         <div>
           <button
             onClick={() => toggleCategory("stages")}
-            className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-200 transition-colors"
+            className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer"
           >
             <span className="flex items-center gap-1.5">
-              <Radio className="w-3 h-3 text-cyan-400" />
+              <Radio className="w-3 h-3 text-cyan-500" />
               Drop-in Study Stages
             </span>
             {collapsedCategories.stages ? (
@@ -335,7 +336,7 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
           {!collapsedCategories.stages && (
             <div className="mt-1 space-y-1">
               {categorizedChannels.stages.length === 0 ? (
-                <div className="px-2 py-2 text-[11px] text-gray-500 italic">
+                <div className="px-2 py-2 text-[11px] text-slate-400 dark:text-slate-500 italic">
                   No active voice stages
                 </div>
               ) : (
@@ -347,8 +348,8 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
                       key={stageId}
                       className={`p-2 rounded-xl border transition-all ${
                         isStageActive
-                          ? "bg-cyan-950/40 border-cyan-500/40 shadow-md shadow-cyan-950/50"
-                          : "bg-[#0F1A30]/60 border-[#162544] hover:border-cyan-500/30"
+                          ? "bg-cyan-500/10 border-cyan-500/40 shadow-sm"
+                          : "bg-white dark:bg-[#0F1A30]/60 border-slate-200 dark:border-slate-800 hover:border-cyan-500/30 shadow-xs"
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -356,17 +357,17 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
                           <div
                             className={`p-1.5 rounded-lg ${
                               isStageActive
-                                ? "bg-cyan-500/20 text-cyan-300"
-                                : "bg-[#162544] text-gray-400"
+                                ? "bg-cyan-500/20 text-cyan-500 dark:text-cyan-300"
+                                : "bg-slate-100 dark:bg-[#162544] text-slate-500 dark:text-slate-400"
                             }`}
                           >
                             <Volume2 className="w-3.5 h-3.5" />
                           </div>
                           <div>
-                            <div className="text-xs font-semibold text-white truncate max-w-[120px]">
+                            <div className="text-xs font-semibold text-slate-900 dark:text-white truncate max-w-[120px]">
                               {ch.name}
                             </div>
-                            <div className="text-[10px] text-gray-400">
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">
                               {ch.topic || "Drop-in Audio Stage"}
                             </div>
                           </div>
@@ -374,10 +375,10 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
 
                         <button
                           onClick={() => handleJoinVoiceStage(ch)}
-                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${
+                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
                             isStageActive
-                              ? "bg-cyan-500 text-black shadow-sm"
-                              : "bg-[#162544] hover:bg-cyan-600 hover:text-white text-cyan-300"
+                              ? "bg-cyan-500 text-white shadow-xs"
+                              : "bg-slate-100 dark:bg-[#162544] hover:bg-cyan-600 hover:text-white text-cyan-600 dark:text-cyan-300 border border-slate-200 dark:border-transparent"
                           }`}
                         >
                           {isStageActive ? "Joined" : "Connect"}
@@ -393,12 +394,12 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
       </div>
 
       {/* ── Circle Status Footer ── */}
-      <div className="p-3 border-t border-[#162544] bg-[#080D1A]/60 flex items-center justify-between">
+      <div className="p-3 border-t border-slate-200/80 dark:border-slate-800/80 bg-slate-50 dark:bg-[#080D1A] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-          <span className="text-xs font-semibold text-gray-300">Circle Active</span>
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Circle Active</span>
         </div>
-        <span className="text-[10px] text-gray-500 font-mono">Cobalt OS v2.0</span>
+        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">Cobalt OS v2.0</span>
       </div>
     </div>
   );

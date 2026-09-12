@@ -42,7 +42,7 @@ export function CircleSwitcher({
   return (
     <nav
       aria-label="Study Circles navigation"
-      className="w-18 h-full shrink-0 flex flex-col items-center py-3 bg-slate-100/90 dark:bg-[#070C18] border-r border-slate-200/80 dark:border-white/[0.06] select-none justify-between z-10"
+      className="w-18 h-full shrink-0 flex flex-col items-center py-3 bg-slate-100/90 dark:bg-[#080D1A] border-r border-slate-200/80 dark:border-slate-800/80 select-none justify-between z-10"
     >
       {/* ── Top: Discord Direct Messages (DMs) Hub ───────────────────── */}
       <div className="flex flex-col items-center gap-2 w-full">
@@ -64,7 +64,7 @@ export function CircleSwitcher({
             className={`relative flex h-11 w-11 items-center justify-center transition-all cursor-pointer ${
               isDMsActive
                 ? "rounded-xl bg-[#1E90FF] text-white shadow-md shadow-[#1E90FF]/30 ring-2 ring-[#1E90FF]/40"
-                : "rounded-2xl bg-white dark:bg-[#0F1A30] text-slate-700 dark:text-slate-300 hover:rounded-xl hover:bg-slate-200 dark:hover:bg-[#162544] border border-slate-200/80 dark:border-white/[0.06]"
+                : "rounded-2xl bg-white dark:bg-[#0F1A30] text-slate-700 dark:text-slate-300 hover:rounded-xl hover:bg-slate-200 dark:hover:bg-[#162544] border border-slate-200/80 dark:border-slate-800/80"
             }`}
           >
             <MessageSquare
@@ -76,14 +76,14 @@ export function CircleSwitcher({
 
             {/* Unread DMs Counter Badge */}
             {unreadDMsCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold tabular-nums text-white shadow-sm ring-2 ring-white dark:ring-[#070C18]">
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold tabular-nums text-white shadow-sm ring-2 ring-white dark:ring-[#080D1A]">
                 {unreadDMsCount > 99 ? "99+" : unreadDMsCount}
               </span>
             )}
           </button>
 
           {/* Tooltip */}
-          <div className="absolute left-16 z-50 whitespace-nowrap rounded-xl bg-slate-900/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl border border-slate-700/80 dark:border-white/10 px-3 py-1.5 text-xs font-bold text-white shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+          <div className="absolute left-16 z-50 whitespace-nowrap rounded-xl bg-slate-900/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl border border-slate-700/80 dark:border-slate-700/80 px-3 py-1.5 text-xs font-bold text-white shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
             <span>Direct Messages</span>
             {unreadDMsCount > 0 && (
               <span className="ml-1.5 text-[10px] text-rose-400 font-semibold">
@@ -94,7 +94,7 @@ export function CircleSwitcher({
         </div>
 
         {/* Subtle Divider between DMs and Study Circles */}
-        <div className="w-8 h-0.5 rounded-full bg-slate-200 dark:bg-white/10 my-1" />
+        <div className="w-8 h-0.5 rounded-full bg-slate-200 dark:bg-slate-800 my-1" />
 
         {/* ── Circle Avatars List (Discord Server Rail Style) ─────────── */}
         <div className="flex flex-col items-center gap-2.5 w-full overflow-y-auto no-scrollbar max-h-[calc(100vh-220px)] px-1 py-1">
@@ -119,7 +119,7 @@ export function CircleSwitcher({
                   className={`relative flex h-11 w-11 items-center justify-center text-sm font-black transition-all cursor-pointer ${
                     isActive
                       ? `rounded-xl bg-gradient-to-tr ${circle.gradient} text-white shadow-md shadow-[#1E90FF]/25 ring-2 ring-[#1E90FF]/40`
-                      : "rounded-2xl bg-white dark:bg-[#0F1A30] text-slate-700 dark:text-slate-300 hover:rounded-xl hover:bg-gradient-to-tr hover:from-slate-200 hover:to-slate-100 dark:hover:from-[#162544] dark:hover:to-[#1a2d52] border border-slate-200/80 dark:border-white/[0.06]"
+                      : "rounded-2xl bg-white dark:bg-[#0F1A30] text-slate-700 dark:text-slate-300 hover:rounded-xl hover:bg-gradient-to-tr hover:from-slate-200 hover:to-slate-100 dark:hover:from-[#162544] dark:hover:to-[#1a2d52] border border-slate-200/80 dark:border-slate-800/80"
                   }`}
                 >
                   <span className="text-base">{circle.emoji}</span>
@@ -128,7 +128,7 @@ export function CircleSwitcher({
                   {circle.hasLiveVoice && (
                     <span
                       title="Live Voice Stage Active"
-                      className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] text-white shadow-sm ring-2 ring-white dark:ring-[#070C18]"
+                      className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] text-white shadow-sm ring-2 ring-white dark:ring-[#080D1A]"
                     >
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                       🎙️
@@ -137,14 +137,14 @@ export function CircleSwitcher({
 
                   {/* Unread Counter Badge */}
                   {Boolean(circle.unreadCount) && !circle.hasLiveVoice && (
-                    <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-[#1E90FF] text-[9px] font-bold tabular-nums text-white shadow-sm ring-2 ring-white dark:ring-[#070C18]">
+                    <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-[#1E90FF] text-[9px] font-bold tabular-nums text-white shadow-sm ring-2 ring-white dark:ring-[#080D1A]">
                       {circle.unreadCount}
                     </span>
                   )}
                 </button>
 
                 {/* Hover Tooltip Card */}
-                <div className="absolute left-16 z-50 min-w-max hidden group-hover:flex flex-col rounded-xl bg-slate-900/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl border border-slate-700/80 dark:border-white/10 px-3 py-1.5 text-xs text-white shadow-2xl pointer-events-none">
+                <div className="absolute left-16 z-50 min-w-max hidden group-hover:flex flex-col rounded-xl bg-slate-900/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl border border-slate-700/80 dark:border-slate-700/80 px-3 py-1.5 text-xs text-white shadow-2xl pointer-events-none">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold">{circle.name}</span>
                   </div>
@@ -165,7 +165,7 @@ export function CircleSwitcher({
       </div>
 
       {/* ── Bottom: Add & Explore Circle Actions ─────────────────────── */}
-      <div className="flex flex-col items-center gap-2.5 w-full pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+      <div className="flex flex-col items-center gap-2.5 w-full pt-2 border-t border-slate-200/80 dark:border-slate-800/80">
         {/* Create Circle Button */}
         <button
           type="button"
@@ -185,7 +185,7 @@ export function CircleSwitcher({
           type="button"
           onClick={onExploreCircles}
           title="Explore Public Circles"
-          className="group relative flex h-10 w-10 items-center justify-center rounded-2xl bg-white dark:bg-[#0F1A30] text-slate-500 dark:text-slate-400 hover:bg-slate-200/80 dark:hover:bg-[#162544] hover:text-slate-900 dark:hover:text-white hover:rounded-xl transition-all cursor-pointer border border-slate-200/80 dark:border-white/[0.06]"
+          className="group relative flex h-10 w-10 items-center justify-center rounded-2xl bg-white dark:bg-[#0F1A30] text-slate-500 dark:text-slate-400 hover:bg-slate-200/80 dark:hover:bg-[#162544] hover:text-slate-900 dark:hover:text-white hover:rounded-xl transition-all cursor-pointer border border-slate-200/80 dark:border-slate-800/80"
         >
           <Compass size={18} />
           

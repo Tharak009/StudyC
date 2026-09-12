@@ -9,7 +9,6 @@ import {
   MessageSquare,
   Bookmark,
   Users,
-  ChevronDown,
   Sparkles,
   ArrowDown
 } from "lucide-react";
@@ -114,7 +113,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     return groups;
   }, [messages]);
 
-  // Scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (!showScrollBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -183,24 +182,24 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   const channelIcon = useMemo(() => {
     if (channel.type === "voice" || channel.category === "stages") {
-      return <Radio className="w-4 h-4 text-cyan-400" />;
+      return <Radio className="w-4 h-4 text-cyan-500" />;
     }
     if (channel.type === "announcement" || channel.category === "announcements") {
-      return <Bell className="w-4 h-4 text-amber-400" />;
+      return <Bell className="w-4 h-4 text-amber-500" />;
     }
     if (channel.category === "watercooler") {
-      return <Coffee className="w-4 h-4 text-amber-400" />;
+      return <Coffee className="w-4 h-4 text-amber-500" />;
     }
-    return <Hash className="w-4 h-4 text-blue-400" />;
+    return <Hash className="w-4 h-4 text-[#1E90FF]" />;
   }, [channel]);
 
   return (
-    <div className={`flex-1 flex flex-col bg-[#080D1A] h-full overflow-hidden ${className}`}>
-      {/* ── Frosted Ambient Header (Discord / Slack Grade) ── */}
-      <div className="h-14 border-b border-[#162544] bg-[#0B132B]/80 backdrop-blur-xl px-4 flex items-center justify-between z-10 select-none">
+    <div className={`flex-1 flex flex-col bg-slate-50/50 dark:bg-[#080D1A] h-full overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-200 ${className}`}>
+      {/* ── Frosted Ambient Header ── */}
+      <div className="h-14 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0B1324]/80 backdrop-blur-xl px-4 flex items-center justify-between z-10 select-none">
         {/* Channel Details */}
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex items-center gap-1.5 font-bold text-white text-sm tracking-wide">
+          <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white text-sm tracking-wide">
             {channelIcon}
             <span className="truncate max-w-[180px]">{channel.name}</span>
           </div>
@@ -208,7 +207,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           {/* Strict Study Mode Shield */}
           {channel.isStrictStudyMode !== false && (
             <div
-              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-semibold"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-semibold"
               title="Strict Study Mode Active: Messages must be relevant to academic topics."
             >
               <ShieldCheck className="w-3 h-3" />
@@ -218,8 +217,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
           {channel.topic && (
             <>
-              <div className="h-3.5 w-px bg-[#162544] hidden md:block" />
-              <span className="text-xs text-gray-400 truncate max-w-[280px] hidden md:block">
+              <div className="h-3.5 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
+              <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[280px] hidden md:block">
                 {channel.topic}
               </span>
             </>
@@ -236,15 +235,15 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             currentUserName={currentUserName}
           />
 
-          <div className="h-4 w-px bg-[#162544] mx-1" />
+          <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
 
           {/* Inspector Mode Toggles */}
           <button
             onClick={() => setInspectorMode(inspectorMode === "thread" ? "closed" : "thread")}
-            className={`p-2 rounded-xl transition-all ${
+            className={`p-2 rounded-xl transition-all cursor-pointer ${
               inspectorMode === "thread"
-                ? "bg-blue-600/20 text-blue-300 border border-blue-500/30"
-                : "text-gray-400 hover:text-white hover:bg-[#162544]"
+                ? "bg-[#1E90FF]/15 dark:bg-[#1E90FF]/25 text-[#1E90FF] border border-[#1E90FF]/30 font-semibold"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544]"
             }`}
             title="Threads & Discussions"
           >
@@ -253,10 +252,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
           <button
             onClick={() => setInspectorMode(inspectorMode === "vault" ? "closed" : "vault")}
-            className={`p-2 rounded-xl transition-all ${
+            className={`p-2 rounded-xl transition-all cursor-pointer ${
               inspectorMode === "vault"
-                ? "bg-blue-600/20 text-blue-300 border border-blue-500/30"
-                : "text-gray-400 hover:text-white hover:bg-[#162544]"
+                ? "bg-[#1E90FF]/15 dark:bg-[#1E90FF]/25 text-[#1E90FF] border border-[#1E90FF]/30 font-semibold"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544]"
             }`}
             title="Shared Vault (Pinned & Code)"
           >
@@ -265,10 +264,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
           <button
             onClick={() => setInspectorMode(inspectorMode === "roster" ? "closed" : "roster")}
-            className={`p-2 rounded-xl transition-all ${
+            className={`p-2 rounded-xl transition-all cursor-pointer ${
               inspectorMode === "roster"
-                ? "bg-blue-600/20 text-blue-300 border border-blue-500/30"
-                : "text-gray-400 hover:text-white hover:bg-[#162544]"
+                ? "bg-[#1E90FF]/15 dark:bg-[#1E90FF]/25 text-[#1E90FF] border border-[#1E90FF]/30 font-semibold"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#162544]"
             }`}
             title="Roster & Online Scholars"
           >
@@ -284,20 +283,20 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         className="flex-1 overflow-y-auto px-2 py-4 space-y-4 no-scrollbar relative"
       >
         {/* Welcome Channel Banner */}
-        <div className="px-4 py-6 border-b border-[#162544]/60 mb-4">
+        <div className="px-4 py-6 border-b border-slate-200/80 dark:border-slate-800/80 mb-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-blue-500/20 mb-3">
             {channelIcon}
           </div>
-          <h1 className="text-xl font-bold text-white tracking-wide">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-wide">
             Welcome to #{channel.name}!
           </h1>
-          <p className="text-xs text-gray-400 mt-1 max-w-lg leading-relaxed">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-lg leading-relaxed">
             {channel.topic ||
               "This is the start of the study channel. Collaborate on problem sets, ask questions with math formulas ($...$), and share code snippets."}
           </p>
           {channel.isStrictStudyMode !== false && (
-            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 text-xs font-medium">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-medium">
+              <ShieldCheck className="w-4 h-4 text-emerald-500" />
               <span>
                 Strict Study Mode is active. Keep discussions focused on academic coursework and problem solving.
               </span>
@@ -310,7 +309,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           <div key={group.dateLabel} className="space-y-1">
             {/* Sticky Frosted Date Separator */}
             <div className="sticky top-2 z-10 flex items-center justify-center my-3 select-none">
-              <div className="px-3 py-1 rounded-full bg-[#0B132B]/90 border border-[#162544] backdrop-blur-md shadow-md text-[11px] font-bold tracking-wider text-gray-400 uppercase">
+              <div className="px-3 py-1 rounded-full bg-white/90 dark:bg-[#0B1324]/90 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-xs text-[11px] font-bold tracking-wider text-slate-500 dark:text-slate-400 uppercase">
                 {group.dateLabel}
               </div>
             </div>
@@ -340,7 +339,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       {showScrollBottom && (
         <button
           onClick={scrollToBottom}
-          className="absolute bottom-24 right-8 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-xl shadow-blue-900/50 transition-transform hover:scale-105 active:scale-95"
+          className="absolute bottom-24 right-8 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-xl shadow-[#1E90FF]/30 transition-transform hover:scale-105 active:scale-95 cursor-pointer"
         >
           <ArrowDown className="w-3.5 h-3.5" />
           <span>Latest Messages</span>
@@ -348,7 +347,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       )}
 
       {/* ── Chat Input Suite (Slack / Discord Grade) ── */}
-      <div className="border-t border-[#162544] bg-[#0B132B]/60 backdrop-blur-md">
+      <div className="border-t border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0B1324]/80 backdrop-blur-md">
         <ChatInput
           channelName={channel.name}
           onSendMessage={onSendMessage}

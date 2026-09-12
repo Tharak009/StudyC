@@ -114,24 +114,24 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
         transition={{ duration: 0.2 }}
         className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 ${className}`}
       >
-        <div className="bg-[#0B132B]/95 backdrop-blur-2xl border border-cyan-500/30 shadow-[0_12px_40px_rgba(0,0,0,0.6)] rounded-2xl overflow-hidden p-3 min-w-[340px] max-w-[540px]">
+        <div className="bg-white/95 dark:bg-[#0B1324]/95 backdrop-blur-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-2xl rounded-2xl overflow-hidden p-3 min-w-[340px] max-w-[540px] text-slate-900 dark:text-slate-100">
           {/* Top Stage Bar */}
-          <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[#162544]">
+          <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2">
-              <div className="relative flex items-center justify-center w-7 h-7 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+              <div className="relative flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                 <Radio className="w-4 h-4 animate-pulse" />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-white tracking-wide">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white tracking-wide">
                     {channelName || "Live Study Stage"}
                   </span>
-                  <span className="text-[10px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.2 rounded-full uppercase">
+                  <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded-full uppercase">
                     Live
                   </span>
                 </div>
-                <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                  <Users className="w-3 h-3 text-gray-400" />
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <Users className="w-3 h-3 text-slate-400" />
                   {peers.length + 1} connected
                 </span>
               </div>
@@ -140,7 +140,7 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setIsMinimized(!isMinimized)}
-                className="p-1 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-[#162544] transition-colors"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors cursor-pointer"
                 title={isMinimized ? "Expand Stage" : "Minimize Stage"}
               >
                 {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
@@ -150,7 +150,7 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
 
           {/* Active Screen Sharing Preview (if user is sharing) */}
           {!isMinimized && isScreenSharing && localScreenStream && (
-            <div className="my-2.5 rounded-xl overflow-hidden bg-black border border-[#162544] relative aspect-video">
+            <div className="my-2.5 rounded-xl overflow-hidden bg-black border border-slate-200 dark:border-slate-800 relative aspect-video">
               <video
                 ref={videoPreviewRef}
                 autoPlay
@@ -173,8 +173,8 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
                 <div
                   className={`relative w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
                     isSpeaking
-                      ? "ring-2 ring-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-                      : "bg-[#162544] text-gray-300 border border-[#233863]"
+                      ? "ring-2 ring-emerald-400 bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+                      : "bg-slate-100 dark:bg-[#162544] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#233863]"
                   }`}
                 >
                   {currentUserName.charAt(0).toUpperCase()}
@@ -184,7 +184,7 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
                     </div>
                   )}
                 </div>
-                <span className="text-[10px] text-gray-400 font-medium truncate max-w-[50px]">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[50px]">
                   You
                 </span>
               </div>
@@ -195,8 +195,8 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
                   <div
                     className={`relative w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
                       peer.isSpeaking
-                        ? "ring-2 ring-cyan-400 bg-cyan-500/20 text-cyan-300 shadow-[0_0_12px_rgba(56,189,248,0.5)]"
-                        : "bg-[#162544] text-gray-300 border border-[#233863]"
+                        ? "ring-2 ring-[#1E90FF] bg-[#1E90FF]/20 text-[#1E90FF] shadow-[0_0_12px_rgba(30,144,255,0.5)]"
+                        : "bg-slate-100 dark:bg-[#162544] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#233863]"
                     }`}
                   >
                     {peer.name.charAt(0).toUpperCase()}
@@ -206,7 +206,7 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
                       </div>
                     )}
                   </div>
-                  <span className="text-[10px] text-gray-400 font-medium truncate max-w-[60px]">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[60px]">
                     {peer.name}
                   </span>
                 </div>
@@ -215,15 +215,15 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
           )}
 
           {/* Bottom Controls */}
-          <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#162544]">
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-1.5">
               {/* Mic Toggle */}
               <button
                 onClick={toggleMute}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   isMuted
-                    ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30"
-                    : "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30"
+                    ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-600 dark:text-rose-300 border border-rose-500/30"
+                    : "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30"
                 }`}
               >
                 {isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
@@ -233,10 +233,10 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
               {/* Screenshare Toggle */}
               <button
                 onClick={toggleScreenShare}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   isScreenSharing
-                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                    : "bg-[#0F1A30] hover:bg-[#162544] text-gray-300 border border-[#162544]"
+                    ? "bg-[#1E90FF]/20 text-[#1E90FF] border border-[#1E90FF]/40 font-bold"
+                    : "bg-slate-100 dark:bg-[#0F1A30] hover:bg-slate-200 dark:hover:bg-[#162544] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
                 }`}
               >
                 <Monitor className="w-3.5 h-3.5" />
@@ -247,7 +247,7 @@ export const VoiceStageDock: React.FC<VoiceStageDockProps> = ({
             {/* Leave Stage Button */}
             <button
               onClick={handleLeave}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-900/30"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-900/30 cursor-pointer"
             >
               <PhoneOff className="w-3.5 h-3.5" />
               <span>Leave Stage</span>

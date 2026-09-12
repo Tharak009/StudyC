@@ -3,6 +3,7 @@ import type { Channel, ChatMessage, SprintSession, VoicePeer } from "../types/ch
 
 export interface ActiveVoiceStageState {
   stageId: string;
+  communityId?: string;
   channelName: string;
   isConnected: boolean;
   isMuted: boolean;

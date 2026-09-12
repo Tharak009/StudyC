@@ -1008,7 +1008,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#080D1A] text-gray-100 font-sans">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-slate-50 font-sans antialiased transition-colors duration-300">
       {/* ── App Navigation Sidebar ── */}
       <DashboardSidebar
         collapsed={isSidebarCollapsed}
@@ -1077,25 +1077,25 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
             </>
           ) : (
             /* Empty / Welcome State when no circles exist */
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#080D1A]">
-              <div className="w-16 h-16 rounded-3xl bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mb-4 shadow-xl">
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-[#080D1A]">
+              <div className="w-16 h-16 rounded-3xl bg-[#1E90FF]/10 border border-[#1E90FF]/20 text-[#1E90FF] flex items-center justify-center mb-4 shadow-xl">
                 <Compass className="w-8 h-8" />
               </div>
-              <h2 className="text-xl font-bold text-white mb-2">Select or Discover a Study Circle</h2>
-              <p className="text-sm text-gray-400 max-w-md mb-6 leading-relaxed">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Select or Discover a Study Circle</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mb-6 leading-relaxed">
                 Study Circles are collaborative campus workspaces with synchronized study sprints, LaTeX
                 math rendering, and drop-in audio stages.
               </p>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setIsExploreCirclesOpen(true)}
-                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-900/30 transition-all"
+                  className="px-5 py-2.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white font-bold text-xs shadow-md shadow-[#1E90FF]/25 transition-all cursor-pointer"
                 >
                   Explore Campus Circles
                 </button>
                 <button
                   onClick={() => setIsCreateCircleOpen(true)}
-                  className="px-5 py-2.5 rounded-xl bg-[#0F1A30] hover:bg-[#162544] text-gray-200 border border-[#162544] font-bold text-xs transition-all"
+                  className="px-5 py-2.5 rounded-xl bg-white dark:bg-[#0F1A30] hover:bg-slate-100 dark:hover:bg-[#162544] text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 font-bold text-xs transition-all cursor-pointer shadow-xs"
                 >
                   Create Circle
                 </button>
@@ -1128,7 +1128,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
             {dmActiveView === "conversation" && activeDmConversation ? (
               <div className="flex-1 flex flex-row min-w-0 h-full overflow-hidden">
                 {/* Pane 2: 1-on-1 Direct Message Stream */}
-                <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#080D1A]">
+                <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-50 dark:bg-[#080D1A]">
                   <ConversationHeader
                     peer={activeDmConversation.peer}
                     onBack={() => {
@@ -1151,23 +1151,23 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: "auto", opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="p-2.5 px-4 bg-[#0B132B] border-b border-[#162544] flex items-center justify-between gap-3 z-10"
+                        className="p-2.5 px-4 bg-white/95 dark:bg-[#0B1324]/95 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-3 z-10 backdrop-blur-md"
                       >
                         <div className="relative flex-1">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                           <input
                             type="text"
                             placeholder={`Search messages with ${activeDmConversation.peer.name}...`}
                             value={chatSearchQuery}
                             onChange={(e) => setChatSearchQuery(e.target.value)}
-                            className="w-full rounded-xl border border-[#162544] bg-[#080D1A] pl-9 pr-8 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100/80 dark:bg-[#080D1A] pl-9 pr-8 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF]"
                             autoFocus
                           />
                           {chatSearchQuery && (
                             <button
                               type="button"
                               onClick={() => setChatSearchQuery("")}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
                             >
                               <X size={12} />
                             </button>
@@ -1179,7 +1179,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                             setSearchInChatOpen(false);
                             setChatSearchQuery("");
                           }}
-                          className="text-xs font-bold text-gray-400 hover:text-white"
+                          className="text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white cursor-pointer"
                         >
                           Close
                         </button>
@@ -1261,7 +1261,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="relative w-full max-w-sm rounded-3xl border border-[#162544] bg-[#0B132B] text-white p-8 shadow-2xl flex flex-col items-center text-center"
+              className="relative w-full max-w-sm rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-[#0B1324]/95 text-slate-900 dark:text-slate-100 p-8 shadow-2xl backdrop-blur-xl flex flex-col items-center text-center"
             >
               <span className="text-[11px] font-bold text-[#1E90FF] uppercase tracking-wider mb-6 flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-[#1E90FF] animate-ping" />
@@ -1269,7 +1269,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
               </span>
 
               <div className="relative mb-4">
-                <div className="h-24 w-24 rounded-full overflow-hidden border-4 border-[#1E90FF]/30 bg-[#1E90FF] flex items-center justify-center text-2xl font-black shadow-xl">
+                <div className="h-24 w-24 rounded-full overflow-hidden border-4 border-[#1E90FF]/30 bg-[#1E90FF] flex items-center justify-center text-2xl font-black text-white shadow-xl">
                   {activeDmConversation.peer.avatar ? (
                     <img
                       src={activeDmConversation.peer.avatar}
@@ -1283,14 +1283,14 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                 <div className="absolute inset-0 rounded-full border border-[#1E90FF]/50 animate-ping pointer-events-none" />
               </div>
 
-              <h3 className="text-lg font-bold text-white mb-0.5">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-0.5">
                 {activeDmConversation.peer.name}
               </h3>
-              <p className="text-xs text-gray-400 font-medium mb-6">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-6">
                 {activeDmConversation.peer.roll} • {activeDmConversation.peer.dept}
               </p>
 
-              <div className="text-xs text-[#1E90FF]/80 font-medium mb-8">
+              <div className="text-xs text-[#1E90FF] font-medium mb-8">
                 Ringing... (End-to-End Encrypted)
               </div>
 
@@ -1303,7 +1303,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                   className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors ${
                     activeCall.isMuted
                       ? "bg-rose-500 text-white"
-                      : "bg-[#162544] text-gray-200 hover:bg-[#1f335c]"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
                   }`}
                   title={activeCall.isMuted ? "Unmute" : "Mute"}
                 >
@@ -1329,7 +1329,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                   className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors ${
                     !activeCall.isVideoEnabled
                       ? "bg-rose-500 text-white"
-                      : "bg-[#162544] text-gray-200 hover:bg-[#1f335c]"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
                   }`}
                   title={activeCall.isVideoEnabled ? "Turn off camera" : "Turn on camera"}
                 >
@@ -1349,16 +1349,16 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#0B132B] border border-[#162544] rounded-3xl p-6 w-full max-w-md shadow-2xl text-gray-200"
+              className="bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl text-slate-700 dark:text-slate-200"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-[#162544] mb-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200/80 dark:border-slate-800/80 mb-4">
                 <div className="flex items-center gap-2">
-                  <Hash className="w-5 h-5 text-blue-400" />
-                  <h3 className="text-base font-bold text-white">Create Study Channel</h3>
+                  <Hash className="w-5 h-5 text-[#1E90FF]" />
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Create Study Channel</h3>
                 </div>
                 <button
                   onClick={() => setIsCreateChannelOpen(false)}
-                  className="p-1 rounded-lg text-gray-400 hover:text-white"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1366,7 +1366,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
               <form onSubmit={handleCreateChannelSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Channel Name
                   </label>
                   <input
@@ -1375,12 +1375,12 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     placeholder="e.g. dynamic-programming"
                     value={newChannelName}
                     onChange={(e) => setNewChannelName(e.target.value)}
-                    className="w-full bg-[#080D1A] border border-[#162544] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] focus:ring-1 focus:ring-[#1E90FF] transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Channel Category
                   </label>
                   <div className="grid grid-cols-2 gap-2">
@@ -1401,8 +1401,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                         }}
                         className={`p-2 rounded-xl text-xs font-medium text-left border transition-all ${
                           newChannelCategory === cat.id
-                            ? "bg-blue-600/20 text-blue-300 border-blue-500/40"
-                            : "bg-[#080D1A] text-gray-400 border-[#162544]"
+                            ? "bg-[#1E90FF]/15 text-[#1E90FF] border-[#1E90FF]/40"
+                            : "bg-slate-50 dark:bg-[#080D1A] text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
                         }`}
                       >
                         {cat.label}
@@ -1412,7 +1412,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Topic & Objectives (Optional)
                   </label>
                   <input
@@ -1420,17 +1420,17 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     placeholder="e.g. Discussions on recursion and trees"
                     value={newChannelTopic}
                     onChange={(e) => setNewChannelTopic(e.target.value)}
-                    className="w-full bg-[#080D1A] border border-[#162544] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] focus:ring-1 focus:ring-[#1E90FF] transition-all"
                   />
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-xl bg-[#080D1A] border border-[#162544]">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800">
                   <div>
-                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                       <span>Strict Study Mode</span>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                       Off-topic messages are intercepted by AI classifier
                     </p>
                   </div>
@@ -1438,7 +1438,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     type="checkbox"
                     checked={newChannelStrict}
                     onChange={(e) => setNewChannelStrict(e.target.checked)}
-                    className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer accent-blue-600"
+                    className="w-4 h-4 rounded text-[#1E90FF] focus:ring-0 cursor-pointer accent-[#1E90FF]"
                   />
                 </div>
 
@@ -1446,13 +1446,13 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                   <button
                     type="button"
                     onClick={() => setIsCreateChannelOpen(false)}
-                    className="px-4 py-2 text-xs font-medium text-gray-400 hover:text-white"
+                    className="px-4 py-2 text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/30"
+                    className="px-5 py-2 text-xs font-bold rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white shadow-md shadow-[#1E90FF]/25 transition-all"
                   >
                     Create Channel
                   </button>
@@ -1471,16 +1471,16 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#0B132B] border border-[#162544] rounded-3xl p-6 w-full max-w-md shadow-2xl text-gray-200"
+              className="bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl text-slate-700 dark:text-slate-200"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-[#162544] mb-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200/80 dark:border-slate-800/80 mb-4">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-blue-400" />
-                  <h3 className="text-base font-bold text-white">Establish Study Circle</h3>
+                  <Sparkles className="w-5 h-5 text-[#1E90FF]" />
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Establish Study Circle</h3>
                 </div>
                 <button
                   onClick={() => setIsCreateCircleOpen(false)}
-                  className="p-1 rounded-lg text-gray-400 hover:text-white"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1488,7 +1488,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
               <form onSubmit={handleCreateCircle} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Circle Title
                   </label>
                   <input
@@ -1497,21 +1497,21 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     placeholder="e.g. Distributed Systems Lab, AI & ML Hub"
                     value={newCircleName}
                     onChange={(e) => setNewCircleName(e.target.value)}
-                    className="w-full bg-[#080D1A] border border-[#162544] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] focus:ring-1 focus:ring-[#1E90FF] transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Academic Discipline
                   </label>
                   <select
                     value={newCircleCategory}
                     onChange={(e) => setNewCircleCategory(e.target.value as CommunityCategory)}
-                    className="w-full bg-[#080D1A] border border-[#162544] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#1E90FF] focus:ring-1 focus:ring-[#1E90FF] transition-all"
                   >
                     {COMMUNITY_CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
+                      <option key={cat} value={cat} className="bg-white dark:bg-[#0B1324] text-slate-900 dark:text-white">
                         {cat}
                       </option>
                     ))}
@@ -1519,7 +1519,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Objectives & Syllabus
                   </label>
                   <textarea
@@ -1527,12 +1527,12 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     placeholder="Describe coursework, weekly problem solving goals..."
                     value={newCircleDescription}
                     onChange={(e) => setNewCircleDescription(e.target.value)}
-                    className="w-full bg-[#080D1A] border border-[#162544] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] focus:ring-1 focus:ring-[#1E90FF] transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Circle Avatar Emoji
                   </label>
                   <div className="flex items-center gap-2">
@@ -1543,8 +1543,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                         onClick={() => setNewCircleEmoji(emoji)}
                         className={`h-9 w-9 text-base rounded-xl flex items-center justify-center border transition-all ${
                           newCircleEmoji === emoji
-                            ? "border-blue-500 bg-blue-500/20 scale-110"
-                            : "border-[#162544] bg-[#080D1A] hover:bg-[#162544]"
+                            ? "border-[#1E90FF] bg-[#1E90FF]/15 scale-110 shadow-sm"
+                            : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] hover:bg-slate-100 dark:hover:bg-slate-800/80 text-slate-900 dark:text-white"
                         }`}
                       >
                         {emoji}
@@ -1557,13 +1557,13 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                   <button
                     type="button"
                     onClick={() => setIsCreateCircleOpen(false)}
-                    className="px-4 py-2 text-xs font-medium text-gray-400 hover:text-white"
+                    className="px-4 py-2 text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/30"
+                    className="px-5 py-2 text-xs font-bold rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white shadow-md shadow-[#1E90FF]/25 transition-all"
                   >
                     Create Circle
                   </button>
@@ -1582,25 +1582,25 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#0B132B] border border-[#162544] rounded-3xl p-6 w-full max-w-2xl shadow-2xl text-gray-200 flex flex-col max-h-[85vh]"
+              className="bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 w-full max-w-2xl shadow-2xl text-slate-700 dark:text-slate-200 flex flex-col max-h-[85vh]"
             >
-              <div className="flex items-center justify-between pb-4 border-b border-[#162544]">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 dark:border-slate-800/80">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-2xl bg-[#1E90FF]/10 text-[#1E90FF] flex items-center justify-center">
                     <Compass className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-extrabold text-white">
+                    <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                       Explore Campus Study Circles
                     </h3>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       Join active student workspaces across departments.
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setIsExploreCirclesOpen(false)}
-                  className="p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-[#162544]"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1609,13 +1609,13 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
               {/* Search & Categories */}
               <div className="py-3.5 space-y-2.5">
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     placeholder="Search circles by title or subject..."
                     value={exploreSearch}
                     onChange={(e) => setExploreSearch(e.target.value)}
-                    className="w-full bg-[#080D1A] border border-[#162544] rounded-xl pl-9 pr-3.5 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-3.5 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#1E90FF] focus:ring-1 focus:ring-[#1E90FF] transition-all"
                   />
                 </div>
 
@@ -1624,8 +1624,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     onClick={() => setExploreCategory("all")}
                     className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all shrink-0 ${
                       exploreCategory === "all"
-                        ? "bg-blue-600 text-white"
-                        : "bg-[#080D1A] text-gray-400 hover:text-white"
+                        ? "bg-[#1E90FF] text-white shadow-sm shadow-[#1E90FF]/25"
+                        : "bg-slate-100 dark:bg-[#080D1A] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800"
                     }`}
                   >
                     All Disciplines
@@ -1636,8 +1636,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                       onClick={() => setExploreCategory(cat)}
                       className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all shrink-0 ${
                         exploreCategory === cat
-                          ? "bg-blue-600 text-white"
-                          : "bg-[#080D1A] text-gray-400 hover:text-white"
+                          ? "bg-[#1E90FF] text-white shadow-sm shadow-[#1E90FF]/25"
+                          : "bg-slate-100 dark:bg-[#080D1A] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800"
                       }`}
                     >
                       {cat}
@@ -1649,8 +1649,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
               {/* Circle Cards List */}
               <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 py-1">
                 {isLoadingCommunities ? (
-                  <div className="py-12 text-center text-xs text-gray-400">
-                    <Sparkles className="animate-spin mx-auto mb-2 text-blue-400 w-6 h-6" />
+                  <div className="py-12 text-center text-xs text-slate-400">
+                    <Sparkles className="animate-spin mx-auto mb-2 text-[#1E90FF] w-6 h-6" />
                     <span>Loading campus study circles...</span>
                   </div>
                 ) : (() => {
@@ -1667,9 +1667,9 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
                   if (filtered.length === 0) {
                     return (
-                      <div className="py-12 text-center text-xs text-gray-400 space-y-3">
-                        <Users className="w-8 h-8 mx-auto text-gray-600" />
-                        <p className="font-semibold text-gray-300">
+                      <div className="py-12 text-center text-xs text-slate-400 space-y-3">
+                        <Users className="w-8 h-8 mx-auto text-slate-400 dark:text-slate-600" />
+                        <p className="font-semibold text-slate-700 dark:text-slate-300">
                           No matching study circles found
                         </p>
                         <button
@@ -1677,7 +1677,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                             setIsExploreCirclesOpen(false);
                             setIsCreateCircleOpen(true);
                           }}
-                          className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-500"
+                          className="px-4 py-2 rounded-xl bg-[#1E90FF] text-white text-xs font-bold hover:bg-[#187bcd] transition-colors shadow-sm"
                         >
                           Create This Circle
                         </button>
@@ -1694,27 +1694,27 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     return (
                       <div
                         key={circle.id}
-                        className="p-3.5 rounded-2xl border border-[#162544] bg-[#080D1A]/80 hover:border-blue-500/40 transition-all flex items-center justify-between gap-3"
+                        className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#080D1A]/80 hover:border-[#1E90FF]/40 dark:hover:border-[#1E90FF]/40 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div
-                            className={`h-11 w-11 rounded-2xl bg-gradient-to-tr ${circle.gradient} text-white flex items-center justify-center text-xl shrink-0`}
+                            className={`h-11 w-11 rounded-2xl bg-gradient-to-tr ${circle.gradient} text-white flex items-center justify-center text-xl shrink-0 shadow-sm`}
                           >
                             {circle.emoji}
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-white truncate">
+                              <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
                                 {circle.name}
                               </span>
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-300 border border-blue-500/20 shrink-0">
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#1E90FF]/10 text-[#1E90FF] border border-[#1E90FF]/20 shrink-0">
                                 {circle.dept}
                               </span>
                             </div>
-                            <p className="text-[11px] text-gray-400 line-clamp-1 mt-0.5">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
                               {rawComm?.description || `Collaborative study circle for ${circle.name}.`}
                             </p>
-                            <div className="flex items-center gap-3 text-[10px] text-gray-500 mt-1">
+                            <div className="flex items-center gap-3 text-[10px] text-slate-400 dark:text-slate-500 mt-1">
                               <span className="flex items-center gap-1 font-medium">
                                 <Users className="w-3 h-3" />
                                 {circle.memberCount} Scholars
@@ -1725,7 +1725,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
                         <div className="shrink-0">
                           {isSelected && viewMode === "circle" ? (
-                            <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 flex items-center gap-1">
+                            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 flex items-center gap-1">
                               <Check className="w-3 h-3" />
                               <span>Active</span>
                             </span>
@@ -1737,7 +1737,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                                 setSearchParams({ mode: "circle", circle: circle.id });
                                 setIsExploreCirclesOpen(false);
                               }}
-                              className="px-3.5 py-1.5 rounded-xl bg-[#162544] hover:bg-blue-600 hover:text-white text-gray-200 text-xs font-bold transition-all"
+                              className="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-[#1E90FF] hover:text-white text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all"
                             >
                               Open Circle
                             </button>
@@ -1745,7 +1745,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                             <button
                               disabled={isJoiningCircleId === circle.id}
                               onClick={() => handleJoinCircle(circle)}
-                              className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-1 disabled:opacity-50"
+                              className="px-3.5 py-1.5 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold transition-all flex items-center gap-1 disabled:opacity-50 shadow-sm shadow-[#1E90FF]/20"
                             >
                               {isJoiningCircleId === circle.id ? (
                                 <Sparkles className="w-3 h-3 animate-spin" />
@@ -1763,8 +1763,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
               </div>
 
               {/* Modal Footer */}
-              <div className="pt-3 border-t border-[#162544] flex items-center justify-between text-xs mt-2">
-                <span className="text-[11px] text-gray-400">
+              <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between text-xs mt-2">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
                   {circles.length} campus circles available
                 </span>
                 <button
@@ -1772,7 +1772,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     setIsExploreCirclesOpen(false);
                     setIsCreateCircleOpen(true);
                   }}
-                  className="font-bold text-blue-400 hover:underline flex items-center gap-1"
+                  className="font-bold text-[#1E90FF] hover:underline flex items-center gap-1"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Create New Circle</span>

@@ -216,14 +216,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
   return (
     <div
-      className={`group relative flex gap-3 px-4 py-2.5 rounded-2xl transition-all hover:bg-[#0F1A30]/50 ${
-        message.isPinned ? "bg-amber-950/10 border-l-2 border-amber-500" : ""
+      className={`group relative flex gap-3 px-4 py-2.5 rounded-2xl transition-all hover:bg-slate-100/60 dark:hover:bg-[#0F1A30]/50 ${
+        message.isPinned ? "bg-amber-500/10 border-l-2 border-amber-500" : ""
       } ${
-        message.isAcceptedSolution ? "bg-emerald-950/15 border-l-2 border-emerald-500" : ""
+        message.isAcceptedSolution ? "bg-emerald-500/10 border-l-2 border-emerald-500" : ""
       } ${className}`}
     >
       {/* ── Hover Action Dock ── */}
-      <div className="absolute right-4 -top-3 hidden group-hover:flex items-center gap-1 bg-[#0B132B] border border-[#162544] rounded-xl px-2 py-1 shadow-2xl z-20 backdrop-blur-xl">
+      <div className="absolute right-4 -top-3 hidden group-hover:flex items-center gap-1 bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-700/80 rounded-xl px-2 py-1 shadow-xl z-20 backdrop-blur-xl text-slate-700 dark:text-slate-300">
         {/* Quick Reactions */}
         {[
           { emoji: "👍", icon: ThumbsUp },
@@ -234,14 +234,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           <button
             key={r.emoji}
             onClick={() => onReact?.(message._id, r.emoji)}
-            className="p-1 text-xs hover:bg-[#162544] rounded-lg transition-transform hover:scale-125"
+            className="p-1 text-xs hover:bg-slate-100 dark:hover:bg-[#162544] rounded-lg transition-transform hover:scale-125 cursor-pointer"
             title={`React with ${r.emoji}`}
           >
             {r.emoji}
           </button>
         ))}
 
-        <div className="w-px h-3.5 bg-[#162544] mx-0.5" />
+        <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
 
         {/* Reply in Thread */}
         <button
@@ -249,7 +249,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             if (onReplyInThread) onReplyInThread(message);
             else openThread(message);
           }}
-          className="p-1 rounded-lg text-gray-400 hover:text-cyan-300 hover:bg-[#162544] transition-colors"
+          className="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:text-[#1E90FF] hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors cursor-pointer"
           title="Reply in Thread"
         >
           <MessageSquare className="w-3.5 h-3.5" />
@@ -258,10 +258,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         {/* Pin Message */}
         <button
           onClick={() => onPin?.(message._id, !message.isPinned)}
-          className={`p-1 rounded-lg transition-colors ${
+          className={`p-1 rounded-lg transition-colors cursor-pointer ${
             message.isPinned
-              ? "text-amber-400 bg-amber-400/10"
-              : "text-gray-400 hover:text-amber-300 hover:bg-[#162544]"
+              ? "text-amber-500 bg-amber-500/10"
+              : "text-slate-500 dark:text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-[#162544]"
           }`}
           title={message.isPinned ? "Unpin Message" : "Pin to Vault"}
         >
@@ -272,7 +272,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         {!message.isAcceptedSolution && onMarkSolution && (
           <button
             onClick={() => onMarkSolution(message._id)}
-            className="p-1 rounded-lg text-gray-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors"
+            className="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer"
             title="Mark as Accepted Solution (+25 Karma)"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -282,7 +282,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
       {/* ── Author Avatar ── */}
       <div className="flex-shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-700 via-indigo-700 to-cyan-600 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-blue-900/30">
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#1E90FF] via-indigo-600 to-cyan-500 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-[#1E90FF]/25">
           {initial}
         </div>
       </div>
@@ -291,14 +291,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       <div className="flex-1 min-w-0">
         {/* Header line */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-bold text-gray-200 hover:text-blue-400 cursor-pointer transition-colors">
+          <span className="text-xs font-bold text-slate-900 dark:text-slate-100 hover:text-[#1E90FF] cursor-pointer transition-colors">
             {senderName}
           </span>
-          <span className="text-[10px] font-mono text-gray-500">{senderRoll}</span>
+          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{senderRoll}</span>
 
           {/* Karma Badge */}
           {senderKarma > 0 && (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-semibold">
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/20 text-[10px] font-semibold">
               <Award className="w-2.5 h-2.5" />
               {senderKarma}
             </span>
@@ -309,30 +309,30 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
           {/* Accepted Solution Badge */}
           {message.isAcceptedSolution && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold tracking-wide">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-bold tracking-wide">
+              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
               Accepted Solution (+25 Karma)
             </span>
           )}
 
           {/* Pinned Pill */}
           {message.isPinned && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-semibold">
+            <span className="inline-flex items-center gap-1 text-[10px] text-amber-500 font-semibold">
               <Pin className="w-2.5 h-2.5" />
               Pinned
             </span>
           )}
 
-          <span className="text-[10px] text-gray-500 ml-auto font-mono">{formattedTime}</span>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-auto font-mono">{formattedTime}</span>
         </div>
 
         {/* Reply Context Bar (if replying to another message) */}
         {message.replyTo && (
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-400 pl-2 border-l-2 border-[#162544]">
-            <span className="text-[10px] text-blue-400 font-semibold">
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pl-2 border-l-2 border-slate-300 dark:border-slate-700">
+            <span className="text-[10px] text-[#1E90FF] font-semibold">
               @{message.replyTo.senderId?.fullName || "User"}:
             </span>
-            <span className="truncate max-w-[300px] text-gray-400 text-[11px]">
+            <span className="truncate max-w-[300px] text-slate-600 dark:text-slate-400 text-[11px]">
               {message.replyTo.content || "[Code or Attachment]"}
             </span>
           </div>
@@ -340,22 +340,22 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
         {/* Main Text with KaTeX Math Rendering */}
         {message.content && (
-          <div className="mt-1 text-xs leading-relaxed text-gray-200 break-words select-text">
+          <div className="mt-1 text-xs leading-relaxed text-slate-800 dark:text-slate-200 break-words select-text">
             {renderMathAndText(message.content)}
           </div>
         )}
 
         {/* ── Code Snippet Showcase with 1-Click Sandbox Runner ── */}
         {message.codeSnippet && (
-          <div className="mt-2.5 rounded-xl overflow-hidden border border-[#162544] bg-[#080D1A] text-gray-200">
+          <div className="mt-2.5 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-900 dark:bg-[#080D1A] text-slate-100 shadow-md">
             {/* Code Header Bar */}
-            <div className="flex items-center justify-between px-3 py-1.5 bg-[#0F1A30] border-b border-[#162544] text-[11px]">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-800/90 dark:bg-[#0F1A30] border-b border-slate-700/80 dark:border-slate-800 text-[11px]">
               <div className="flex items-center gap-2">
-                <Code className="w-3.5 h-3.5 text-blue-400" />
-                <span className="font-semibold text-gray-300">
+                <Code className="w-3.5 h-3.5 text-[#1E90FF]" />
+                <span className="font-semibold text-slate-200">
                   {message.codeSnippet.title || `${message.codeSnippet.language.toUpperCase()} Snippet`}
                 </span>
-                <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-[#162544] text-cyan-300">
+                <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-700/60 dark:bg-[#162544] text-cyan-300">
                   {message.codeSnippet.language}
                 </span>
               </div>
@@ -364,7 +364,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 {/* 1-Click Sandbox Runner */}
                 <button
                   onClick={() => handleRunCode(message.codeSnippet!.code, message.codeSnippet!.language)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-all"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-all cursor-pointer"
                   title="Run code live in browser sandbox"
                 >
                   <Play className="w-2.5 h-2.5 fill-current" />
@@ -374,7 +374,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 {/* Copy Button */}
                 <button
                   onClick={() => handleCopyCode(message.codeSnippet!.code)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-gray-400 hover:text-white hover:bg-[#162544] transition-colors"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-slate-400 hover:text-white hover:bg-slate-700/60 dark:hover:bg-[#162544] transition-colors cursor-pointer"
                 >
                   {copiedCode ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
                   {copiedCode ? "Copied" : "Copy"}
@@ -383,7 +383,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
 
             {/* Prism Code Block */}
-            <pre className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto text-gray-300 select-text">
+            <pre className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto text-slate-200 select-text">
               <code
                 dangerouslySetInnerHTML={{
                   __html: highlightedCode || message.codeSnippet.code
@@ -393,15 +393,15 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
             {/* Sandbox Execution Console Drawer */}
             {isSandboxOpen && sandboxResult && (
-              <div className="p-2.5 bg-[#050811] border-t border-[#162544] font-mono text-[10px]">
-                <div className="flex items-center justify-between text-gray-400 mb-1">
-                  <span className="flex items-center gap-1 font-bold text-gray-300">
+              <div className="p-2.5 bg-slate-950 dark:bg-[#050811] border-t border-slate-800 dark:border-slate-800 font-mono text-[10px]">
+                <div className="flex items-center justify-between text-slate-400 mb-1">
+                  <span className="flex items-center gap-1 font-bold text-slate-300">
                     <Sparkles className="w-3 h-3 text-cyan-400" />
                     Sandbox Execution Console
                   </span>
                   <button
                     onClick={() => setIsSandboxOpen(false)}
-                    className="text-gray-500 hover:text-gray-300"
+                    className="text-slate-400 hover:text-white cursor-pointer"
                   >
                     Close
                   </button>
@@ -427,20 +427,20 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 href={file.url}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-2 p-2 rounded-xl bg-[#080D1A] border border-[#162544] hover:border-blue-500/40 text-xs transition-colors group"
+                className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-[#080D1A] border border-slate-200/80 dark:border-slate-800 hover:border-[#1E90FF]/50 text-xs transition-colors group shadow-xs"
               >
-                <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20">
+                <div className="p-1.5 rounded-lg bg-[#1E90FF]/10 text-[#1E90FF] group-hover:bg-[#1E90FF]/20">
                   <FileText className="w-3.5 h-3.5" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-gray-300 group-hover:text-white font-medium truncate max-w-[150px]">
+                  <span className="text-slate-800 dark:text-slate-200 group-hover:text-[#1E90FF] font-medium truncate max-w-[150px]">
                     {file.originalName}
                   </span>
-                  <span className="text-[10px] text-gray-500">
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500">
                     {(file.size / 1024).toFixed(1)} KB
                   </span>
                 </div>
-                <Download className="w-3 h-3 text-gray-500 group-hover:text-blue-400 ml-1" />
+                <Download className="w-3 h-3 text-slate-400 group-hover:text-[#1E90FF] ml-1" />
               </a>
             ))}
           </div>
@@ -455,10 +455,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 <button
                   key={idx}
                   onClick={() => onReact?.(message._id, r.emoji)}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all ${
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all cursor-pointer ${
                     hasReacted
-                      ? "bg-blue-600/20 text-blue-300 border border-blue-500/30"
-                      : "bg-[#080D1A] text-gray-400 border border-[#162544] hover:border-gray-500"
+                      ? "bg-[#1E90FF]/15 text-[#1E90FF] border border-[#1E90FF]/30 font-semibold"
+                      : "bg-slate-100/80 dark:bg-[#080D1A] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600"
                   }`}
                 >
                   <span>{r.emoji}</span>
@@ -477,13 +477,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 if (onReplyInThread) onReplyInThread(message);
                 else openThread(message);
               }}
-              className="inline-flex items-center gap-1.5 text-[11px] font-bold text-cyan-400 hover:text-cyan-300 transition-colors group"
+              className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#1E90FF] hover:text-[#187bcd] transition-colors group cursor-pointer"
             >
               <MessageSquare className="w-3 h-3 group-hover:scale-110 transition-transform" />
               <span>
                 {message.threadCount} {message.threadCount === 1 ? "reply" : "replies"}
               </span>
-              <span className="text-[10px] text-gray-500 font-normal">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">
                 • View Thread in Drawer
               </span>
             </button>
