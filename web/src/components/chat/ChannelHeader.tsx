@@ -12,9 +12,11 @@ import {
   Tag,
   Code2,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Lock,
+  Unlock
 } from "lucide-react";
-import type { Channel } from "./ChannelSidebar";
+import type { Channel } from "../../types/chat";
 import type { StudyCircle } from "./CircleSwitcher";
 
 interface ChannelHeaderProps {
@@ -27,6 +29,7 @@ interface ChannelHeaderProps {
   isGroupInfoOpen: boolean;
   onToggleGroupInfo: () => void;
   onOpenSettings?: () => void;
+  onOpenLockModal?: () => void;
   isModeratorOrAdmin?: boolean;
   isEnlarged?: boolean;
   onToggleEnlarge?: () => void;
@@ -42,6 +45,7 @@ export function ChannelHeader({
   isGroupInfoOpen,
   onToggleGroupInfo,
   onOpenSettings,
+  onOpenLockModal,
   isModeratorOrAdmin = true,
   isEnlarged = false,
   onToggleEnlarge
@@ -50,9 +54,32 @@ export function ChannelHeader({
   const tags = channel.academicContextTags || [];
 
   return (
-    <header className="h-16 shrink-0 border-b border-slate-200/80 dark:border-white/[0.06] bg-white/85 dark:bg-[#0c1424]/85 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between gap-3 select-none transition-colors">
-      {/* ── Left: Group & Channel Identity ─────────────────────────────── */}
-      <div className="flex items-center gap-3 overflow-hidden min-w-0">
+    <header className="shrink-0 flex flex-col border-b border-slate-200/80 dark:border-white/[0.06] bg-white/85 dark:bg-[#0c1424]/85 backdrop-blur-xl select-none transition-colors">
+      {/* ── Frosted Channel Lock Banner ── */}
+      {channel.isLocked && (
+        <div className="w-full bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-orange-500/15 border-b border-amber-500/30 px-4 sm:px-6 py-1.5 flex items-center justify-between gap-3 text-xs text-amber-300 backdrop-blur-md">
+          <div className="flex items-center gap-2 truncate">
+            <Lock size={13} className="text-amber-400 shrink-0 animate-pulse" />
+            <span className="font-bold text-amber-200">Channel Locked:</span>
+            <span className="truncate text-amber-100">
+              {channel.lockedReason || "Read-only mode activated by moderator"}
+            </span>
+          </div>
+          {isModeratorOrAdmin && onOpenLockModal && (
+            <button
+              onClick={onOpenLockModal}
+              className="text-[11px] font-bold text-amber-300 hover:text-white underline shrink-0 cursor-pointer"
+            >
+              Unlock Channel
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Main Header Bar */}
+      <div className="h-16 px-4 sm:px-6 flex items-center justify-between gap-3">
+        {/* ── Left: Group & Channel Identity ─────────────────────────────── */}
+        <div className="flex items-center gap-3 overflow-hidden min-w-0">
         <div
           onClick={onToggleGroupInfo}
           title="Click for Faculty & Mentors details"
@@ -189,6 +216,25 @@ export function ChannelHeader({
           </button>
         )}
 
+        {/* Channel Lock / Unlock Trigger for Faculty / Moderators */}
+        {isModeratorOrAdmin && onOpenLockModal && (
+          <button
+            type="button"
+            onClick={onOpenLockModal}
+            title={channel.isLocked ? "Unlock Channel" : "Lock Channel (Read-Only Mode)"}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+              channel.isLocked
+                ? "bg-amber-500/20 text-amber-400 border border-amber-500/40 hover:bg-amber-500/30"
+                : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] hover:text-amber-400"
+            }`}
+          >
+            {channel.isLocked ? <Lock size={14} /> : <Unlock size={14} />}
+            <span className="hidden sm:inline">
+              {channel.isLocked ? "Locked" : "Lock"}
+            </span>
+          </button>
+        )}
+
         {/* Room Moderator / Faculty Channel Settings Toggle */}
         {isModeratorOrAdmin && onOpenSettings && (
           <button
@@ -233,7 +279,8 @@ export function ChannelHeader({
           <span className="hidden sm:inline">Group Info</span>
         </button>
       </div>
-    </header>
+    </div>
+  </header>
   );
 }
 export default ChannelHeader;

@@ -60,6 +60,9 @@ export class DirectMessageService {
       throw new ApiError(404, "Conversation not found", [], "CONVERSATION_NOT_FOUND");
     }
     this.ensureParticipant(conversation, userId);
+    if (conversation.isLocked) {
+      throw new ApiError(403, "This conversation is locked in read-only mode", [], "CONVERSATION_LOCKED");
+    }
 
     if (!input.content && files.length === 0) {
       throw new ApiError(422, "Message content or attachment is required", [], "MESSAGE_EMPTY");
@@ -114,7 +117,7 @@ export class DirectMessageService {
     }
     this.ensureParticipant(conversation, userId);
 
-    return this.messages.list({ conversationId, ...query });
+    return this.messages.list({ conversationId, userId, ...query });
   }
 
   async editMessage(messageId: string, userId: string, content: string) {

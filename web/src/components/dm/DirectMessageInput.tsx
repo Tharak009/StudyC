@@ -11,7 +11,8 @@ import {
   Image,
   Square,
   Sparkles,
-  Check
+  Check,
+  Lock
 } from "lucide-react";
 import { useToastStore } from "../../store/toast.store";
 
@@ -27,6 +28,8 @@ interface DirectMessageInputProps {
   isPeerTyping?: boolean;
   replyTarget?: { senderName: string; content: string } | null;
   onCancelReply?: () => void;
+  isLocked?: boolean;
+  lockedReason?: string;
 }
 
 const COMMON_EMOJIS = [
@@ -40,7 +43,9 @@ export function DirectMessageInput({
   onTyping,
   isPeerTyping = false,
   replyTarget,
-  onCancelReply
+  onCancelReply,
+  isLocked = false,
+  lockedReason = ""
 }: DirectMessageInputProps) {
   const [content, setContent] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -393,7 +398,27 @@ export function DirectMessageInput({
       />
 
       {/* ── Main WhatsApp Input Bar ───────────────────────────────────── */}
-      {isRecordingVoice ? (
+      {isLocked ? (
+        /* Locked Conversation State */
+        <div className="flex items-center justify-between gap-3 p-3.5 rounded-3xl bg-slate-100/90 dark:bg-[#111b21]/90 border border-amber-500/30 text-slate-500 dark:text-slate-400 select-none shadow-md backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <Lock size={16} className="animate-pulse" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                This conversation is locked
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                {lockedReason || "New direct messages cannot be sent while this chat is locked."}
+              </span>
+            </div>
+          </div>
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500">
+            Locked
+          </span>
+        </div>
+      ) : isRecordingVoice ? (
         /* WhatsApp Voice Recording Dock */
         <div className="flex items-center justify-between gap-3 p-2 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400">
           <div className="flex items-center gap-2.5 px-2">

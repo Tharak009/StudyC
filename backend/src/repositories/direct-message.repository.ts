@@ -17,6 +17,7 @@ export interface DirectMessageListOptions {
   limit: number;
   order: "latest" | "oldest";
   search?: string;
+  userId?: string;
 }
 
 export class DirectMessageRepository {
@@ -27,6 +28,7 @@ export class DirectMessageRepository {
   findById(id: string): Promise<DirectMessageDocument | null> {
     return DirectMessage.findById(id)
       .populate("senderId", "fullName rollNumber profilePicture")
+      .populate("deletedBy", "fullName rollNumber")
       .populate({
         path: "replyTo",
         select: "content senderId deleted",
@@ -35,17 +37,19 @@ export class DirectMessageRepository {
       .exec();
   }
 
-  async list({ conversationId, page, limit, order, search }: DirectMessageListOptions) {
+  async list({ conversationId, page, limit, order, search, userId }: DirectMessageListOptions) {
     const sortDirection = order === "latest" ? -1 : 1;
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = { conversationId, deleted: { $ne: true } };
     if (search) filter.content = { $regex: search, $options: "i" };
+    if (userId) filter.deletedFor = { $ne: userId };
     const [items, total] = await Promise.all([
       DirectMessage.find(filter)
         .sort({ createdAt: sortDirection, _id: sortDirection })
         .skip(skip)
         .limit(limit)
         .populate("senderId", "fullName rollNumber profilePicture")
+        .populate("deletedBy", "fullName rollNumber")
         .populate({
           path: "replyTo",
           select: "content senderId deleted",

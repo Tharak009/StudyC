@@ -10,6 +10,13 @@ export interface DirectMessageAttachment {
   size: number;
 }
 
+export interface DirectMessageReaction {
+  emoji: string;
+  count?: number;
+  users: string[];
+  category?: "STANDARD" | "CAMPUS_CUSTOM";
+}
+
 export interface DirectMessageReply {
   _id: string;
   content: string;
@@ -25,6 +32,11 @@ export interface DirectMessage {
   messageType: MessageType;
   attachments: DirectMessageAttachment[];
   replyTo?: DirectMessageReply;
+  reactions?: DirectMessageReaction[];
+  deletedFor?: string[];
+  isDeletedForEveryone?: boolean;
+  deletedBy?: string | { _id: string; fullName: string };
+  deletedAt?: string;
   edited: boolean;
   editedAt?: string;
   read: boolean;
@@ -45,6 +57,10 @@ export interface Conversation {
   participants: Pick<User, "_id" | "fullName" | "rollNumber" | "profilePicture" | "department">[];
   lastMessage: ConversationLastMessage | null;
   lastMessageAt: string | null;
+  isLocked?: boolean;
+  lockedBy?: string | { _id: string; fullName: string };
+  lockedReason?: string;
+  lockedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

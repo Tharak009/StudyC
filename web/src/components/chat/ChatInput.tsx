@@ -19,7 +19,9 @@ import {
   Code,
   Link,
   HelpCircle,
-  CheckCircle2
+  CheckCircle2,
+  Lock,
+  ShieldAlert
 } from "lucide-react";
 import type { ChatPoll } from "./MessageList";
 import { recordStudyActivity } from "../../utils/streak";
@@ -42,6 +44,9 @@ interface ChatInputProps {
   replyTarget?: { senderName: string; content: string } | null;
   onCancelReply?: () => void;
   onSwitchToChannel?: (targetChannelName: string, draftContent?: string) => void;
+  isLocked?: boolean;
+  lockedReason?: string;
+  isModeratorOrAdmin?: boolean;
 }
 
 const supportedLanguages = ["C++", "Python", "TypeScript", "JavaScript", "Java", "SQL", "Rust"];
@@ -54,7 +59,10 @@ export function ChatInput({
   typingUsers = [],
   replyTarget,
   onCancelReply,
-  onSwitchToChannel
+  onSwitchToChannel,
+  isLocked = false,
+  lockedReason = "",
+  isModeratorOrAdmin = false
 }: ChatInputProps) {
   const [content, setContent] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -502,12 +510,38 @@ export function ChatInput({
             </button>
           </div>
         </div>
+      ) : isLocked && !isModeratorOrAdmin ? (
+        /* ── Channel Locked State for Non-Moderators ── */
+        <div className="flex items-center justify-between gap-3 p-4 rounded-3xl bg-slate-100/90 dark:bg-[#0B1324]/90 border border-amber-500/30 text-slate-500 dark:text-slate-400 select-none shadow-md backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <Lock size={18} className="animate-pulse" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <span>Channel Locked</span>
+                <span className="text-[10px] px-2 py-0.2 rounded-full bg-amber-500/15 text-amber-400 font-mono">
+                  Read Only
+                </span>
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                {lockedReason || "This channel is locked. Only moderators and faculty can post new messages."}
+              </span>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="space-y-1.5">
           {/* ── Academic Intent Pills & Markdown Quick Toolbar ── */}
           <div className="flex items-center justify-between gap-2 px-2 text-xs">
-            {/* Intent Pills */}
+            {/* Intent Pills & Moderator Override Badge */}
             <div className="flex items-center gap-1">
+              {isLocked && isModeratorOrAdmin && (
+                <div className="inline-flex items-center gap-1 px-2 py-0.5 mr-1.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] font-bold">
+                  <ShieldAlert size={11} />
+                  <span>Admin Override</span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setIntent("chat")}

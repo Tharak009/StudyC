@@ -1,4 +1,5 @@
 import type { Server, Socket } from "socket.io";
+import { Types } from "mongoose";
 import { chatService } from "../services/chat.service.js";
 import { Message } from "../models/message.model.js";
 import { Community } from "../models/community.model.js";
@@ -278,12 +279,30 @@ export const registerChatHandlers = (
 
         const chanLower = chanKey.toLowerCase();
         try {
-          const community = await Community.findById(communityId, { channels: 1 }).lean();
+          const community = await Community.findById(communityId).lean();
           if (community?.channels && community.channels.length > 0) {
             const ch = community.channels.find(
               (c: any) => c._id?.toString() === chanKey || c.name?.toLowerCase() === chanLower
             );
             if (ch) {
+              // 2a. Check if channel is administratively locked
+              if (ch.isLocked) {
+                const isModOrOwner =
+                  community.owner?.toString() === userId ||
+                  community.moderators?.some((m: any) => m.toString() === userId) ||
+                  socket.data.user?.role === "ADMIN";
+                if (!isModOrOwner) {
+                  const reasonMsg = ch.lockedReason
+                    ? `Channel is locked: "${ch.lockedReason}". Only moderators can post.`
+                    : "This channel is locked in read-only mode.";
+                  socket.emit("chatError", { message: reasonMsg });
+                  if (typeof acknowledge === "function") {
+                    acknowledge({ success: false, locked: true, message: reasonMsg });
+                  }
+                  return;
+                }
+              }
+
               isStrict = ch.isStrictStudyMode === true;
               if (Array.isArray(ch.academicContextTags) && ch.academicContextTags.length > 0) {
                 academicTags = ch.academicContextTags;
@@ -506,37 +525,223 @@ export const registerChatHandlers = (
   // ── 5. Message Emoji Reaction ─────────────────────────────────────────────
   socket.on(
     "chat:reaction",
-    async (payload: ReactionPayload, acknowledge?: (res: unknown) => void) => {
+    async (
+      payload: {
+        messageId: string;
+        communityId: string;
+        channelId?: string;
+        emoji: string;
+        category?: "STANDARD" | "CAMPUS_CUSTOM";
+      },
+      acknowledge?: (res: unknown) => void
+    ) => {
       try {
-        const { messageId, communityId, emoji } = payload;
+        const { messageId, communityId, channelId, emoji, category = "STANDARD" } = payload;
         if (!messageId || !communityId || !emoji) {
           throw new Error("messageId, communityId, and emoji are required");
         }
 
         const message = await Message.findById(messageId);
-        if (!message || message.deleted) {
+        if (!message || message.deleted || message.isDeletedForEveryone) {
           throw new Error("Message not found or deleted");
         }
 
-        const roomName = `room:${communityId}`;
+        if (!message.reactions) message.reactions = [];
+        const existingIdx = message.reactions.findIndex((r) => r.emoji === emoji);
+
+        if (existingIdx !== -1) {
+          const rx = message.reactions[existingIdx];
+          const userIndex = rx.users.findIndex((u) => u.toString() === userId);
+          if (userIndex !== -1) {
+            rx.users.splice(userIndex, 1);
+            rx.count = rx.users.length;
+            if (rx.users.length === 0) {
+              message.reactions.splice(existingIdx, 1);
+            }
+          } else {
+            rx.users.push(new Types.ObjectId(userId));
+            rx.count = rx.users.length;
+          }
+        } else {
+          message.reactions.push({
+            emoji,
+            count: 1,
+            users: [new Types.ObjectId(userId)],
+            category
+          });
+        }
+
+        await message.save();
+
+        const roomName = communityRoomFor(communityId, channelId || message.channelId);
         const reactionData = {
           messageId,
           communityId,
+          channelId: channelId || message.channelId,
+          reactions: message.reactions,
           userId,
           name: socket.data.user?.name || "Student",
           emoji
         };
+
         io.to(roomName).emit("chat:reactionUpdated", reactionData);
+        io.to(`room:${communityId}`).emit("chat:reactionUpdated", reactionData);
         io.to(`community:${communityId}`).emit("chat:reactionUpdated", reactionData);
 
         if (typeof acknowledge === "function") {
-          acknowledge({ success: true });
+          acknowledge({ success: true, reactions: message.reactions });
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to update reaction";
         if (typeof acknowledge === "function") {
           acknowledge({ success: false, message });
         }
+      }
+    }
+  );
+
+  // ── 5b. Dual-Tier Deletion: Delete For Me ──────────────────────────────────
+  socket.on(
+    "chat:deleteForMe",
+    async (
+      payload: { messageId: string; communityId: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { messageId, communityId } = payload;
+        await chatService.requireMembership(communityId, userId);
+        await Message.findByIdAndUpdate(messageId, {
+          $addToSet: { deletedFor: new Types.ObjectId(userId) }
+        });
+
+        socket.emit("chat:messageDeletedForMe", { messageId, communityId });
+        if (typeof acknowledge === "function") acknowledge({ success: true, messageId });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to delete message for me";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+        socket.emit("chatError", { message });
+      }
+    }
+  );
+
+  // ── 5c. Dual-Tier Deletion: Delete For Everyone ────────────────────────────
+  socket.on(
+    "chat:deleteForEveryone",
+    async (
+      payload: { messageId: string; communityId: string; channelId?: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { messageId, communityId, channelId } = payload;
+        await chatService.requireMembership(communityId, userId);
+        const message = await Message.findById(messageId);
+        if (!message || message.deleted) throw new Error("Message not found");
+
+        const isAuthor = message.senderId.toString() === userId;
+        const community = await Community.findById(communityId);
+        const isModOrOwner =
+          community?.owner?.toString() === userId ||
+          community?.moderators?.some((m: any) => m.toString() === userId) ||
+          socket.data.user?.role === "ADMIN";
+
+        if (!isAuthor && !isModOrOwner) {
+          throw new Error("You do not have permission to delete this message for everyone");
+        }
+
+        if (isAuthor && !isModOrOwner) {
+          const timeDiff = Date.now() - new Date(message.createdAt).getTime();
+          if (timeDiff > 24 * 60 * 60 * 1000) {
+            throw new Error("Messages can only be deleted for everyone within 24 hours of sending");
+          }
+        }
+
+        message.isDeletedForEveryone = true;
+        message.deletedBy = new Types.ObjectId(userId);
+        message.deletedAt = new Date();
+        message.content = "";
+        message.attachments = [];
+        await message.save();
+
+        const purgeData = {
+          messageId,
+          communityId,
+          channelId: channelId || message.channelId,
+          isDeletedForEveryone: true,
+          deletedBy: userId,
+          deletedByName: socket.data.user?.name || (isModOrOwner && !isAuthor ? "Moderator" : "Sender"),
+          deletedAt: message.deletedAt.toISOString()
+        };
+
+        const roomName = communityRoomFor(communityId, channelId || message.channelId);
+        io.to(roomName).emit("chat:messagePurged", purgeData);
+        io.to(`room:${communityId}`).emit("chat:messagePurged", purgeData);
+        io.to(`community:${communityId}`).emit("chat:messagePurged", purgeData);
+
+        // Backward compatibility
+        io.to(roomName).emit("messageDeleted", { _id: messageId, communityId, isDeletedForEveryone: true });
+
+        if (typeof acknowledge === "function") acknowledge({ success: true, data: purgeData });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to delete message for everyone";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+        socket.emit("chatError", { message });
+      }
+    }
+  );
+
+  // ── 5d. Chat/Channel Lock Toggle ──────────────────────────────────────────
+  socket.on(
+    "chat:toggleChannelLock",
+    async (
+      payload: { communityId: string; channelId: string; isLocked: boolean; lockedReason?: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, channelId, isLocked, lockedReason } = payload;
+        const community = await Community.findById(communityId);
+        if (!community) throw new Error("Community not found");
+
+        const isModOrOwner =
+          community.owner?.toString() === userId ||
+          community.moderators?.some((m: any) => m.toString() === userId) ||
+          socket.data.user?.role === "ADMIN";
+
+        if (!isModOrOwner) {
+          throw new Error("Only community owners or moderators can change channel lock state");
+        }
+
+        const channel = community.channels.find(
+          (c: any) => c._id?.toString() === channelId || c.name === channelId
+        );
+        if (!channel) throw new Error("Channel not found");
+
+        channel.isLocked = isLocked;
+        channel.lockedBy = new Types.ObjectId(userId);
+        channel.lockedReason = lockedReason || "";
+        channel.lockedAt = new Date();
+        await community.save();
+
+        const lockData = {
+          communityId,
+          channelId: channel._id?.toString() || channelId,
+          channelName: channel.name,
+          isLocked,
+          lockedBy: userId,
+          lockedByName: socket.data.user?.name || "Moderator",
+          lockedReason: lockedReason || "",
+          lockedAt: channel.lockedAt.toISOString()
+        };
+
+        const roomName = communityRoomFor(communityId, channelId);
+        io.to(roomName).emit("channel:lockStateChanged", lockData);
+        io.to(`room:${communityId}`).emit("channel:lockStateChanged", lockData);
+        io.to(`community:${communityId}`).emit("channel:lockStateChanged", lockData);
+
+        if (typeof acknowledge === "function") acknowledge({ success: true, data: lockData });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to toggle channel lock";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+        socket.emit("chatError", { message });
       }
     }
   );

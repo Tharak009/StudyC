@@ -18,7 +18,7 @@ export class ChatService {
 
   async listMessages(communityId: string, userId: string, query: ListMessagesQuery) {
     await this.requireMembership(communityId, userId);
-    return this.messages.list({ communityId, ...query });
+    return this.messages.list({ communityId, userId, ...query });
   }
 
   async createMessage(

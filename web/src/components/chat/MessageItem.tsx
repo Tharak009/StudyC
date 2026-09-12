@@ -29,18 +29,25 @@ import {
   ThumbsUp,
   Heart,
   Lightbulb,
-  Rocket
+  Rocket,
+  Trash2,
+  Plus
 } from "lucide-react";
 import type { ChatMessage, CodeSnippet } from "../../types/chat";
 import { useChatStore } from "../../store/chat.store";
+import { EmojiPickerPopover, CAMPUS_STICKERS } from "./EmojiPickerPopover";
+import { DeleteMessageModal } from "./modals/DeleteMessageModal";
 
 interface MessageItemProps {
   message: ChatMessage;
   currentUserId?: string;
-  onReact?: (messageId: string, emoji: string) => void;
+  onReact?: (messageId: string, emoji: string, category?: "STANDARD" | "CAMPUS_CUSTOM") => void;
   onPin?: (messageId: string, isPinned: boolean) => void;
   onMarkSolution?: (messageId: string) => void;
   onReplyInThread?: (message: ChatMessage) => void;
+  onDeleteForMe?: (messageId: string) => void;
+  onDeleteForEveryone?: (messageId: string) => void;
+  isModeratorOrAdmin?: boolean;
   className?: string;
 }
 
@@ -136,6 +143,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onPin,
   onMarkSolution,
   onReplyInThread,
+  onDeleteForMe,
+  onDeleteForEveryone,
+  isModeratorOrAdmin = false,
   className = ""
 }) => {
   const { openThread } = useChatStore();
@@ -143,6 +153,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   const [sandboxResult, setSandboxResult] = useState<{ output: string; isError: boolean } | null>(null);
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Author details
   const senderName = message.senderName || message.senderId?.fullName || "Student";
@@ -212,7 +224,39 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     }
   }, [message.createdAt]);
 
-  const isAuthor = currentUserId && message.senderId?._id === currentUserId;
+  const isAuthor = currentUserId && (
+    message.senderId?._id === currentUserId ||
+    (typeof message.senderId === "string" && message.senderId === currentUserId)
+  );
+
+  // Authoritative Tombstone Rendering
+  if (message.isDeletedForEveryone) {
+    const isModeratorDeletion =
+      message.deletedBy &&
+      (typeof message.deletedBy === "object"
+        ? message.deletedBy._id !== (message.senderId as any)?._id
+        : message.deletedBy !== (message.senderId as any)?._id);
+
+    return (
+      <div
+        className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-slate-100/60 dark:bg-[#0B1324]/60 border border-dashed border-slate-300 dark:border-slate-800 my-1 select-none ${className}`}
+      >
+        <div className="w-8 h-8 rounded-xl bg-slate-200/80 dark:bg-slate-800/80 flex items-center justify-center text-slate-400 dark:text-slate-500 shrink-0">
+          <Trash2 className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+        </div>
+        <div className="flex-1 flex items-center justify-between min-w-0">
+          <span className="text-xs italic text-slate-500 dark:text-slate-400 font-medium">
+            {isModeratorDeletion
+              ? "This message was removed by a moderator"
+              : "This message was deleted by sender"}
+          </span>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono ml-2">
+            {formattedTime}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -224,22 +268,34 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     >
       {/* ── Hover Action Dock ── */}
       <div className="absolute right-4 -top-3 hidden group-hover:flex items-center gap-1 bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-700/80 rounded-xl px-2 py-1 shadow-xl z-20 backdrop-blur-xl text-slate-700 dark:text-slate-300">
-        {/* Quick Reactions */}
-        {[
-          { emoji: "👍", icon: ThumbsUp },
-          { emoji: "💡", icon: Lightbulb },
-          { emoji: "🚀", icon: Rocket },
-          { emoji: "🔥", icon: Flame }
-        ].map((r) => (
+        {/* Quick Reactions: 6 academic/popular pills */}
+        {["👍", "💡", "🔥", "🚀", "❓", "👀"].map((emoji) => (
           <button
-            key={r.emoji}
-            onClick={() => onReact?.(message._id, r.emoji)}
+            key={emoji}
+            onClick={() => onReact?.(message._id, emoji, "STANDARD")}
             className="p-1 text-xs hover:bg-slate-100 dark:hover:bg-[#162544] rounded-lg transition-transform hover:scale-125 cursor-pointer"
-            title={`React with ${r.emoji}`}
+            title={`React with ${emoji}`}
           >
-            {r.emoji}
+            {emoji}
           </button>
         ))}
+
+        {/* '+' Button: Opens Academic & Campus Sticker Popover */}
+        <div className="relative">
+          <button
+            onClick={() => setIsEmojiPickerOpen((prev) => !prev)}
+            className="p-1 text-xs hover:bg-slate-100 dark:hover:bg-[#162544] rounded-lg text-slate-500 dark:text-slate-400 hover:text-[#1E90FF] transition-colors cursor-pointer"
+            title="More Reactions & Campus Stickers"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+          <EmojiPickerPopover
+            isOpen={isEmojiPickerOpen}
+            onClose={() => setIsEmojiPickerOpen(false)}
+            onSelectEmoji={(emoji, category) => onReact?.(message._id, emoji, category)}
+            align="right"
+          />
+        </div>
 
         <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
 
@@ -276,6 +332,17 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             title="Mark as Accepted Solution (+25 Karma)"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        {/* Delete Message Button */}
+        {(isAuthor || isModeratorOrAdmin || onDeleteForMe) && (
+          <button
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+            title="Delete Message"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -446,23 +513,39 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           </div>
         )}
 
-        {/* ── Reactions Bar ── */}
+        {/* ── Reactions Bar with Campus Sticker Support ── */}
         {message.reactions && message.reactions.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {message.reactions.map((r, idx) => {
-              const hasReacted = currentUserId && r.users.includes(currentUserId);
+              const hasReacted = currentUserId && (r.users || []).includes(currentUserId);
+              const isCampus = r.emoji.startsWith(":");
+              const sticker = isCampus ? CAMPUS_STICKERS.find((s) => s.shortcode === r.emoji) : null;
+              const count = r.count ?? r.users?.length ?? 1;
+
               return (
                 <button
                   key={idx}
-                  onClick={() => onReact?.(message._id, r.emoji)}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all cursor-pointer ${
+                  onClick={() =>
+                    onReact?.(
+                      message._id,
+                      r.emoji,
+                      isCampus ? "CAMPUS_CUSTOM" : "STANDARD"
+                    )
+                  }
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs transition-all cursor-pointer ${
                     hasReacted
-                      ? "bg-[#1E90FF]/15 text-[#1E90FF] border border-[#1E90FF]/30 font-semibold"
+                      ? "bg-[#1E90FF]/20 text-[#1E90FF] border border-[#1E90FF]/50 font-semibold shadow-[0_0_12px_rgba(30,144,255,0.25)]"
                       : "bg-slate-100/80 dark:bg-[#080D1A] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600"
                   }`}
+                  title={sticker ? `${sticker.name} (${sticker.shortcode})` : r.emoji}
                 >
-                  <span>{r.emoji}</span>
-                  <span className="text-[10px] font-bold">{r.users.length}</span>
+                  <span className="text-sm">{sticker ? sticker.emoji : r.emoji}</span>
+                  {isCampus && (
+                    <span className="text-[10px] font-mono text-sky-400/90 hidden sm:inline">
+                      {sticker?.tag || "Campus"}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-bold">{count}</span>
                 </button>
               );
             })}
@@ -490,6 +573,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           </div>
         )}
       </div>
+
+      {/* ── Dual-Tier Delete Message Modal ── */}
+      <DeleteMessageModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onDeleteForMe={() => onDeleteForMe?.(message._id)}
+        onDeleteForEveryone={() => onDeleteForEveryone?.(message._id)}
+        createdAt={message.createdAt}
+        isAuthor={Boolean(isAuthor)}
+        isModeratorOrAdmin={Boolean(isModeratorOrAdmin)}
+        messageSnippet={message.content || message.codeSnippet?.code}
+      />
     </div>
   );
 };

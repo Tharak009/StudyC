@@ -43,6 +43,8 @@ export interface ConversationItem {
   unreadCount: number;
   isPinned?: boolean;
   isFavorite?: boolean;
+  isLocked?: boolean;
+  lockedReason?: string;
 }
 
 export interface PeerSearchResult {

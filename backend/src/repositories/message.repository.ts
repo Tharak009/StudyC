@@ -20,6 +20,7 @@ export interface MessageListOptions {
   page: number;
   limit: number;
   order: "latest" | "oldest";
+  userId?: string;
 }
 
 export class MessageRepository {
@@ -30,6 +31,7 @@ export class MessageRepository {
   findById(id: string): Promise<MessageDocument | null> {
     return Message.findById(id)
       .populate("senderId", "fullName rollNumber profilePicture karma")
+      .populate("deletedBy", "fullName rollNumber")
       .populate({
         path: "replyTo",
         select: "content senderId deleted codeSnippet intent",
@@ -38,7 +40,7 @@ export class MessageRepository {
       .exec();
   }
 
-  async list({ communityId, channelId, pinnedOnly, page, limit, order }: MessageListOptions) {
+  async list({ communityId, channelId, pinnedOnly, page, limit, order, userId }: MessageListOptions) {
     const sortDirection = order === "latest" ? -1 : 1;
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = { communityId, deleted: { $ne: true } };
@@ -48,12 +50,16 @@ export class MessageRepository {
     if (pinnedOnly) {
       filter.isPinned = true;
     }
+    if (userId) {
+      filter.deletedFor = { $ne: userId };
+    }
     const [items, total] = await Promise.all([
       Message.find(filter)
         .sort({ createdAt: sortDirection, _id: sortDirection })
         .skip(skip)
         .limit(limit)
         .populate("senderId", "fullName rollNumber profilePicture karma")
+        .populate("deletedBy", "fullName rollNumber")
         .populate({
           path: "replyTo",
           select: "content senderId deleted codeSnippet intent",

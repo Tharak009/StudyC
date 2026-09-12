@@ -37,6 +37,7 @@ import { DirectMessageInput } from "../components/dm/DirectMessageInput";
 import { ContactInfoDrawer } from "../components/dm/ContactInfoDrawer";
 import type { ConversationItem } from "../components/dm/ConversationList";
 import type { Conversation, DirectMessage } from "../types/direct-message";
+import { LockChatModal } from "../components/chat/modals/LockChatModal";
 
 import { useChatStore } from "../store/chat.store";
 import { useAuthStore } from "../store/auth.store";
@@ -154,7 +155,9 @@ const mapBackendConversationToItem = (
           isDelivered: true
         }
       : null,
-    unreadCount: 0
+    unreadCount: 0,
+    isLocked: (c as any).isLocked || false,
+    lockedReason: (c as any).lockedReason || ""
   };
 };
 
@@ -183,7 +186,12 @@ const mapBackendMessageToItem = (m: DirectMessage): DirectMessageItem => ({
         minute: "2-digit"
       })
     : "",
-  createdAt: m.createdAt || new Date().toISOString()
+  createdAt: m.createdAt || new Date().toISOString(),
+  reactions: (m as any).reactions || [],
+  deletedFor: (m as any).deletedFor || [],
+  isDeletedForEveryone: (m as any).isDeletedForEveryone || false,
+  deletedBy: (m as any).deletedBy,
+  deletedAt: (m as any).deletedAt
 });
 
 interface ChatPageProps {
@@ -219,6 +227,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     setChannels,
     setMessages,
     addMessage,
+    updateMessage,
+    removeMessage,
     updateMessagePin,
     markMessageAccepted,
     addThreadReply,
@@ -228,6 +238,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     setActiveVoiceStage,
     updateVoicePeers
   } = useChatStore();
+
+  const [isLockModalOpen, setIsLockModalOpen] = useState(false);
 
   const [rawCommunities, setRawCommunities] = useState<Community[]>([]);
   const [circles, setCircles] = useState<StudyCircle[]>([]);
@@ -244,6 +256,30 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       karma?: number;
     }>
   >([]);
+
+  const isModeratorOrAdmin = useMemo(() => {
+    if (!user) return false;
+    if (user.role === "ADMIN") return true;
+    if (viewMode === "circle" && activeCircle) {
+      const comm = rawCommunities.find((c) => c._id === activeCircle.id);
+      if (comm) {
+        const ownerId =
+          typeof comm.owner === "object" && comm.owner !== null
+            ? (comm.owner as any)._id
+            : comm.owner;
+        if (ownerId === user._id) return true;
+        if (
+          Array.isArray(comm.moderators) &&
+          comm.moderators.some(
+            (m: any) => (typeof m === "object" && m !== null ? m._id : m) === user._id
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [user, viewMode, activeCircle, rawCommunities]);
 
   // ── Direct Messages Workspace State ─────────────────────────────
   const [dmConversations, setDmConversations] = useState<ConversationItem[]>([]);
@@ -446,6 +482,11 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       if (convsRes?.items) {
         const mapped = convsRes.items.map((c) => mapBackendConversationToItem(c, user._id));
         setDmConversations(mapped);
+        const initialLocked: Record<string, boolean> = {};
+        convsRes.items.forEach((c) => {
+          if (c.isLocked) initialLocked[c._id] = true;
+        });
+        setLockedConversations((prev) => ({ ...prev, ...initialLocked }));
         if (!convParam && !activeDmConvId && mapped.length > 0) {
           setActiveDmConvId(mapped[0].id);
         }
@@ -700,6 +741,143 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       }
     };
 
+    const handleCircleReactionUpdated = (data: any) => {
+      if (data?.messageId && data?.reactions) {
+        updateMessage({
+          _id: data.messageId,
+          reactions: data.reactions
+        } as any);
+      }
+    };
+
+    const handleDmReactionUpdated = (data: any) => {
+      if (!data?.conversationId || !data?.messageId) return;
+      setDmMessagesMap((prev) => {
+        const list = prev[data.conversationId];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [data.conversationId]: list.map((m) =>
+            m.id === data.messageId ? { ...m, reactions: data.reactions } : m
+          )
+        };
+      });
+    };
+
+    const handleCircleDeletedForMe = (data: any) => {
+      if (data?.messageId) {
+        removeMessage(data.messageId);
+      }
+    };
+
+    const handleDmDeletedForMe = (data: any) => {
+      if (!data?.conversationId || !data?.messageId) return;
+      setDmMessagesMap((prev) => {
+        const list = prev[data.conversationId];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [data.conversationId]: list.filter((m) => m.id !== data.messageId)
+        };
+      });
+    };
+
+    const handleCircleMessagePurged = (data: any) => {
+      if (data?.messageId) {
+        updateMessage({
+          _id: data.messageId,
+          isDeletedForEveryone: true,
+          content: "",
+          attachments: [],
+          deletedBy: data.deletedBy,
+          deletedAt: data.deletedAt
+        } as any);
+      }
+    };
+
+    const handleDmMessagePurged = (data: any) => {
+      if (!data?.conversationId || !data?.messageId) return;
+      setDmMessagesMap((prev) => {
+        const list = prev[data.conversationId];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [data.conversationId]: list.map((m) =>
+            m.id === data.messageId
+              ? {
+                  ...m,
+                  isDeletedForEveryone: true,
+                  content: "",
+                  attachments: [],
+                  deletedBy: data.deletedBy,
+                  deletedAt: data.deletedAt
+                }
+              : m
+          )
+        };
+      });
+    };
+
+    const handleChannelLockStateChanged = (data: any) => {
+      if (!data?.communityId) return;
+      setCircleChannels((prev) =>
+        prev.map((ch) =>
+          ch._id === data.channelId || ch.name === data.channelName
+            ? {
+                ...ch,
+                isLocked: data.isLocked,
+                lockedReason: data.lockedReason,
+                lockedBy: data.lockedBy,
+                lockedAt: data.lockedAt
+              }
+            : ch
+        )
+      );
+      if (
+        activeChannel &&
+        (activeChannel._id === data.channelId || activeChannel.name === data.channelName)
+      ) {
+        setSelectedChannel({
+          ...activeChannel,
+          isLocked: data.isLocked,
+          lockedReason: data.lockedReason,
+          lockedBy: data.lockedBy,
+          lockedAt: data.lockedAt
+        });
+      }
+      addToast(
+        data.isLocked
+          ? `Channel #${data.channelName || "channel"} locked: ${data.lockedReason || "Read-only mode"}`
+          : `Channel #${data.channelName || "channel"} unlocked`,
+        data.isLocked ? "warning" : "info"
+      );
+    };
+
+    const handleDmLockStateChanged = (data: any) => {
+      if (!data?.conversationId) return;
+      setLockedConversations((prev) => ({
+        ...prev,
+        [data.conversationId]: data.isLocked
+      }));
+      setDmConversations((prev) =>
+        prev.map((c) =>
+          c.id === data.conversationId
+            ? {
+                ...c,
+                isLocked: data.isLocked,
+                lockedReason: data.lockedReason
+              }
+            : c
+        )
+      );
+      addToast(
+        data.isLocked
+          ? `Conversation locked by ${data.lockedByName || "Classmate"}: ${data.lockedReason || "Direct messages paused"}`
+          : "Conversation unlocked",
+        data.isLocked ? "warning" : "info"
+      );
+    };
+
     // Attach listeners
     socket.on("chat:messageReceived", handleMessageReceived);
     socket.on("messageCreated", handleMessageReceived);
@@ -723,6 +901,15 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     socket.on("typing", handleTyping);
     socket.on("stopTyping", handleStopTyping);
 
+    socket.on("chat:reactionUpdated", handleCircleReactionUpdated);
+    socket.on("dm:reactionUpdated", handleDmReactionUpdated);
+    socket.on("chat:messageDeletedForMe", handleCircleDeletedForMe);
+    socket.on("dm:messageDeletedForMe", handleDmDeletedForMe);
+    socket.on("chat:messagePurged", handleCircleMessagePurged);
+    socket.on("dm:messagePurged", handleDmMessagePurged);
+    socket.on("channel:lockStateChanged", handleChannelLockStateChanged);
+    socket.on("dm:lockStateChanged", handleDmLockStateChanged);
+
     return () => {
       socket.off("chat:messageReceived", handleMessageReceived);
       socket.off("messageCreated", handleMessageReceived);
@@ -745,17 +932,30 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       socket.off("directMessageReceived", handleDirectMessage);
       socket.off("typing", handleTyping);
       socket.off("stopTyping", handleStopTyping);
+
+      socket.off("chat:reactionUpdated", handleCircleReactionUpdated);
+      socket.off("dm:reactionUpdated", handleDmReactionUpdated);
+      socket.off("chat:messageDeletedForMe", handleCircleDeletedForMe);
+      socket.off("dm:messageDeletedForMe", handleDmDeletedForMe);
+      socket.off("chat:messagePurged", handleCircleMessagePurged);
+      socket.off("dm:messagePurged", handleDmMessagePurged);
+      socket.off("channel:lockStateChanged", handleChannelLockStateChanged);
+      socket.off("dm:lockStateChanged", handleDmLockStateChanged);
     };
   }, [
     activeDmConvId,
+    activeChannel,
     addMessage,
+    updateMessage,
+    removeMessage,
     addThreadReply,
     updateMessagePin,
     markMessageAccepted,
     setActiveSprint,
     updateSprintParticipants,
     updateVoicePeers,
-    addToast
+    addToast,
+    setSelectedChannel
   ]);
 
   // Total unread DMs
@@ -1028,31 +1228,129 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     }
   };
 
-  const handleDmReact = (messageId: string, emoji: string) => {
-    if (!activeDmConvId) return;
-    const student = user?.fullName || "Scholar";
-
-    setDmMessagesMap((prev) => {
-      const currentList = prev[activeDmConvId] || [];
-      const updated = currentList.map((m) => {
-        if (m.id !== messageId) return m;
-        const currentReactions = { ...(m.reactions || {}) };
-        const users = currentReactions[emoji] || [];
-
-        if (users.includes(student)) {
-          const filtered = users.filter((u) => u !== student);
-          if (filtered.length === 0) delete currentReactions[emoji];
-          else currentReactions[emoji] = filtered;
-        } else {
-          currentReactions[emoji] = [...users, student];
-        }
-
-        return { ...m, reactions: currentReactions };
+  // ── 7. Emoji Reactions, Dual-Tier Deletion & Lock Handlers ──────────────────
+  const handleCircleReact = useCallback(
+    (messageId: string, emoji: string, category?: "STANDARD" | "CAMPUS_CUSTOM") => {
+      if (!activeCircle || !activeChannel) return;
+      const socket = socketService.get();
+      if (!socket) return;
+      socket.emit("chat:reaction", {
+        messageId,
+        communityId: activeCircle.id,
+        channelId: activeChannel._id || activeChannel.name,
+        emoji,
+        category: category || "STANDARD"
       });
+    },
+    [activeCircle, activeChannel]
+  );
 
-      return { ...prev, [activeDmConvId]: updated };
-    });
-  };
+  const handleCircleDeleteForMe = useCallback(
+    (messageId: string) => {
+      if (!activeCircle) return;
+      removeMessage(messageId);
+      const socket = socketService.get();
+      if (socket) {
+        socket.emit("chat:deleteForMe", {
+          messageId,
+          communityId: activeCircle.id
+        });
+      }
+    },
+    [activeCircle, removeMessage]
+  );
+
+  const handleCircleDeleteForEveryone = useCallback(
+    (messageId: string) => {
+      if (!activeCircle || !activeChannel) return;
+      const socket = socketService.get();
+      if (socket) {
+        socket.emit("chat:deleteForEveryone", {
+          messageId,
+          communityId: activeCircle.id,
+          channelId: activeChannel._id || activeChannel.name
+        });
+      }
+    },
+    [activeCircle, activeChannel]
+  );
+
+  const handleDmReact = useCallback(
+    (messageId: string, emoji: string, category?: "STANDARD" | "CAMPUS_CUSTOM") => {
+      if (!activeDmConvId) return;
+      const socket = socketService.get();
+      if (socket) {
+        socket.emit("dm:reaction", {
+          messageId,
+          conversationId: activeDmConvId,
+          emoji,
+          category: category || "STANDARD"
+        });
+      }
+    },
+    [activeDmConvId]
+  );
+
+  const handleDmDeleteForMe = useCallback(
+    (messageId: string) => {
+      if (!activeDmConvId) return;
+      setDmMessagesMap((prev) => ({
+        ...prev,
+        [activeDmConvId]: (prev[activeDmConvId] || []).filter((m) => m.id !== messageId)
+      }));
+      const socket = socketService.get();
+      if (socket) {
+        socket.emit("dm:deleteForMe", {
+          messageId,
+          conversationId: activeDmConvId
+        });
+      }
+    },
+    [activeDmConvId]
+  );
+
+  const handleDmDeleteForEveryone = useCallback(
+    (messageId: string) => {
+      if (!activeDmConvId) return;
+      const socket = socketService.get();
+      if (socket) {
+        socket.emit("dm:deleteForEveryone", {
+          messageId,
+          conversationId: activeDmConvId
+        });
+      }
+    },
+    [activeDmConvId]
+  );
+
+  const handleToggleChannelLock = useCallback(
+    (isLocked: boolean, reason?: string) => {
+      if (!activeCircle || !activeChannel) return;
+      const socket = socketService.get();
+      if (!socket) return;
+      socket.emit("chat:toggleChannelLock", {
+        communityId: activeCircle.id,
+        channelId: activeChannel._id || activeChannel.name,
+        isLocked,
+        lockedReason: reason
+      });
+    },
+    [activeCircle, activeChannel]
+  );
+
+  const handleToggleDmLock = useCallback(
+    (isLocked: boolean, reason?: string) => {
+      if (!activeDmConvId) return;
+      const socket = socketService.get();
+      if (!socket) return;
+      socket.emit("dm:toggleLock", {
+        conversationId: activeDmConvId,
+        isLocked,
+        lockedReason: reason
+      });
+    },
+    [activeDmConvId]
+  );
 
   const handleStartCall = (type: "audio" | "video") => {
     setActiveCall({
@@ -1303,7 +1601,12 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                 channel={activeChannel}
                 currentUserId={user?._id}
                 currentUserName={user?.fullName}
+                isModeratorOrAdmin={isModeratorOrAdmin}
                 onSendMessage={handleSendMessage}
+                onReact={handleCircleReact}
+                onDeleteForMe={handleCircleDeleteForMe}
+                onDeleteForEveryone={handleCircleDeleteForEveryone}
+                onOpenLockModal={() => setIsLockModalOpen(true)}
               />
 
               {/* Pane 3: Inspector Drawer (Threads, Shared Vault, Roster & Presence) */}
@@ -1390,13 +1693,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                       }));
                     }}
                     isLocked={!!lockedConversations[activeDmConvId || ""]}
-                    onToggleLock={() => {
-                      if (!activeDmConvId) return;
-                      setLockedConversations((prev) => ({
-                        ...prev,
-                        [activeDmConvId]: !prev[activeDmConvId]
-                      }));
-                    }}
+                    onToggleLock={() => setIsLockModalOpen(true)}
                     isMuted={!!mutedConversations[activeDmConvId || ""]}
                     onMute={(dur) => {
                       if (!activeDmConvId) return;
@@ -1460,6 +1757,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                       setDmReplyTarget({ senderName: msg.senderName, content: msg.content })
                     }
                     onReact={handleDmReact}
+                    onDeleteForMe={handleDmDeleteForMe}
+                    onDeleteForEveryone={handleDmDeleteForEveryone}
                     searchQuery={chatSearchQuery}
                     pinnedMessage={pinnedMessagesMap[activeDmConvId || ""] ?? pinnedMessagesMap.default}
                     onPinMessage={handlePinDmMessage}
@@ -1487,6 +1786,11 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     isPeerTyping={isPeerTyping}
                     replyTarget={dmReplyTarget}
                     onCancelReply={() => setDmReplyTarget(null)}
+                    isLocked={!!lockedConversations[activeDmConvId || ""]}
+                    lockedReason={
+                      dmConversations.find((c) => c.id === activeDmConvId)?.lockedReason ||
+                      "This direct message conversation has been locked."
+                    }
                   />
                 </div>
 
@@ -2200,6 +2504,34 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── Chat / Channel Lock Modal ── */}
+      <LockChatModal
+        isOpen={isLockModalOpen}
+        onClose={() => setIsLockModalOpen(false)}
+        isLocked={
+          viewMode === "circle"
+            ? (activeChannel?.isLocked ?? false)
+            : (!!lockedConversations[activeDmConvId || ""])
+        }
+        currentReason={
+          viewMode === "circle"
+            ? (activeChannel?.lockedReason || "")
+            : (dmConversations.find((c) => c.id === activeDmConvId)?.lockedReason || "")
+        }
+        targetTitle={
+          viewMode === "circle"
+            ? `#${activeChannel?.name || "channel"}`
+            : `@${activeDmConversation?.peer?.name || "Direct Message"}`
+        }
+        onConfirm={(locked, reason) => {
+          if (viewMode === "circle") {
+            handleToggleChannelLock(locked, reason);
+          } else {
+            handleToggleDmLock(locked, reason);
+          }
+        }}
+      />
     </div>
   );
 }

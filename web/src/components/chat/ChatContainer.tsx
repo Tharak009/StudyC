@@ -10,7 +10,9 @@ import {
   Bookmark,
   Users,
   Sparkles,
-  ArrowDown
+  ArrowDown,
+  Lock,
+  Unlock
 } from "lucide-react";
 import type { Channel, ChatMessage } from "../../types/chat";
 import { useChatStore } from "../../store/chat.store";
@@ -27,6 +29,7 @@ interface ChatContainerProps {
   channel: Channel;
   currentUserId?: string;
   currentUserName?: string;
+  isModeratorOrAdmin?: boolean;
   onSendMessage: (
     content: string,
     codeSnippet?: { language: string; code: string; title?: string },
@@ -35,6 +38,10 @@ interface ChatContainerProps {
     voiceNote?: any,
     intent?: "chat" | "question" | "solution" | "code"
   ) => void;
+  onReact?: (messageId: string, emoji: string, category?: "STANDARD" | "CAMPUS_CUSTOM") => void;
+  onDeleteForMe?: (messageId: string) => void;
+  onDeleteForEveryone?: (messageId: string) => void;
+  onOpenLockModal?: () => void;
   className?: string;
 }
 
@@ -67,7 +74,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   channel,
   currentUserId,
   currentUserName = "Student",
+  isModeratorOrAdmin = false,
   onSendMessage,
+  onReact,
+  onDeleteForMe,
+  onDeleteForEveryone,
+  onOpenLockModal,
   className = ""
 }) => {
   const {
@@ -93,25 +105,27 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     let currentDateLabel = "";
     let currentGroup: ChatMessage[] = [];
 
-    messages.forEach((msg) => {
-      const label = formatDateSeparator(msg.createdAt);
-      if (label !== currentDateLabel) {
-        if (currentGroup.length > 0) {
-          groups.push({ dateLabel: currentDateLabel, items: currentGroup });
+    messages
+      .filter((msg) => !currentUserId || !msg.deletedFor?.includes(currentUserId))
+      .forEach((msg) => {
+        const label = formatDateSeparator(msg.createdAt);
+        if (label !== currentDateLabel) {
+          if (currentGroup.length > 0) {
+            groups.push({ dateLabel: currentDateLabel, items: currentGroup });
+          }
+          currentDateLabel = label;
+          currentGroup = [msg];
+        } else {
+          currentGroup.push(msg);
         }
-        currentDateLabel = label;
-        currentGroup = [msg];
-      } else {
-        currentGroup.push(msg);
-      }
-    });
+      });
 
     if (currentGroup.length > 0) {
       groups.push({ dateLabel: currentDateLabel, items: currentGroup });
     }
 
     return groups;
-  }, [messages]);
+  }, [messages, currentUserId]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -122,62 +136,52 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   // Detect scroll position to show jump-to-bottom button
   const handleScroll = () => {
-    if (!scrollContainerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    const isFarFromBottom = scrollHeight - scrollTop - clientHeight > 250;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const isFarFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight > 200;
     setShowScrollBottom(isFarFromBottom);
   };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    setShowScrollBottom(false);
   };
 
   // Socket reaction handler
   const handleReact = (messageId: string, emoji: string) => {
     const socket = socketService.get();
-    socket?.emit("chat:reaction", {
-      messageId,
-      communityId: community._id,
-      emoji
-    });
+    if (socket) {
+      socket.emit("chat:reaction", {
+        messageId,
+        communityId: community._id,
+        channelId: channel._id || channel.name,
+        emoji
+      });
+    }
   };
 
   // Socket pin handler
   const handlePin = (messageId: string, isPinned: boolean) => {
+    updateMessagePin(messageId, isPinned);
     const socket = socketService.get();
-    socket?.emit(
-      "chat:pinMessage",
-      {
-        communityId: community._id,
-        channelId: channel._id || channel.name,
+    if (socket) {
+      socket.emit("chat:pinMessage", {
         messageId,
+        communityId: community._id,
         isPinned
-      },
-      (res: any) => {
-        if (res?.success) {
-          updateMessagePin(messageId, isPinned);
-        }
-      }
-    );
+      });
+    }
   };
 
   // Socket accepted solution handler (+25 Karma)
   const handleMarkSolution = (messageId: string) => {
+    markMessageAccepted(messageId);
     const socket = socketService.get();
-    socket?.emit(
-      "chat:markAcceptedSolution",
-      {
-        communityId: community._id,
-        channelId: channel._id || channel.name,
-        messageId
-      },
-      (res: any) => {
-        if (res?.success) {
-          markMessageAccepted(messageId, 25);
-        }
-      }
-    );
+    if (socket) {
+      socket.emit("chat:markSolution", {
+        messageId,
+        communityId: community._id
+      });
+    }
   };
 
   const channelIcon = useMemo(() => {
@@ -195,6 +199,27 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   return (
     <div className={`flex-1 flex flex-col bg-slate-50/50 dark:bg-[#080D1A] h-full overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-200 ${className}`}>
+      {/* ── Frosted Channel Lock Banner (if channel is locked) ── */}
+      {channel.isLocked && (
+        <div className="w-full bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-orange-500/15 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between gap-3 text-xs text-amber-300 backdrop-blur-md shrink-0">
+          <div className="flex items-center gap-2 truncate">
+            <Lock size={14} className="text-amber-400 shrink-0 animate-pulse" />
+            <span className="font-bold text-amber-200">Channel Locked:</span>
+            <span className="truncate text-amber-100">
+              {channel.lockedReason || "Read-only mode activated by moderator"}
+            </span>
+          </div>
+          {isModeratorOrAdmin && onOpenLockModal && (
+            <button
+              onClick={onOpenLockModal}
+              className="text-[11px] font-bold text-amber-300 hover:text-white underline shrink-0 cursor-pointer"
+            >
+              Unlock Channel
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Frosted Ambient Header ── */}
       <div className="h-14 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0B1324]/80 backdrop-blur-xl px-4 flex items-center justify-between z-10 select-none">
         {/* Channel Details */}
@@ -234,6 +259,21 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             currentUserId={currentUserId}
             currentUserName={currentUserName}
           />
+
+          {/* Moderator Channel Lock / Unlock Trigger */}
+          {isModeratorOrAdmin && onOpenLockModal && (
+            <button
+              onClick={onOpenLockModal}
+              className={`p-2 rounded-xl transition-all cursor-pointer ${
+                channel.isLocked
+                  ? "bg-amber-500/20 text-amber-400 border border-amber-500/30 font-semibold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-[#162544]"
+              }`}
+              title={channel.isLocked ? "Unlock Channel" : "Lock Channel (Read-Only Mode)"}
+            >
+              {channel.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+            </button>
+          )}
 
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
 
@@ -320,9 +360,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 key={msg._id}
                 message={msg}
                 currentUserId={currentUserId}
-                onReact={handleReact}
+                onReact={onReact || handleReact}
                 onPin={handlePin}
                 onMarkSolution={handleMarkSolution}
+                onDeleteForMe={onDeleteForMe}
+                onDeleteForEveryone={onDeleteForEveryone}
+                isModeratorOrAdmin={isModeratorOrAdmin}
                 onReplyInThread={(m) => {
                   openThread(m);
                   setInspectorMode("thread");
@@ -354,6 +397,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           replyTarget={replyTarget}
           onCancelReply={() => setReplyTarget(null)}
           typingUsers={typingUsers.map((u) => u.name)}
+          isLocked={channel.isLocked}
+          lockedReason={channel.lockedReason}
+          isModeratorOrAdmin={isModeratorOrAdmin}
         />
       </div>
     </div>

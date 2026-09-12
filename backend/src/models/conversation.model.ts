@@ -8,6 +8,10 @@ export interface IConversation {
     createdAt: Date;
   } | null;
   lastMessageAt: Date | null;
+  isLocked?: boolean;
+  lockedBy?: Types.ObjectId | string;
+  lockedReason?: string;
+  lockedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,7 +39,11 @@ const conversationSchema = new Schema<IConversation, ConversationModel>(
       ),
       default: null
     },
-    lastMessageAt: { type: Date, default: null }
+    lastMessageAt: { type: Date, default: null },
+    isLocked: { type: Boolean, default: false },
+    lockedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    lockedReason: { type: String, trim: true, default: "" },
+    lockedAt: Date
   },
   { timestamps: true, versionKey: false }
 );

@@ -14,6 +14,10 @@ export interface IChannel {
   allowCodeSnippetsOnly: boolean;
   strikeLimitBeforeTimeout: number;
   timeoutDurationMinutes: number;
+  isLocked?: boolean;
+  lockedBy?: Types.ObjectId | string;
+  lockedReason?: string;
+  lockedAt?: Date;
   sprintState?: {
     isActive: boolean;
     title: string;
@@ -80,6 +84,10 @@ const channelSchema = new Schema<IChannel>(
     allowCodeSnippetsOnly: { type: Boolean, default: false },
     strikeLimitBeforeTimeout: { type: Number, default: 3, min: 1, max: 10 },
     timeoutDurationMinutes: { type: Number, default: 5, min: 1, max: 60 },
+    isLocked: { type: Boolean, default: false },
+    lockedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    lockedReason: { type: String, trim: true, default: "" },
+    lockedAt: Date,
     sprintState: {
       isActive: { type: Boolean, default: false },
       title: { type: String, default: "" },

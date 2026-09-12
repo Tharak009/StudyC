@@ -9,6 +9,13 @@ export interface DirectMessageAttachment {
   size: number;
 }
 
+export interface DirectMessageReaction {
+  emoji: string;
+  count: number;
+  users: Types.ObjectId[];
+  category?: "STANDARD" | "CAMPUS_CUSTOM";
+}
+
 export interface IDirectMessage {
   conversationId: Types.ObjectId;
   senderId: Types.ObjectId;
@@ -16,11 +23,15 @@ export interface IDirectMessage {
   messageType: MessageType;
   attachments: DirectMessageAttachment[];
   replyTo?: Types.ObjectId;
+  reactions?: DirectMessageReaction[];
   edited: boolean;
   editedAt?: Date;
   read: boolean;
   readAt?: Date;
   deleted: boolean;
+  deletedFor?: Types.ObjectId[];
+  isDeletedForEveryone?: boolean;
+  deletedBy?: Types.ObjectId;
   deletedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -40,6 +51,16 @@ const attachmentSchema = new Schema<DirectMessageAttachment>(
   { _id: false }
 );
 
+const directMessageReactionSchema = new Schema<DirectMessageReaction>(
+  {
+    emoji: { type: String, required: true },
+    count: { type: Number, default: 1 },
+    users: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    category: { type: String, enum: ["STANDARD", "CAMPUS_CUSTOM"], default: "STANDARD" }
+  },
+  { _id: false }
+);
+
 const directMessageSchema = new Schema<IDirectMessage, DirectMessageModel>(
   {
     conversationId: { type: Schema.Types.ObjectId, ref: "Conversation", required: true, index: true },
@@ -48,11 +69,15 @@ const directMessageSchema = new Schema<IDirectMessage, DirectMessageModel>(
     messageType: { type: String, enum: Object.values(MESSAGE_TYPES), default: MESSAGE_TYPES.TEXT },
     attachments: { type: [attachmentSchema], default: [] },
     replyTo: { type: Schema.Types.ObjectId, ref: "DirectMessage" },
+    reactions: { type: [directMessageReactionSchema], default: [] },
     edited: { type: Boolean, default: false },
     editedAt: Date,
     read: { type: Boolean, default: false },
     readAt: Date,
     deleted: { type: Boolean, default: false, index: true },
+    deletedFor: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
+    isDeletedForEveryone: { type: Boolean, default: false, index: true },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
     deletedAt: Date
   },
   { timestamps: true, versionKey: false }

@@ -17,7 +17,9 @@ export interface CodeSnippet {
 
 export interface MessageReaction {
   emoji: string;
+  count: number;
   users: Types.ObjectId[];
+  category?: "STANDARD" | "CAMPUS_CUSTOM";
 }
 
 export interface IMessage {
@@ -39,6 +41,9 @@ export interface IMessage {
   edited: boolean;
   editedAt?: Date;
   deleted: boolean;
+  deletedFor?: Types.ObjectId[];
+  isDeletedForEveryone?: boolean;
+  deletedBy?: Types.ObjectId;
   deletedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -70,7 +75,9 @@ const codeSnippetSchema = new Schema<CodeSnippet>(
 const messageReactionSchema = new Schema<MessageReaction>(
   {
     emoji: { type: String, required: true },
-    users: [{ type: Schema.Types.ObjectId, ref: "User" }]
+    count: { type: Number, default: 1 },
+    users: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    category: { type: String, enum: ["STANDARD", "CAMPUS_CUSTOM"], default: "STANDARD" }
   },
   { _id: false }
 );
@@ -95,6 +102,9 @@ const messageSchema = new Schema<IMessage, MessageModel>(
     edited: { type: Boolean, default: false },
     editedAt: Date,
     deleted: { type: Boolean, default: false, index: true },
+    deletedFor: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
+    isDeletedForEveryone: { type: Boolean, default: false, index: true },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
     deletedAt: Date
   },
   { timestamps: true, versionKey: false }

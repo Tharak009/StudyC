@@ -18,7 +18,9 @@ export interface CodeSnippet {
 
 export interface MessageReaction {
   emoji: string;
+  count?: number;
   users: string[];
+  category?: "STANDARD" | "CAMPUS_CUSTOM";
 }
 
 export interface ChatReply {
@@ -50,6 +52,10 @@ export interface ChatMessage {
   threadCount?: number;
   threadLastReplyAt?: string;
   reactions?: MessageReaction[];
+  deletedFor?: string[];
+  isDeletedForEveryone?: boolean;
+  deletedBy?: string | { _id: string; fullName: string };
+  deletedAt?: string;
   edited: boolean;
   editedAt?: string;
   deleted: boolean;
@@ -70,6 +76,10 @@ export interface Channel {
   allowCodeSnippetsOnly?: boolean;
   strikeLimitBeforeTimeout?: number;
   timeoutDurationMinutes?: number;
+  isLocked?: boolean;
+  lockedBy?: string | { _id: string; fullName: string };
+  lockedReason?: string;
+  lockedAt?: string;
 }
 
 export interface SprintSession {

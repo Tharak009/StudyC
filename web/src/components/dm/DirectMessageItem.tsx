@@ -1,0 +1,477 @@
+import React, { useState, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Check,
+  CheckCheck,
+  FileText,
+  FileCode,
+  Download,
+  CornerDownRight,
+  Reply,
+  Copy,
+  Pin,
+  Trash2,
+  Play,
+  Pause,
+  Mic,
+  Plus
+} from "lucide-react";
+import type { User } from "../../types/auth";
+import { EmojiPickerPopover, CAMPUS_STICKERS } from "../chat/EmojiPickerPopover";
+import { DeleteMessageModal } from "../chat/modals/DeleteMessageModal";
+
+export interface DMStreamItemData {
+  id: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+  attachments?: Array<{
+    name: string;
+    size: string;
+    type: string;
+    url: string;
+  }>;
+  replyTo?: {
+    senderName: string;
+    content: string;
+  };
+  codeSnippet?: {
+    language: string;
+    code: string;
+  };
+  voiceNote?: {
+    duration: string;
+    url?: string;
+  };
+  reactions?: any; // Record<string, string[]> or Array<{ emoji, count, users, category }>
+  deletedFor?: string[];
+  isDeletedForEveryone?: boolean;
+  deletedBy?: string;
+  deletedAt?: string;
+  isRead: boolean;
+  isDelivered?: boolean;
+  time: string;
+  createdAt: string;
+}
+
+interface DirectMessageItemProps {
+  msg: DMStreamItemData;
+  currentUser?: User | null;
+  isMe: boolean;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  isHighlight?: boolean;
+  onSelect?: () => void;
+  onReply?: (msg: DMStreamItemData) => void;
+  onPin?: (msg: DMStreamItemData) => void;
+  onReact?: (messageId: string, emoji: string, category?: "STANDARD" | "CAMPUS_CUSTOM") => void;
+  onDeleteForMe?: (messageId: string) => void;
+  onDeleteForEveryone?: (messageId: string) => void;
+}
+
+const QUICK_EMOJIS = ["❤️", "👍", "💡", "🔥", "🚀", "👀"];
+
+export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
+  msg,
+  currentUser,
+  isMe,
+  isSelectionMode = false,
+  isSelected = false,
+  isHighlight = false,
+  onSelect,
+  onReply,
+  onPin,
+  onReact,
+  onDeleteForMe,
+  onDeleteForEveryone
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedSnippet(true);
+    setTimeout(() => setCopiedSnippet(false), 2000);
+  };
+
+  // Normalize reactions into an array of { emoji, count, users, isCampus }
+  const normalizedReactions = useMemo(() => {
+    if (!msg.reactions) return [];
+
+    if (Array.isArray(msg.reactions)) {
+      return msg.reactions.map((r: any) => ({
+        emoji: r.emoji,
+        count: r.count ?? r.users?.length ?? 1,
+        users: r.users || [],
+        isCampus: r.emoji?.startsWith(":") || r.category === "CAMPUS_CUSTOM"
+      }));
+    }
+
+    // Old Record<string, string[]> format
+    return Object.entries(msg.reactions).map(([emoji, users]) => ({
+      emoji,
+      count: (users as string[]).length,
+      users: users as string[],
+      isCampus: emoji.startsWith(":")
+    }));
+  }, [msg.reactions]);
+
+  // Tombstone Rendering when message was purged for everyone
+  if (msg.isDeletedForEveryone) {
+    return (
+      <div className={`flex w-full ${isMe ? "justify-end" : "justify-start"} my-1`}>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-200/50 dark:bg-[#182229]/60 border border-dashed border-slate-300 dark:border-slate-700 text-xs italic text-slate-500 dark:text-slate-400 select-none">
+          <Trash2 size={13} className="text-slate-400 dark:text-slate-500 shrink-0" />
+          <span>This message was deleted</span>
+          <span className="text-[10px] not-italic text-slate-400 font-mono ml-2">
+            {msg.time}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`group relative flex items-center gap-2 ${
+        isSelectionMode ? "cursor-pointer" : ""
+      }`}
+      onClick={isSelectionMode ? onSelect : undefined}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Selection Checkbox */}
+      {isSelectionMode && (
+        <div className="shrink-0 pl-1">
+          <div
+            className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors ${
+              isSelected
+                ? "bg-[#1E90FF] border-[#1E90FF] text-white"
+                : "border-slate-400 dark:border-slate-600 bg-white dark:bg-[#182229]"
+            }`}
+          >
+            {isSelected && <Check size={13} strokeWidth={3} />}
+          </div>
+        </div>
+      )}
+
+      <motion.div
+        initial={{ opacity: 0, y: 6, scale: 0.99 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.15 }}
+        className={`relative flex-1 flex flex-col ${isMe ? "items-end" : "items-start"} ${
+          isHighlight ? "ring-2 ring-amber-400/60 rounded-3xl p-1" : ""
+        }`}
+      >
+        {/* ── Hover Action Bar ── */}
+        <AnimatePresence>
+          {!isSelectionMode && isHovered && (
+            <motion.div
+              initial={{ opacity: 0, y: 4, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.12 }}
+              className={`absolute -top-7 ${
+                isMe ? "right-2" : "left-2"
+              } z-20 flex items-center gap-1 p-1 rounded-full bg-white dark:bg-[#182229] border border-slate-200 dark:border-slate-700 shadow-lg backdrop-blur-md`}
+            >
+              {/* Quick Emojis */}
+              {QUICK_EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => onReact?.(msg.id, emoji, "STANDARD")}
+                  className="h-6 w-6 rounded-full hover:scale-125 transition-transform flex items-center justify-center text-xs cursor-pointer"
+                  title={`React with ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+
+              {/* '+' Trigger for Academic & Campus Stickers */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsEmojiPickerOpen((prev) => !prev)}
+                  className="h-6 w-6 rounded-full text-slate-400 hover:text-[#1E90FF] hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer"
+                  title="More Reactions & Campus Stickers"
+                >
+                  <Plus size={13} />
+                </button>
+                <EmojiPickerPopover
+                  isOpen={isEmojiPickerOpen}
+                  onClose={() => setIsEmojiPickerOpen(false)}
+                  onSelectEmoji={(emoji, category) => onReact?.(msg.id, emoji, category)}
+                  align={isMe ? "right" : "left"}
+                />
+              </div>
+
+              <div className="h-3 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+              {/* Reply */}
+              {onReply && (
+                <button
+                  type="button"
+                  onClick={() => onReply(msg)}
+                  className="p-1 rounded-full text-slate-400 hover:text-[#1E90FF] transition-colors cursor-pointer"
+                  title="Reply"
+                >
+                  <Reply size={12} />
+                </button>
+              )}
+
+              {/* Pin */}
+              {onPin && (
+                <button
+                  type="button"
+                  onClick={() => onPin(msg)}
+                  className="p-1 rounded-full text-slate-400 hover:text-amber-500 transition-colors cursor-pointer"
+                  title="Pin message"
+                >
+                  <Pin size={12} />
+                </button>
+              )}
+
+              {/* Delete Message Trigger */}
+              {(onDeleteForMe || onDeleteForEveryone) && (
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  className="p-1 rounded-full text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                  title="Delete message"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Message Bubble ── */}
+        <div
+          className={`relative max-w-[85%] sm:max-w-md md:max-w-lg p-3 sm:px-4 sm:py-2.5 shadow-sm transition-all select-text ${
+            isMe
+              ? "bg-gradient-to-br from-[#1E90FF] to-[#187bcd] text-white rounded-2xl rounded-tr-xs shadow-[0_2px_12px_rgba(30,144,255,0.22)]"
+              : "bg-white/95 dark:bg-[#202c33] border border-slate-200/80 dark:border-slate-700/60 text-slate-900 dark:text-slate-100 rounded-2xl rounded-tl-xs shadow-slate-200/40 dark:shadow-none"
+          }`}
+        >
+          {/* Quoted Reply Context */}
+          {msg.replyTo && (
+            <div
+              className={`mb-2 pl-2.5 py-1 text-[11px] rounded-r-lg border-l-3 ${
+                isMe
+                  ? "border-blue-200 bg-white/15 text-white"
+                  : "border-[#1E90FF] bg-[#1E90FF]/10 text-slate-700 dark:text-slate-300"
+              }`}
+            >
+              <div
+                className={`font-bold text-[10px] flex items-center gap-1 ${
+                  isMe ? "text-white" : "text-[#1E90FF]"
+                }`}
+              >
+                <CornerDownRight size={10} />
+                <span>{msg.replyTo.senderName}</span>
+              </div>
+              <p className="truncate italic text-[11px] opacity-90">
+                {msg.replyTo.content}
+              </p>
+            </div>
+          )}
+
+          {/* Main Message Text */}
+          {msg.content && (
+            <p className="text-xs sm:text-[13px] leading-relaxed break-words whitespace-pre-wrap">
+              {msg.content}
+            </p>
+          )}
+
+          {/* Voice Note Player */}
+          {msg.voiceNote && (
+            <div className="mt-1 flex items-center gap-2.5 p-2 rounded-xl bg-black/10 dark:bg-black/20">
+              <button
+                type="button"
+                onClick={() => setIsPlayingVoice(!isPlayingVoice)}
+                className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
+                  isMe ? "bg-white text-[#1E90FF]" : "bg-[#1E90FF] text-white"
+                }`}
+              >
+                {isPlayingVoice ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+              </button>
+              <div className="flex-1 flex flex-col gap-1">
+                <div className="flex items-center gap-0.5 h-4">
+                  {[40, 70, 30, 90, 60, 45, 80, 100, 65, 30, 85, 55, 95, 40, 60, 75, 50].map((h, i) => (
+                    <div
+                      key={i}
+                      className={`w-0.5 rounded-full transition-all ${
+                        isPlayingVoice
+                          ? isMe ? "bg-white animate-pulse" : "bg-[#1E90FF] animate-pulse"
+                          : isMe ? "bg-white/50" : "bg-slate-400/50 dark:bg-slate-500"
+                      }`}
+                      style={{ height: `${h}%` }}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center justify-between text-[9px] opacity-80 tabular-nums">
+                  <span className="flex items-center gap-1">
+                    <Mic size={9} />
+                    Voice Note
+                  </span>
+                  <span>{msg.voiceNote.duration}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Code Snippet */}
+          {msg.codeSnippet && (
+            <div className="mt-2 rounded-xl bg-slate-950 text-slate-100 font-mono text-[11px] overflow-hidden border border-slate-800 shadow-inner">
+              <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-900 border-b border-slate-800 text-[10px] text-[#1E90FF]">
+                <div className="flex items-center gap-1.5">
+                  <FileCode size={11} />
+                  <span className="font-bold">{msg.codeSnippet.language}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopyCode(msg.codeSnippet!.code)}
+                  className="text-slate-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Copy size={11} />
+                  <span>{copiedSnippet ? "Copied!" : "Copy"}</span>
+                </button>
+              </div>
+              <pre className="p-2.5 text-[#1E90FF]/90 overflow-x-auto max-h-48 scrollbar-none leading-relaxed">
+                <code>{msg.codeSnippet.code}</code>
+              </pre>
+            </div>
+          )}
+
+          {/* File Attachments */}
+          {msg.attachments && msg.attachments.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {msg.attachments.map((att, aIdx) => (
+                <div
+                  key={aIdx}
+                  className={`flex items-center justify-between gap-2.5 p-2 rounded-xl border ${
+                    isMe
+                      ? "bg-white/10 border-white/20 text-white"
+                      : "bg-slate-50 dark:bg-[#111b21] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 truncate">
+                    <div className="p-1.5 rounded-lg bg-[#1E90FF]/15 text-[#1E90FF] shrink-0">
+                      <FileText size={16} />
+                    </div>
+                    <div className="truncate">
+                      <span className="text-xs font-bold truncate max-w-[170px] block">
+                        {att.name}
+                      </span>
+                      <span className="text-[10px] opacity-75 tabular-nums block">
+                        {att.size} • {att.type.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                  <a
+                    href={att.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1.5 rounded-lg hover:bg-white/20 transition-colors shrink-0"
+                    title="Download Note"
+                  >
+                    <Download size={14} />
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Timestamp & Delivery status */}
+          <div
+            className={`mt-1 flex items-center justify-end gap-1 text-[10px] tabular-nums leading-none ${
+              isMe ? "text-white/80" : "text-slate-400"
+            }`}
+          >
+            <span>{msg.time}</span>
+            {isMe && (
+              <span
+                className="ml-0.5 inline-flex items-center"
+                title={msg.isRead ? "Read" : msg.isDelivered ? "Delivered" : "Sent"}
+              >
+                {msg.isRead ? (
+                  <CheckCheck size={13} className="text-cyan-200" />
+                ) : msg.isDelivered ? (
+                  <CheckCheck size={13} className="text-white/70" />
+                ) : (
+                  <Check size={13} className="text-white/70" />
+                )}
+              </span>
+            )}
+          </div>
+
+          {/* ── Reaction Badges Pill ── */}
+          {normalizedReactions.length > 0 && (
+            <div
+              className={`absolute -bottom-2.5 ${
+                isMe ? "right-2" : "left-2"
+              } flex items-center gap-1 bg-white dark:bg-[#182229] border border-slate-200 dark:border-slate-700 rounded-full px-2 py-0.5 shadow-sm text-xs select-none`}
+            >
+              {normalizedReactions.map((r, idx) => {
+                const sticker = r.isCampus
+                  ? CAMPUS_STICKERS.find((s) => s.shortcode === r.emoji)
+                  : null;
+                const hasReacted =
+                  currentUser?._id && r.users.includes(currentUser._id);
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() =>
+                      onReact?.(
+                        msg.id,
+                        r.emoji,
+                        r.isCampus ? "CAMPUS_CUSTOM" : "STANDARD"
+                      )
+                    }
+                    className={`inline-flex items-center gap-1 cursor-pointer transition-transform hover:scale-115 ${
+                      hasReacted
+                        ? "text-[#1E90FF] font-bold"
+                        : "text-slate-600 dark:text-slate-300"
+                    }`}
+                    title={
+                      sticker
+                        ? `${sticker.name} (${r.users.join(", ") || "1 reaction"})`
+                        : `${r.emoji} (${r.users.join(", ") || "1 reaction"})`
+                    }
+                  >
+                    <span>{sticker ? sticker.emoji : r.emoji}</span>
+                    {r.count > 1 && (
+                      <span className="text-[9px] font-bold opacity-80">
+                        {r.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+
+      {/* ── Delete Message Modal ── */}
+      <DeleteMessageModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onDeleteForMe={() => onDeleteForMe?.(msg.id)}
+        onDeleteForEveryone={() => onDeleteForEveryone?.(msg.id)}
+        createdAt={msg.createdAt}
+        isAuthor={Boolean(isMe)}
+        isModeratorOrAdmin={false}
+        messageSnippet={msg.content}
+      />
+    </div>
+  );
+};
+export default DirectMessageItem;
