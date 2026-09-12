@@ -24,3 +24,12 @@ export const authLimiter = rateLimit({
   skipSuccessfulRequests: true,
   handler: jsonHandler
 });
+
+export const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  handler: jsonHandler
+});
+

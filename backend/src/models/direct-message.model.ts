@@ -7,6 +7,11 @@ export interface DirectMessageAttachment {
   originalName: string;
   mimeType: string;
   size: number;
+  thumbnailUrl?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  waveform?: number[];
 }
 
 export interface DirectMessageReaction {
@@ -24,6 +29,9 @@ export interface IDirectMessage {
   attachments: DirectMessageAttachment[];
   replyTo?: Types.ObjectId;
   reactions?: DirectMessageReaction[];
+  clientMessageId?: string;
+  delivered: boolean;
+  deliveredAt?: Date;
   edited: boolean;
   editedAt?: Date;
   read: boolean;
@@ -33,6 +41,12 @@ export interface IDirectMessage {
   isDeletedForEveryone?: boolean;
   deletedBy?: Types.ObjectId;
   deletedAt?: Date;
+  starredBy?: Types.ObjectId[];
+  isPinned?: boolean;
+  pinnedAt?: Date;
+  pinnedBy?: Types.ObjectId;
+  isForwarded?: boolean;
+  forwardedFrom?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,7 +60,12 @@ const attachmentSchema = new Schema<DirectMessageAttachment>(
     url: { type: String, required: true },
     originalName: { type: String, required: true },
     mimeType: { type: String, required: true },
-    size: { type: Number, required: true }
+    size: { type: Number, required: true },
+    thumbnailUrl: { type: String },
+    width: { type: Number },
+    height: { type: Number },
+    duration: { type: Number },
+    waveform: { type: [Number], default: undefined }
   },
   { _id: false }
 );
@@ -70,6 +89,9 @@ const directMessageSchema = new Schema<IDirectMessage, DirectMessageModel>(
     attachments: { type: [attachmentSchema], default: [] },
     replyTo: { type: Schema.Types.ObjectId, ref: "DirectMessage" },
     reactions: { type: [directMessageReactionSchema], default: [] },
+    clientMessageId: { type: String, sparse: true, index: true },
+    delivered: { type: Boolean, default: false, index: true },
+    deliveredAt: Date,
     edited: { type: Boolean, default: false },
     editedAt: Date,
     read: { type: Boolean, default: false },
@@ -78,7 +100,13 @@ const directMessageSchema = new Schema<IDirectMessage, DirectMessageModel>(
     deletedFor: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     isDeletedForEveryone: { type: Boolean, default: false, index: true },
     deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
-    deletedAt: Date
+    deletedAt: Date,
+    starredBy: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
+    isPinned: { type: Boolean, default: false, index: true },
+    pinnedAt: Date,
+    pinnedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    isForwarded: { type: Boolean, default: false },
+    forwardedFrom: { type: Schema.Types.ObjectId, ref: "DirectMessage" }
   },
   { timestamps: true, versionKey: false }
 );
@@ -86,5 +114,7 @@ const directMessageSchema = new Schema<IDirectMessage, DirectMessageModel>(
 directMessageSchema.index({ conversationId: 1, createdAt: -1, _id: -1 });
 directMessageSchema.index({ conversationId: 1, read: 1 });
 directMessageSchema.index({ replyTo: 1 });
+directMessageSchema.index({ conversationId: 1, starredBy: 1 });
+directMessageSchema.index({ conversationId: 1, isPinned: 1 });
 
 export const DirectMessage = model<IDirectMessage, DirectMessageModel>("DirectMessage", directMessageSchema);

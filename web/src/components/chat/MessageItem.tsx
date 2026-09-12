@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import katex from "katex";
 import Prism from "prismjs";
 import "prismjs/components/prism-javascript";
@@ -31,12 +31,20 @@ import {
   Lightbulb,
   Rocket,
   Trash2,
-  Plus
+  Plus,
+  Star,
+  CornerUpRight,
+  Edit2,
+  Forward
 } from "lucide-react";
 import type { ChatMessage, CodeSnippet } from "../../types/chat";
 import { useChatStore } from "../../store/chat.store";
 import { EmojiPickerPopover, CAMPUS_STICKERS } from "./EmojiPickerPopover";
 import { DeleteMessageModal } from "./modals/DeleteMessageModal";
+import { MessageContextMenu } from "./MessageContextMenu";
+import { ImageGallery } from "./media/ImageGallery";
+import { VoiceMessagePlayer } from "./media/VoiceMessagePlayer";
+import { FileDocumentCard } from "./media/FileDocumentCard";
 
 interface MessageItemProps {
   message: ChatMessage;
@@ -47,6 +55,12 @@ interface MessageItemProps {
   onReplyInThread?: (message: ChatMessage) => void;
   onDeleteForMe?: (messageId: string) => void;
   onDeleteForEveryone?: (messageId: string) => void;
+  onJumpToMessage?: (messageId: string) => void;
+  onEdit?: (message: ChatMessage) => void;
+  onForward?: (message: ChatMessage) => void;
+  onToggleStar?: (messageId: string, isStarred: boolean) => void;
+  onStartSelectionMode?: (initialId?: string) => void;
+  onOpenLightbox?: (images: Array<{ url: string; originalName: string; caption?: string }>, initialIndex?: number) => void;
   isModeratorOrAdmin?: boolean;
   className?: string;
 }
@@ -145,6 +159,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onReplyInThread,
   onDeleteForMe,
   onDeleteForEveryone,
+  onJumpToMessage,
+  onEdit,
+  onForward,
+  onToggleStar,
+  onStartSelectionMode,
+  onOpenLightbox,
   isModeratorOrAdmin = false,
   className = ""
 }) => {
@@ -155,6 +175,42 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean;
+    x: number;
+    y: number;
+    isMobileSheet: boolean;
+  } | null>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    longPressTimerRef.current = setTimeout(() => {
+      setContextMenu({
+        isOpen: true,
+        x: touch.clientX,
+        y: touch.clientY,
+        isMobileSheet: true
+      });
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      isMobileSheet: false
+    });
+  };
 
   // Author details
   const senderName = message.senderName || message.senderId?.fullName || "Student";
@@ -224,10 +280,36 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     }
   }, [message.createdAt]);
 
-  const isAuthor = currentUserId && (
+  const isAuthor = Boolean(currentUserId && (
     message.senderId?._id === currentUserId ||
     (typeof message.senderId === "string" && message.senderId === currentUserId)
-  );
+  ));
+
+  const imageAttachments = useMemo(() => {
+    return (message.attachments || []).filter(
+      (a) =>
+        a.mimeType?.startsWith("image/") ||
+        ["jpg", "jpeg", "png", "gif", "webp"].includes(
+          a.originalName?.split(".").pop()?.toLowerCase() || ""
+        )
+    );
+  }, [message.attachments]);
+
+  const audioAttachments = useMemo(() => {
+    return (message.attachments || []).filter(
+      (a) =>
+        a.mimeType?.startsWith("audio/") ||
+        ["mp3", "ogg", "wav", "webm", "m4a"].includes(
+          a.originalName?.split(".").pop()?.toLowerCase() || ""
+        )
+    );
+  }, [message.attachments]);
+
+  const docAttachments = useMemo(() => {
+    return (message.attachments || []).filter(
+      (a) => !imageAttachments.includes(a) && !audioAttachments.includes(a)
+    );
+  }, [message.attachments, imageAttachments, audioAttachments]);
 
   // Authoritative Tombstone Rendering
   if (message.isDeletedForEveryone) {
@@ -258,6 +340,21 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     );
   }
 
+  const canEdit =
+    Boolean(isAuthor) &&
+    !message.isDeletedForEveryone &&
+    Date.now() - new Date(message.createdAt).getTime() <= 24 * 60 * 60 * 1000;
+
+  const canDeleteForEveryone =
+    (Boolean(isAuthor) || Boolean(isModeratorOrAdmin)) &&
+    !message.isDeletedForEveryone &&
+    (Boolean(isModeratorOrAdmin) ||
+      Date.now() - new Date(message.createdAt).getTime() <= 24 * 60 * 60 * 1000);
+
+  const isStarred = Boolean(
+    message.isStarred || (currentUserId && message.starredBy?.includes(currentUserId))
+  );
+
   return (
     <div
       className={`group relative flex gap-3 px-4 py-2.5 rounded-2xl transition-all hover:bg-slate-100/60 dark:hover:bg-[#0F1A30]/50 ${
@@ -265,6 +362,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       } ${
         message.isAcceptedSolution ? "bg-emerald-500/10 border-l-2 border-emerald-500" : ""
       } ${className}`}
+      onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchEnd}
     >
       {/* ── Hover Action Dock ── */}
       <div className="absolute right-4 -top-3 hidden group-hover:flex items-center gap-1 bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-700/80 rounded-xl px-2 py-1 shadow-xl z-20 backdrop-blur-xl text-slate-700 dark:text-slate-300">
@@ -323,6 +424,43 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         >
           <Pin className="w-3.5 h-3.5" />
         </button>
+
+        {/* Star Message */}
+        {onToggleStar && (
+          <button
+            onClick={() => onToggleStar(message._id, !isStarred)}
+            className={`p-1 rounded-lg transition-colors cursor-pointer ${
+              isStarred
+                ? "text-amber-400 bg-amber-400/10"
+                : "text-slate-500 dark:text-slate-400 hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-[#162544]"
+            }`}
+            title={isStarred ? "Unstar Message" : "Star Message"}
+          >
+            <Star className={`w-3.5 h-3.5 ${isStarred ? "fill-amber-400" : ""}`} />
+          </button>
+        )}
+
+        {/* Forward Message */}
+        {onForward && (
+          <button
+            onClick={() => onForward(message)}
+            className="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:text-[#1E90FF] hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors cursor-pointer"
+            title="Forward Message"
+          >
+            <Forward className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        {/* Edit Message */}
+        {canEdit && onEdit && (
+          <button
+            onClick={() => onEdit(message)}
+            className="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors cursor-pointer"
+            title="Edit Message (within 24h)"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Mark as Accepted Solution */}
         {!message.isAcceptedSolution && onMarkSolution && (
@@ -390,12 +528,36 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </span>
           )}
 
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-auto font-mono">{formattedTime}</span>
+          <div className="flex items-center gap-1.5 ml-auto font-mono text-[10px] text-slate-400 dark:text-slate-500">
+            {message.edited && (
+              <span className="text-[9px] opacity-75 italic">(edited)</span>
+            )}
+            {isStarred && (
+              <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400 shrink-0" />
+            )}
+            <span>{formattedTime}</span>
+          </div>
         </div>
+
+        {/* Forwarded Indicator Badge */}
+        {message.isForwarded && (
+          <div className="flex items-center gap-1 text-[10px] italic text-slate-400 dark:text-slate-500 mt-1 mb-0.5 select-none">
+            <CornerUpRight className="w-2.5 h-2.5 shrink-0" />
+            <span>Forwarded</span>
+          </div>
+        )}
 
         {/* Reply Context Bar (if replying to another message) */}
         {message.replyTo && (
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pl-2 border-l-2 border-slate-300 dark:border-slate-700">
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              const targetId = message.replyTo?._id;
+              if (targetId) onJumpToMessage?.(targetId);
+            }}
+            className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pl-2 border-l-2 border-slate-300 dark:border-slate-700 cursor-pointer hover:underline"
+            title="Click to jump to quoted message"
+          >
             <span className="text-[10px] text-[#1E90FF] font-semibold">
               @{message.replyTo.senderId?.fullName || "User"}:
             </span>
@@ -485,30 +647,54 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           </div>
         )}
 
-        {/* ── File Attachments ── */}
-        {message.attachments && message.attachments.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {message.attachments.map((file, idx) => (
-              <a
+        {/* ── Voice Message Player ── */}
+        {(message.messageType === "AUDIO" || audioAttachments.length > 0) && (
+          <div className="mt-2">
+            <VoiceMessagePlayer
+              id={message._id}
+              url={audioAttachments[0]?.url || ""}
+              duration={audioAttachments[0]?.duration}
+              waveform={audioAttachments[0]?.waveform}
+              isMe={isAuthor}
+            />
+          </div>
+        )}
+
+        {/* ── Image Gallery (1, 2, 3, 4+ Grid Layout with Lightbox trigger) ── */}
+        {imageAttachments.length > 0 && (
+          <div className="mt-2">
+            <ImageGallery
+              images={imageAttachments.map((img) => ({
+                url: img.url,
+                originalName: img.originalName,
+                mimeType: img.mimeType
+              }))}
+              onImageClick={(idx) =>
+                onOpenLightbox?.(
+                  imageAttachments.map((img) => ({
+                    url: img.url,
+                    originalName: img.originalName
+                  })),
+                  idx
+                )
+              }
+              isMe={isAuthor}
+            />
+          </div>
+        )}
+
+        {/* ── Document File Cards ── */}
+        {docAttachments.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            {docAttachments.map((file, idx) => (
+              <FileDocumentCard
                 key={idx}
-                href={file.url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-[#080D1A] border border-slate-200/80 dark:border-slate-800 hover:border-[#1E90FF]/50 text-xs transition-colors group shadow-xs"
-              >
-                <div className="p-1.5 rounded-lg bg-[#1E90FF]/10 text-[#1E90FF] group-hover:bg-[#1E90FF]/20">
-                  <FileText className="w-3.5 h-3.5" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-slate-800 dark:text-slate-200 group-hover:text-[#1E90FF] font-medium truncate max-w-[150px]">
-                    {file.originalName}
-                  </span>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                    {(file.size / 1024).toFixed(1)} KB
-                  </span>
-                </div>
-                <Download className="w-3 h-3 text-slate-400 group-hover:text-[#1E90FF] ml-1" />
-              </a>
+                originalName={file.originalName}
+                size={file.size}
+                url={file.url}
+                mimeType={file.mimeType}
+                isMe={isAuthor}
+              />
             ))}
           </div>
         )}
@@ -585,6 +771,40 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         isModeratorOrAdmin={Boolean(isModeratorOrAdmin)}
         messageSnippet={message.content || message.codeSnippet?.code}
       />
+
+      {/* ── Context Menu (Desktop Dropdown + Mobile Sheet) ── */}
+      {contextMenu && (
+        <MessageContextMenu
+          isOpen={contextMenu.isOpen}
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          onClose={() => setContextMenu(null)}
+          isSender={Boolean(isAuthor)}
+          isDeleted={message.isDeletedForEveryone}
+          isPinned={Boolean(message.isPinned)}
+          isStarred={isStarred}
+          canEdit={canEdit}
+          canDeleteForEveryone={canDeleteForEveryone}
+          canPin={true}
+          onReply={() => {
+            if (onReplyInThread) onReplyInThread(message);
+            else openThread(message);
+          }}
+          onReact={(emoji) => onReact?.(message._id, emoji, "STANDARD")}
+          onOpenEmojiPicker={() => setIsEmojiPickerOpen(true)}
+          onCopyText={() => {
+            const textToCopy = message.content || message.codeSnippet?.code || "";
+            if (textToCopy) navigator.clipboard.writeText(textToCopy);
+          }}
+          onEdit={() => onEdit?.(message)}
+          onForward={() => onForward?.(message)}
+          onToggleStar={() => onToggleStar?.(message._id, !isStarred)}
+          onTogglePin={() => onPin?.(message._id, !message.isPinned)}
+          onSelectMode={() => onStartSelectionMode?.(message._id)}
+          onDeleteForMe={() => onDeleteForMe?.(message._id)}
+          onDeleteForEveryone={() => onDeleteForEveryone?.(message._id)}
+          isMobileSheet={contextMenu.isMobileSheet}
+        />
+      )}
     </div>
   );
 };

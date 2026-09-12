@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSearchParams, useNavigate } from "react-router";
 import {
@@ -29,19 +29,23 @@ import { CircleSidebar } from "../components/study-circles/CircleSidebar";
 import { ChatContainer } from "../components/chat/ChatContainer";
 import { ChatInspectorDrawer } from "../components/chat/ChatInspectorDrawer";
 import { VoiceStageDock } from "../components/study-circles/VoiceStageDock";
-import { DMSidebar } from "../components/chat/DMSidebar";
+import { ConversationList, type ConversationItem } from "../components/dm/ConversationList";
 import { ConversationHeader, type ActivePeer } from "../components/dm/ConversationHeader";
 import { DirectMessageStream, type DirectMessageItem } from "../components/dm/DirectMessageStream";
 import type { PinnedMessageData } from "../components/dm/PinnedMessageBanner";
-import { DirectMessageInput } from "../components/dm/DirectMessageInput";
+import { DirectMessageInput, type DMVoiceNotePayload } from "../components/dm/DirectMessageInput";
 import { ContactInfoDrawer } from "../components/dm/ContactInfoDrawer";
-import type { ConversationItem } from "../components/dm/ConversationList";
 import type { Conversation, DirectMessage } from "../types/direct-message";
+import { ImageViewerModal, type LightboxImage } from "../components/chat/media/ImageViewerModal";
+import type { ChatVoiceNotePayload } from "../components/chat/ChatInput";
 import { LockChatModal } from "../components/chat/modals/LockChatModal";
+import { ForwardMessageModal } from "../components/chat/modals/ForwardMessageModal";
+import { StarredMessagesDrawer } from "../components/chat/modals/StarredMessagesDrawer";
 
 import { useChatStore } from "../store/chat.store";
 import { useAuthStore } from "../store/auth.store";
 import { useToastStore } from "../store/toast.store";
+import { useDirectMessageStore } from "../store/direct-message.store";
 import { socketService } from "../services/socket.service";
 import { communitiesApi } from "../api/communities.api";
 import { chatApi } from "../api/chat.api";
@@ -125,74 +129,172 @@ const getDefaultChannels = (circleId: string): Channel[] => [
   }
 ];
 
+const abbreviateDept = (dept?: string): string => {
+  if (!dept) return "Campus";
+  const map: Record<string, string> = {
+    "computer science": "CSE",
+    "computer science & engineering": "CSE",
+    "computer science and engineering": "CSE",
+    "information technology": "IT",
+    "electronics": "ECE",
+    "electronics and communication": "ECE",
+    "electronics & communication": "ECE",
+    "electrical": "EEE",
+    "electrical and electronics": "EEE",
+    "mechanical engineering": "MECH",
+    "mechanical": "MECH",
+    "civil engineering": "CIVIL",
+    "civil": "CIVIL",
+    "chemical engineering": "CHEM",
+    "data science": "DS",
+    "artificial intelligence": "AI",
+    "ai & ml": "AIML",
+    "mathematics": "MATH",
+    "physics": "PHY",
+    "mba": "MBA",
+    "management": "MBA"
+  };
+  const lower = dept.toLowerCase();
+  for (const key of Object.keys(map)) {
+    if (lower.includes(key)) return map[key];
+  }
+  // Fallback: acronym from first letters of words, max 4 chars
+  return dept
+    .split(/[\s&,]+/)
+    .filter(Boolean)
+    .map((w) => w[0]?.toUpperCase() || "")
+    .join("")
+    .slice(0, 4);
+};
+
 const mapBackendConversationToItem = (
   c: Conversation,
   currentUserId?: string
 ): ConversationItem => {
   const peerUser =
-    c.participants?.find((p) => p._id !== currentUserId) || c.participants?.[0];
+    c.participants?.find((p) => String(p?._id || p) !== String(currentUserId)) || c.participants?.[0];
+  const lastMsg = c.lastMessage;
+  const isMe = lastMsg ? (String(lastMsg.senderId) === String(currentUserId)) : false;
+  const peerName =
+    peerUser?.fullName ||
+    (peerUser as any)?.name ||
+    (peerUser as any)?.username ||
+    "Classmate";
+
   return {
     id: c._id,
     peer: {
-      id: peerUser?._id || "",
-      name: peerUser?.fullName || "Student",
+      id: peerUser?._id ? String(peerUser._id) : (typeof peerUser === "string" ? peerUser : ""),
+      name: peerName,
       roll: peerUser?.rollNumber || "Campus",
-      dept: (peerUser as any)?.department || "Computer Science",
+      dept: abbreviateDept((peerUser as any)?.department),
       isOnline: true,
       avatar: peerUser?.profilePicture
     },
-    lastMessage: c.lastMessage
+    lastMessage: lastMsg
       ? {
-          text: c.lastMessage.content || "Attachment",
-          senderId: c.lastMessage.senderId || "",
-          time: c.lastMessage.createdAt
-            ? new Date(c.lastMessage.createdAt).toLocaleTimeString([], {
+          text: lastMsg.content || "Attachment",
+          senderId: lastMsg.senderId ? String(lastMsg.senderId) : "",
+          time: lastMsg.createdAt
+            ? new Date(lastMsg.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit"
               })
             : "Recently",
-          isRead: true,
-          isDelivered: true
+          isRead: isMe ? ((lastMsg as any).read ?? true) : true,
+          isDelivered: isMe ? ((lastMsg as any).delivered ?? true) : true,
+          hasAttachment: !!(lastMsg as any).attachments?.length,
+          hasCodeSnippet: !!(lastMsg as any).codeSnippet
         }
       : null,
-    unreadCount: 0,
+    unreadCount: c.unreadCount ?? 0,
+    isPinned: c.isPinned ?? false,
+    isMuted: c.isMuted ?? false,
+    isArchived: c.isArchived ?? false,
     isLocked: (c as any).isLocked || false,
     lockedReason: (c as any).lockedReason || ""
   };
 };
 
-const mapBackendMessageToItem = (m: DirectMessage): DirectMessageItem => ({
-  id: m._id,
-  senderId: m.senderId?._id || (m as any).senderId || "",
-  senderName: m.senderId?.fullName || "Classmate",
-  content: m.content || "",
-  attachments: m.attachments?.map((a) => ({
-    name: a.originalName,
-    size: `${(a.size / (1024 * 1024)).toFixed(1)} MB`,
-    type: a.mimeType?.includes("pdf") ? "pdf" : "zip",
-    url: a.url
-  })),
-  replyTo: m.replyTo
-    ? {
-        senderName: m.replyTo.senderId?.fullName || "Classmate",
-        content: m.replyTo.content
-      }
-    : undefined,
-  isRead: m.read,
-  isDelivered: true,
-  time: m.createdAt
-    ? new Date(m.createdAt).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      })
-    : "",
-  createdAt: m.createdAt || new Date().toISOString(),
-  reactions: (m as any).reactions || [],
-  deletedFor: (m as any).deletedFor || [],
-  isDeletedForEveryone: (m as any).isDeletedForEveryone || false,
-  deletedBy: (m as any).deletedBy,
-  deletedAt: (m as any).deletedAt
-});
+
+const mapBackendMessageToItem = (m: DirectMessage): DirectMessageItem => {
+  const isAudio = m.messageType === "AUDIO";
+  const audioAttachment = isAudio ? m.attachments?.find((a) => a.mimeType?.startsWith("audio/")) : undefined;
+  const senderFullName =
+    (m.senderId && typeof m.senderId === "object" && (m.senderId as any).fullName) ||
+    (m as any).senderName ||
+    (m as any).senderId?.name ||
+    "Classmate";
+
+  return {
+    id: m._id,
+    senderId: m.senderId?._id || (m as any).senderId || "",
+    senderName: senderFullName,
+    content: m.content || "",
+    attachments: m.attachments
+      ?.filter((a) => !isAudio || !a.mimeType?.startsWith("audio/"))
+      .map((a) => ({
+        name: a.originalName,
+        size: `${(a.size / (1024 * 1024)).toFixed(1)} MB`,
+        sizeBytes: a.size,
+        type: a.mimeType?.includes("pdf")
+          ? "pdf"
+          : a.mimeType?.startsWith("image/")
+          ? "image"
+          : a.mimeType?.startsWith("audio/")
+          ? "audio"
+          : a.mimeType?.startsWith("video/")
+          ? "video"
+          : "zip",
+        mimeType: a.mimeType,
+        url: a.url,
+        thumbnailUrl: a.thumbnailUrl,
+        duration: a.duration,
+        waveform: a.waveform
+      })),
+    voiceNote: audioAttachment
+      ? {
+          duration: audioAttachment.duration ? `${Math.round(audioAttachment.duration)}s` : "0s",
+          durationSec: audioAttachment.duration,
+          url: audioAttachment.url,
+          waveform: audioAttachment.waveform
+        }
+      : undefined,
+    replyTo: m.replyTo
+      ? {
+          _id: (m.replyTo as any)._id || (m.replyTo as any).id,
+          senderName: m.replyTo.senderId?.fullName || "Classmate",
+          content: m.replyTo.content
+        }
+      : undefined,
+    isRead: m.read,
+    isDelivered: m.delivered !== undefined ? m.delivered : true,
+    status: m.status || (m.read ? "READ" : m.delivered ? "DELIVERED" : "SENT"),
+    clientMessageId: m.clientMessageId,
+    time: m.createdAt
+      ? new Date(m.createdAt).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit"
+        })
+      : "",
+    createdAt: m.createdAt || new Date().toISOString(),
+    reactions: (m as any).reactions || [],
+    deletedFor: (m as any).deletedFor || [],
+    isDeletedForEveryone: (m as any).isDeletedForEveryone || false,
+    deletedBy: (m as any).deletedBy,
+    deletedAt: (m as any).deletedAt,
+    isStarred: (m as any).isStarred || false,
+    starredBy: (m as any).starredBy || [],
+    isPinned: (m as any).isPinned || false,
+    pinnedAt: (m as any).pinnedAt,
+    pinnedBy: (m as any).pinnedBy,
+    isForwarded: (m as any).isForwarded || false,
+    forwardedFrom: (m as any).forwardedFrom,
+    edited: (m as any).edited || false,
+    editedAt: (m as any).editedAt
+  };
+};
+
 
 interface ChatPageProps {
   initialMode?: "circle" | "dms";
@@ -222,6 +324,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
   // ── Study Circles Workspace State ─────────────────────────────────────────
   const {
+    messages,
     activeChannel,
     setSelectedChannel,
     setChannels,
@@ -284,9 +387,20 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
   // ── Direct Messages Workspace State ─────────────────────────────
   const [dmConversations, setDmConversations] = useState<ConversationItem[]>([]);
   const [activeDmConvId, setActiveDmConvId] = useState<string | null>(convParam || null);
+  const activeDmConvIdRef = useRef<string | null>(activeDmConvId);
+  useEffect(() => {
+    activeDmConvIdRef.current = activeDmConvId;
+  }, [activeDmConvId]);
   const [dmMessagesMap, setDmMessagesMap] = useState<Record<string, DirectMessageItem[]>>({});
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [dmReplyTarget, setDmReplyTarget] = useState<{ senderName: string; content: string } | null>(null);
+
+  // Zustand Store bindings for Phase 1 Reliability
+  const drafts = useDirectMessageStore((state) => state.drafts);
+  const typingMap = useDirectMessageStore((state) => state.typingPeers);
+  const connectionStatus = useDirectMessageStore((state) => state.connectionStatus);
+  const setConnectionStatus = useDirectMessageStore((state) => state.setConnectionStatus);
+  const setTyping = useDirectMessageStore((state) => state.setTyping);
 
   // New Chat Modal state
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
@@ -319,6 +433,33 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
   const [favoriteConversations, setFavoriteConversations] = useState<Record<string, boolean>>({});
   const [lockedConversations, setLockedConversations] = useState<Record<string, boolean>>({});
   const [mutedConversations, setMutedConversations] = useState<Record<string, boolean>>({});
+
+  // Phase 2 Message Interactions State
+  const [dmEditingTarget, setDmEditingTarget] = useState<{ id: string; content: string } | null>(null);
+  const [circleEditingTarget, setCircleEditingTarget] = useState<{ id: string; content: string } | null>(null);
+  const [forwardModal, setForwardModal] = useState<{
+    isOpen: boolean;
+    messageIds: string[];
+    sourceText?: string;
+  } | null>(null);
+  const [isStarredDrawerOpen, setIsStarredDrawerOpen] = useState(false);
+  const [circleSelectionMode, setCircleSelectionMode] = useState(false);
+  const [selectedCircleMessageIds, setSelectedCircleMessageIds] = useState<string[]>([]);
+
+  // Phase 3 — Lightbox state (shared by DM + circle workspaces)
+  const [lightboxState, setLightboxState] = useState<{
+    isOpen: boolean;
+    images: LightboxImage[];
+    initialIndex: number;
+  }>({ isOpen: false, images: [], initialIndex: 0 });
+
+  const handleOpenLightbox = useCallback((images: LightboxImage[], initialIndex: number) => {
+    setLightboxState({ isOpen: true, images, initialIndex });
+  }, []);
+
+  const handleCloseLightbox = useCallback(() => {
+    setLightboxState((prev) => ({ ...prev, isOpen: false }));
+  }, []);
 
   // Modals for Study Circles
   const [isExploreCirclesOpen, setIsExploreCirclesOpen] = useState(false);
@@ -662,41 +803,49 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       }
     };
 
-    // Direct Messages Events
+    // Direct Messages Events & Reliability
     const handleDirectMessage = (data: any) => {
-      const incomingConvId = data.conversationId || activeDmConvId;
+      const msg = data?.message || data;
+      const incomingConvId = data?.conversationId || msg?.conversationId || activeDmConvIdRef.current;
       if (!incomingConvId) return;
 
-      const newMsg: DirectMessageItem = {
-        id: data._id || `dm-${Date.now()}`,
-        senderId: data.senderId?._id || data.senderId || "u-peer",
-        senderName: data.senderId?.fullName || data.senderName || "Classmate",
-        content: data.content || "",
-        attachments: data.attachments?.map((a: any) => ({
-          name: a.originalName || a.name || "Attachment",
-          size: typeof a.size === "number" ? `${(a.size / (1024 * 1024)).toFixed(1)} MB` : a.size || "1 MB",
-          type: a.mimeType?.includes("pdf") ? "pdf" : "zip",
-          url: a.url || "#"
-        })),
-        codeSnippet: data.codeSnippet,
-        isRead: false,
-        isDelivered: true,
-        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        createdAt: new Date().toISOString()
-      };
+      const newMsg = mapBackendMessageToItem(msg);
+      const activeConvId = activeDmConvIdRef.current;
+      const isCurrentlyActive = incomingConvId === activeConvId;
+
+      // Delivery receipt: acknowledge delivery if we received it and aren't sender
+      if (newMsg.senderId !== user?._id) {
+        socket.emit("dm:delivered", {
+          conversationId: incomingConvId,
+          messageId: newMsg.id,
+          senderId: newMsg.senderId
+        });
+      }
+
+      // Read receipt: acknowledge read if conversation is open and we aren't sender
+      if (isCurrentlyActive && newMsg.senderId !== user?._id) {
+        socket.emit("dm:read", {
+          conversationId: incomingConvId,
+          messageId: newMsg.id,
+          senderId: newMsg.senderId
+        });
+      }
 
       setDmMessagesMap((prev) => {
         const list = prev[incomingConvId] || [];
         const existingIdx = list.findIndex(
           (m) =>
             m.id === newMsg.id ||
-            (m.id.startsWith("dm-opt-") &&
-              m.senderId === newMsg.senderId &&
-              m.content === newMsg.content)
+            (newMsg.clientMessageId && m.clientMessageId === newMsg.clientMessageId) ||
+            (m.clientMessageId && m.clientMessageId === newMsg.id)
         );
         if (existingIdx !== -1) {
           const updated = [...list];
-          updated[existingIdx] = newMsg;
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            ...newMsg,
+            status: isCurrentlyActive && newMsg.senderId !== user?._id ? "READ" : newMsg.status
+          };
           return {
             ...prev,
             [incomingConvId]: updated
@@ -708,23 +857,130 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
         };
       });
 
+      setDmConversations((prev) => {
+        const exists = prev.find((c) => c.id === incomingConvId);
+        if (!exists) {
+          fetchDmData();
+          return prev;
+        }
+        const updatedConv: ConversationItem = {
+          ...exists,
+          lastMessage: {
+            text: newMsg.content || (newMsg.attachments?.length ? "Sent an attachment" : "New message"),
+            senderId: newMsg.senderId,
+            time: newMsg.time,
+            isRead: isCurrentlyActive || newMsg.isRead,
+            isDelivered: newMsg.isDelivered,
+            hasAttachment: !!(newMsg.attachments && newMsg.attachments.length > 0),
+            hasCodeSnippet: !!newMsg.codeSnippet
+          },
+          unreadCount: isCurrentlyActive ? 0 : (exists.unreadCount || 0) + 1
+        };
+        const others = prev.filter((c) => c.id !== incomingConvId);
+        return [updatedConv, ...others].sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          return 0;
+        });
+      });
+    };
+
+    const handleDmDelivered = (data: any) => {
+      const { conversationId, messageId, clientMessageId } = data || {};
+      if (!conversationId) return;
+
+      setDmMessagesMap((prev) => {
+        const list = prev[conversationId];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [conversationId]: list.map((m) => {
+            if (
+              (messageId && m.id === messageId) ||
+              (clientMessageId && m.clientMessageId === clientMessageId) ||
+              (!messageId && !clientMessageId)
+            ) {
+              return {
+                ...m,
+                isDelivered: true,
+                status: m.status === "READ" ? "READ" : "DELIVERED"
+              };
+            }
+            return m;
+          })
+        };
+      });
+
       setDmConversations((prev) =>
         prev.map((c) =>
-          c.id === incomingConvId
-            ? {
-                ...c,
-                lastMessage: {
-                  text: newMsg.content || "Sent an attachment",
-                  senderId: newMsg.senderId,
-                  time: newMsg.time,
-                  isRead: incomingConvId === activeDmConvId,
-                  isDelivered: true
-                },
-                unreadCount: incomingConvId === activeDmConvId ? 0 : c.unreadCount + 1
-              }
+          c.id === conversationId && c.lastMessage
+            ? { ...c, lastMessage: { ...c.lastMessage, isDelivered: true } }
             : c
         )
       );
+    };
+
+    const handleDmRead = (data: any) => {
+      const { conversationId, messageId } = data || {};
+      if (!conversationId) return;
+
+      setDmMessagesMap((prev) => {
+        const list = prev[conversationId];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [conversationId]: list.map((m) => {
+            if (!messageId || m.id === messageId) {
+              return {
+                ...m,
+                isRead: true,
+                isDelivered: true,
+                status: "READ"
+              };
+            }
+            return m;
+          })
+        };
+      });
+
+      setDmConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId && c.lastMessage
+            ? { ...c, lastMessage: { ...c.lastMessage, isRead: true } }
+            : c
+        )
+      );
+    };
+
+    const handleDmUserTyping = (data: any) => {
+      if (data?.conversationId) {
+        setTyping(data.conversationId, true);
+        if (data.conversationId === activeDmConvIdRef.current) {
+          setIsPeerTyping(true);
+        }
+      }
+    };
+
+    const handleDmUserStoppedTyping = (data: any) => {
+      if (data?.conversationId) {
+        setTyping(data.conversationId, false);
+        if (data.conversationId === activeDmConvIdRef.current) {
+          setIsPeerTyping(false);
+        }
+      }
+    };
+
+    const handleConnect = () => {
+      setConnectionStatus("connected");
+      if (activeDmConvIdRef.current) {
+        socket.emit("joinConversation", { conversationId: activeDmConvIdRef.current });
+      }
+    };
+    const handleDisconnect = () => {
+      setConnectionStatus("offline");
+    };
+    const handleConnectError = () => {
+      setConnectionStatus("connecting");
     };
 
     const handleTyping = () => setIsPeerTyping(true);
@@ -772,13 +1028,37 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
     const handleDmDeletedForMe = (data: any) => {
       if (!data?.conversationId || !data?.messageId) return;
+
+      let deletedWasLast = false;
+
       setDmMessagesMap((prev) => {
         const list = prev[data.conversationId];
         if (!list) return prev;
-        return {
-          ...prev,
-          [data.conversationId]: list.filter((m) => m.id !== data.messageId)
-        };
+        const filtered = list.filter((m) => m.id !== data.messageId);
+        // Check if the deleted message was the most recent one
+        const lastInList = list[list.length - 1];
+        if (lastInList?.id === data.messageId) {
+          deletedWasLast = true;
+          // After filtering, update sidebar with new last message
+          const newLast = filtered[filtered.length - 1];
+          setDmConversations((convPrev) =>
+            convPrev.map((c) => {
+              if (c.id !== data.conversationId) return c;
+              return {
+                ...c,
+                lastMessage: newLast
+                  ? {
+                      ...c.lastMessage!,
+                      text: newLast.content || (newLast.voiceNote ? "🎙️ Voice note" : "📎 Attachment"),
+                      time: newLast.time,
+                      senderId: newLast.senderId
+                    }
+                  : null
+              };
+            })
+          );
+        }
+        return { ...prev, [data.conversationId]: filtered };
       });
     };
 
@@ -797,6 +1077,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
     const handleDmMessagePurged = (data: any) => {
       if (!data?.conversationId || !data?.messageId) return;
+
       setDmMessagesMap((prev) => {
         const list = prev[data.conversationId];
         if (!list) return prev;
@@ -816,6 +1097,21 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
           )
         };
       });
+
+      // Also update the sidebar preview if this was the last message
+      setDmConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== data.conversationId) return c;
+          if (!c.lastMessage) return c;
+          return {
+            ...c,
+            lastMessage: {
+              ...c.lastMessage,
+              text: "🗑️ This message was deleted"
+            }
+          };
+        })
+      );
     };
 
     const handleChannelLockStateChanged = (data: any) => {
@@ -878,6 +1174,102 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       );
     };
 
+    const handleDmMessageEdited = (data: any) => {
+      const convId = data?.conversationId || (data?.message as any)?.conversationId;
+      const msgId = data?._id || data?.id;
+      const content = data?.content;
+      if (!msgId) return;
+      setDmMessagesMap((prev) => {
+        const next = { ...prev };
+        if (convId && next[convId]) {
+          next[convId] = next[convId].map((m) =>
+            m.id === msgId ? { ...m, content, edited: true, editedAt: data.editedAt || new Date().toISOString() } : m
+          );
+        } else {
+          for (const [cId, list] of Object.entries(next)) {
+            if (list.some((m) => m.id === msgId)) {
+              next[cId] = list.map((m) =>
+                m.id === msgId ? { ...m, content, edited: true, editedAt: data.editedAt || new Date().toISOString() } : m
+              );
+            }
+          }
+        }
+        return next;
+      });
+    };
+
+    const handleDmStarUpdated = (data: any) => {
+      if (!data?.messageId) return;
+      setDmMessagesMap((prev) => {
+        const next = { ...prev };
+        for (const [cId, list] of Object.entries(next)) {
+          if (list.some((m) => m.id === data.messageId)) {
+            next[cId] = list.map((m) =>
+              m.id === data.messageId ? { ...m, isStarred: data.isStarred } : m
+            );
+          }
+        }
+        return next;
+      });
+    };
+
+    const handleDmPinUpdated = (data: any) => {
+      if (!data?.messageId) return;
+      setDmMessagesMap((prev) => {
+        const next = { ...prev };
+        const convId = data.conversationId;
+        if (convId && next[convId]) {
+          next[convId] = next[convId].map((m) =>
+            m.id === data.messageId
+              ? { ...m, isPinned: data.isPinned, pinnedAt: data.pinnedAt, pinnedBy: data.pinnedBy }
+              : m
+          );
+        } else {
+          for (const [cId, list] of Object.entries(next)) {
+            if (list.some((m) => m.id === data.messageId)) {
+              next[cId] = list.map((m) =>
+                m.id === data.messageId
+                  ? { ...m, isPinned: data.isPinned, pinnedAt: data.pinnedAt, pinnedBy: data.pinnedBy }
+                  : m
+              );
+            }
+          }
+        }
+        return next;
+      });
+    };
+
+    const handleCircleMessageEdited = (data: any) => {
+      if (data?._id) {
+        updateMessage({
+          _id: data._id,
+          content: data.content,
+          edited: true,
+          editedAt: data.editedAt || new Date().toISOString()
+        } as any);
+      }
+    };
+
+    const handleCircleStarUpdated = (data: any) => {
+      if (data?.messageId) {
+        updateMessage({
+          _id: data.messageId,
+          isStarred: data.isStarred
+        } as any);
+      }
+    };
+
+    const handleCirclePinUpdated = (data: any) => {
+      if (data?.messageId) {
+        updateMessage({
+          _id: data.messageId,
+          isPinned: data.isPinned,
+          pinnedAt: data.pinnedAt,
+          pinnedBy: data.pinnedBy
+        } as any);
+      }
+    };
+
     // Attach listeners
     socket.on("chat:messageReceived", handleMessageReceived);
     socket.on("messageCreated", handleMessageReceived);
@@ -897,7 +1289,18 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     socket.on("voice:peerMuted", handleVoicePeerMuted);
     socket.on("voice:peerScreenshare", handleVoicePeerScreenshare);
 
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
+
     socket.on("directMessageReceived", handleDirectMessage);
+    socket.on("directMessageCreated", handleDirectMessage);
+    socket.on("dm:messageReceived", handleDirectMessage);
+    socket.on("dm:messageDelivered", handleDmDelivered);
+    socket.on("dm:messageRead", handleDmRead);
+    socket.on("messageRead", handleDmRead);
+    socket.on("dm:userTyping", handleDmUserTyping);
+    socket.on("dm:userStoppedTyping", handleDmUserStoppedTyping);
     socket.on("typing", handleTyping);
     socket.on("stopTyping", handleStopTyping);
 
@@ -910,7 +1313,22 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     socket.on("channel:lockStateChanged", handleChannelLockStateChanged);
     socket.on("dm:lockStateChanged", handleDmLockStateChanged);
 
+    socket.on("dm:messageEdited", handleDmMessageEdited);
+    socket.on("directMessageUpdated", handleDmMessageEdited);
+    socket.on("dm:starUpdated", handleDmStarUpdated);
+    socket.on("dm:pinUpdated", handleDmPinUpdated);
+    socket.on("dm:messagePinned", handleDmPinUpdated);
+
+    socket.on("chat:messageEdited", handleCircleMessageEdited);
+    socket.on("messageUpdated", handleCircleMessageEdited);
+    socket.on("chat:starUpdated", handleCircleStarUpdated);
+    socket.on("chat:pinUpdated", handleCirclePinUpdated);
+
     return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleConnectError);
+
       socket.off("chat:messageReceived", handleMessageReceived);
       socket.off("messageCreated", handleMessageReceived);
       socket.off("newMessage", handleMessageReceived);
@@ -930,6 +1348,13 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       socket.off("voice:peerScreenshare", handleVoicePeerScreenshare);
 
       socket.off("directMessageReceived", handleDirectMessage);
+      socket.off("directMessageCreated", handleDirectMessage);
+      socket.off("dm:messageReceived", handleDirectMessage);
+      socket.off("dm:messageDelivered", handleDmDelivered);
+      socket.off("dm:messageRead", handleDmRead);
+      socket.off("messageRead", handleDmRead);
+      socket.off("dm:userTyping", handleDmUserTyping);
+      socket.off("dm:userStoppedTyping", handleDmUserStoppedTyping);
       socket.off("typing", handleTyping);
       socket.off("stopTyping", handleStopTyping);
 
@@ -941,6 +1366,17 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       socket.off("dm:messagePurged", handleDmMessagePurged);
       socket.off("channel:lockStateChanged", handleChannelLockStateChanged);
       socket.off("dm:lockStateChanged", handleDmLockStateChanged);
+
+      socket.off("dm:messageEdited", handleDmMessageEdited);
+      socket.off("directMessageUpdated", handleDmMessageEdited);
+      socket.off("dm:starUpdated", handleDmStarUpdated);
+      socket.off("dm:pinUpdated", handleDmPinUpdated);
+      socket.off("dm:messagePinned", handleDmPinUpdated);
+
+      socket.off("chat:messageEdited", handleCircleMessageEdited);
+      socket.off("messageUpdated", handleCircleMessageEdited);
+      socket.off("chat:starUpdated", handleCircleStarUpdated);
+      socket.off("chat:pinUpdated", handleCirclePinUpdated);
     };
   }, [
     activeDmConvId,
@@ -978,7 +1414,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     codeSnippet?: { language: string; code: string; title?: string },
     files?: File[],
     _poll?: any,
-    _voiceNote?: any,
+    voiceNote?: ChatVoiceNotePayload,
     intent?: "chat" | "question" | "solution" | "code"
   ) => {
     if (!activeCircle || !activeChannel) return;
@@ -1000,6 +1436,11 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       }
     }
 
+    // Collect all files to upload (regular attachments + voice note file)
+    const allFiles: File[] = [];
+    if (files && files.length > 0) allFiles.push(...files);
+    if (voiceNote?.file) allFiles.push(voiceNote.file);
+
     // 1. Optimistic Message in UI
     const optimisticMsg: ChatMessage = {
       _id: tempId,
@@ -1013,9 +1454,9 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
         rollNumber: user?.rollNumber
       } as any,
       content: content || "",
-      messageType: files && files.length > 0 ? "DOCUMENT" : "TEXT",
+      messageType: voiceNote?.file ? "AUDIO" : allFiles.length > 0 ? "DOCUMENT" : "TEXT",
       attachments:
-        files?.map((f) => ({
+        allFiles.map((f) => ({
           key: f.name,
           url: "#",
           originalName: f.name,
@@ -1031,13 +1472,14 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     };
     addMessage(optimisticMsg);
 
-    // 2. Attachments handling via multipart upload
-    if (files && files.length > 0) {
+    // 2. Attachments / voice note upload via multipart
+    if (allFiles.length > 0) {
       try {
         const uploaded = await chatApi.create(activeCircle.id, {
           content: content || "",
           channelId: chanId,
-          attachments: files
+          attachments: allFiles,
+          ...(voiceNote ? { duration: voiceNote.durationSec, waveform: voiceNote.waveform } : {})
         });
         if (uploaded) {
           useChatStore.getState().setMessages(
@@ -1052,6 +1494,7 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       }
       return;
     }
+
 
     // 3. Socket dispatch with fallback to HTTP REST
     const payload = {
@@ -1105,6 +1548,15 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     setDmConversations((prev) =>
       prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
     );
+    directMessagesApi.markAsRead(convId).catch(() => {});
+    const socket = socketService.get();
+    const conv = dmConversations.find((c) => c.id === convId);
+    if (socket && conv?.peer?.id) {
+      socket.emit("dm:read", {
+        conversationId: convId,
+        senderId: conv.peer.id
+      });
+    }
   };
 
   const handleStartNewDm = async (
@@ -1151,30 +1603,50 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     content: string,
     codeSnippet?: { language: string; code: string },
     files?: File[],
-    voiceNote?: { duration: string; url?: string }
+    voiceNote?: DMVoiceNotePayload
   ) => {
     if (!activeDmConvId) return;
 
     const student = user?.fullName || "Student";
     const studentId = user?._id || "u-me";
 
-    const tempId = `dm-opt-${Date.now()}`;
+    // Collect all files: regular attachments + voice note file
+    const allFiles: File[] = [];
+    if (files && files.length > 0) allFiles.push(...files);
+    if (voiceNote?.file) allFiles.push(voiceNote.file);
+
+    const clientMessageId = `cmsg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const newMsg: DirectMessageItem = {
-      id: tempId,
+      id: clientMessageId,
+      clientMessageId,
       senderId: studentId,
       senderName: student,
       content,
       codeSnippet,
-      voiceNote,
+      voiceNote: voiceNote
+        ? {
+            duration: voiceNote.duration,
+            durationSec: voiceNote.durationSec,
+            waveform: voiceNote.waveform,
+            url: voiceNote.url
+          }
+        : undefined,
       attachments: files?.map((f) => ({
         name: f.name,
         size: `${(f.size / (1024 * 1024)).toFixed(1)} MB`,
-        type: f.name.endsWith(".pdf") ? "pdf" : "zip",
+        sizeBytes: f.size,
+        type: f.type.startsWith("image/")
+          ? "image"
+          : f.name.endsWith(".pdf")
+          ? "pdf"
+          : "zip",
+        mimeType: f.type,
         url: "#"
       })),
       replyTo: dmReplyTarget || undefined,
       isRead: false,
-      isDelivered: true,
+      isDelivered: false,
+      status: "SENDING",
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       createdAt: new Date().toISOString()
     };
@@ -1184,29 +1656,36 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       [activeDmConvId]: [...(prev[activeDmConvId] || []), newMsg]
     }));
 
-    setDmConversations((prev) =>
-      prev.map((c) =>
-        c.id === activeDmConvId
-          ? {
-              ...c,
-              lastMessage: {
-                text: content || (voiceNote ? "🎙️ Voice Note" : "Sent an attachment"),
-                senderId: studentId,
-                time: newMsg.time,
-                isRead: true,
-                isDelivered: true,
-                hasAttachment: !!(files && files.length > 0),
-                hasCodeSnippet: !!codeSnippet
-              }
-            }
-          : c
-      )
-    );
+    setDmConversations((prev) => {
+      const conv = prev.find((c) => c.id === activeDmConvId);
+      if (!conv) return prev;
+      const updatedConv = {
+        ...conv,
+        lastMessage: {
+          text: content || (voiceNote ? "🎙️ Voice Note" : "Sent an attachment"),
+          senderId: studentId,
+          time: newMsg.time,
+          isRead: true,
+          isDelivered: false,
+          hasAttachment: !!(allFiles.length > 0),
+          hasCodeSnippet: !!codeSnippet
+        }
+      };
+      const others = prev.filter((c) => c.id !== activeDmConvId);
+      return [updatedConv, ...others].sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return 0;
+      });
+    });
 
     try {
       const sent = await directMessagesApi.sendMessage(activeDmConvId, {
         content,
-        attachments: files
+        clientMessageId,
+        attachments: allFiles.length > 0 ? allFiles : undefined,
+        duration: voiceNote?.durationSec,
+        waveform: voiceNote?.waveform
       });
 
       if (sent) {
@@ -1214,17 +1693,143 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
         setDmMessagesMap((prev) => ({
           ...prev,
           [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
-            m.id === tempId ? mappedSent : m
+            m.id === clientMessageId || (m.clientMessageId && m.clientMessageId === clientMessageId)
+              ? mappedSent
+              : m
           )
         }));
+        setDmConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeDmConvId && c.lastMessage
+              ? { ...c, lastMessage: { ...c.lastMessage, isDelivered: mappedSent.isDelivered } }
+              : c
+          )
+        );
       }
     } catch (err: any) {
       console.warn("Could not persist message to backend API:", err?.message || err);
       addToast(err?.response?.data?.message || "Failed to send message", "error");
       setDmMessagesMap((prev) => ({
         ...prev,
-        [activeDmConvId]: (prev[activeDmConvId] || []).filter((m) => m.id !== tempId)
+        [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
+          m.id === clientMessageId || (m.clientMessageId && m.clientMessageId === clientMessageId)
+            ? { ...m, status: "FAILED" }
+            : m
+        )
       }));
+    }
+  };
+
+
+  const handleRetryDirectMessage = async (failedMsg: DirectMessageItem) => {
+    if (!activeDmConvId) return;
+
+    setDmMessagesMap((prev) => ({
+      ...prev,
+      [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
+        m.id === failedMsg.id ? { ...m, status: "SENDING" } : m
+      )
+    }));
+
+    try {
+      const sent = await directMessagesApi.sendMessage(activeDmConvId, {
+        content: failedMsg.content,
+        clientMessageId: failedMsg.clientMessageId || failedMsg.id
+      });
+
+      if (sent) {
+        const mappedSent = mapBackendMessageToItem(sent);
+        setDmMessagesMap((prev) => ({
+          ...prev,
+          [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
+            m.id === failedMsg.id || (failedMsg.clientMessageId && m.clientMessageId === failedMsg.clientMessageId)
+              ? mappedSent
+              : m
+          )
+        }));
+      }
+    } catch (err: any) {
+      addToast(err?.response?.data?.message || "Retry failed. Please check connection.", "error");
+      setDmMessagesMap((prev) => ({
+        ...prev,
+        [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
+          m.id === failedMsg.id ? { ...m, status: "FAILED" } : m
+        )
+      }));
+    }
+  };
+
+  const handleTogglePin = async (convId: string) => {
+    try {
+      const res = await directMessagesApi.togglePin(convId);
+      setDmConversations((prev) => {
+        const updated = prev.map((c) =>
+          c.id === convId ? { ...c, isPinned: res.isPinned } : c
+        );
+        return updated.sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          return 0;
+        });
+      });
+      addToast(res.isPinned ? "Pinned conversation" : "Unpinned conversation", "info");
+    } catch (err) {
+      addToast("Failed to pin conversation", "error");
+    }
+  };
+
+  const handleToggleMute = async (convId: string) => {
+    try {
+      const res = await directMessagesApi.toggleMute(convId);
+      setDmConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, isMuted: res.isMuted } : c))
+      );
+      addToast(res.isMuted ? "Muted conversation" : "Unmuted conversation", "info");
+    } catch (err) {
+      addToast("Failed to mute conversation", "error");
+    }
+  };
+
+  const handleToggleArchive = async (convId: string) => {
+    try {
+      const res = await directMessagesApi.toggleArchive(convId);
+      setDmConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, isArchived: res.isArchived } : c))
+      );
+      addToast(res.isArchived ? "Archived conversation" : "Unarchived conversation", "info");
+    } catch (err) {
+      addToast("Failed to archive conversation", "error");
+    }
+  };
+
+  const handleMarkAsRead = async (convId: string) => {
+    try {
+      await directMessagesApi.markAsRead(convId);
+      setDmConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
+      );
+      const conv = dmConversations.find((c) => c.id === convId);
+      const socket = socketService.get();
+      if (socket && conv?.peer?.id) {
+        socket.emit("dm:read", {
+          conversationId: convId,
+          senderId: conv.peer.id
+        });
+      }
+    } catch (err) {
+      addToast("Failed to mark as read", "error");
+    }
+  };
+
+  const handleMarkAsUnread = async (convId: string) => {
+    try {
+      await directMessagesApi.markAsUnread(convId);
+      setDmConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, unreadCount: Math.max(c.unreadCount, 1) } : c))
+      );
+      addToast("Marked as unread", "info");
+    } catch (err) {
+      addToast("Failed to mark as unread", "error");
     }
   };
 
@@ -1292,12 +1897,40 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
   );
 
   const handleDmDeleteForMe = useCallback(
-    (messageId: string) => {
+    async (messageId: string) => {
       if (!activeDmConvId) return;
-      setDmMessagesMap((prev) => ({
-        ...prev,
-        [activeDmConvId]: (prev[activeDmConvId] || []).filter((m) => m.id !== messageId)
-      }));
+
+      setDmMessagesMap((prev) => {
+        const list = prev[activeDmConvId] || [];
+        const filtered = list.filter((m) => m.id !== messageId);
+
+        // Update sidebar last message preview if deleted message was the last one
+        const lastInList = list[list.length - 1];
+        if (lastInList?.id === messageId) {
+          const newLast = filtered[filtered.length - 1];
+          setDmConversations((convPrev) =>
+            convPrev.map((c) => {
+              if (c.id !== activeDmConvId) return c;
+              return {
+                ...c,
+                lastMessage: newLast
+                  ? {
+                      ...c.lastMessage!,
+                      text: newLast.isDeletedForEveryone
+                        ? "🗑️ This message was deleted"
+                        : newLast.content || (newLast.voiceNote ? "🎙️ Voice note" : "📎 Attachment"),
+                      time: newLast.time,
+                      senderId: newLast.senderId
+                    }
+                  : null
+              };
+            })
+          );
+        }
+
+        return { ...prev, [activeDmConvId]: filtered };
+      });
+
       const socket = socketService.get();
       if (socket) {
         socket.emit("dm:deleteForMe", {
@@ -1305,19 +1938,65 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
           conversationId: activeDmConvId
         });
       }
+
+      try {
+        await directMessagesApi.deleteForMe(messageId);
+      } catch (err) {
+        console.warn("Delete for me API fallback error:", err);
+      }
     },
     [activeDmConvId]
   );
 
   const handleDmDeleteForEveryone = useCallback(
-    (messageId: string) => {
+    async (messageId: string) => {
       if (!activeDmConvId) return;
+
+      // Optimistically update message in dmMessagesMap
+      setDmMessagesMap((prev) => {
+        const list = prev[activeDmConvId] || [];
+        return {
+          ...prev,
+          [activeDmConvId]: list.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  isDeletedForEveryone: true,
+                  content: "",
+                  attachments: [],
+                  deletedAt: new Date().toISOString()
+                }
+              : m
+          )
+        };
+      });
+
+      // Optimistically update sidebar preview
+      setDmConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== activeDmConvId || !c.lastMessage) return c;
+          return {
+            ...c,
+            lastMessage: {
+              ...c.lastMessage,
+              text: "🗑️ This message was deleted"
+            }
+          };
+        })
+      );
+
       const socket = socketService.get();
       if (socket) {
         socket.emit("dm:deleteForEveryone", {
           messageId,
           conversationId: activeDmConvId
         });
+      }
+
+      try {
+        await directMessagesApi.deleteForEveryone(messageId);
+      } catch (err) {
+        console.warn("Delete for everyone API fallback error:", err);
       }
     },
     [activeDmConvId]
@@ -1361,6 +2040,171 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     });
   };
 
+  // Phase 2 Interaction Handlers (Edit, Star, Forward, Pin)
+  const handleSaveDmEdit = async (messageId: string, content: string) => {
+    try {
+      await directMessagesApi.editMessage(messageId, content);
+      if (activeDmConvId) {
+        setDmMessagesMap((prev) => ({
+          ...prev,
+          [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
+            m.id === messageId ? { ...m, content, edited: true, editedAt: new Date().toISOString() } : m
+          )
+        }));
+      }
+      setDmEditingTarget(null);
+      addToast("Message edited", "success");
+    } catch (err) {
+      addToast("Failed to edit message", "error");
+    }
+  };
+
+  const handleSaveCircleEdit = async (messageId: string, content: string) => {
+    if (!activeCircle) return;
+    try {
+      await chatApi.editMessage(activeCircle.id, messageId, content);
+      updateMessage({
+        _id: messageId,
+        content,
+        edited: true,
+        editedAt: new Date().toISOString()
+      } as any);
+      setCircleEditingTarget(null);
+      addToast("Message edited", "success");
+    } catch (err) {
+      addToast("Failed to edit message", "error");
+    }
+  };
+
+  const handleToggleStarDm = async (messageId: string, isStarred: boolean) => {
+    try {
+      await directMessagesApi.toggleStar(messageId);
+      if (activeDmConvId) {
+        setDmMessagesMap((prev) => ({
+          ...prev,
+          [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
+            m.id === messageId ? { ...m, isStarred } : m
+          )
+        }));
+      }
+      addToast(isStarred ? "Message starred" : "Message unstarred", "info");
+    } catch (err) {
+      addToast("Failed to update star", "error");
+    }
+  };
+
+  const handleToggleStarCircle = async (messageId: string, isStarred: boolean) => {
+    if (!activeCircle) return;
+    try {
+      await chatApi.toggleStar(activeCircle.id, messageId);
+      updateMessage({
+        _id: messageId,
+        isStarred
+      } as any);
+      addToast(isStarred ? "Message starred" : "Message unstarred", "info");
+    } catch (err) {
+      addToast("Failed to update star", "error");
+    }
+  };
+
+  const handleBulkStarDms = async () => {
+    if (!activeDmConvId || selectedDmMessageIds.length === 0) return;
+    try {
+      await directMessagesApi.bulkStar(activeDmConvId, selectedDmMessageIds, true);
+      setDmMessagesMap((prev) => ({
+        ...prev,
+        [activeDmConvId]: (prev[activeDmConvId] || []).map((m) =>
+          selectedDmMessageIds.includes(m.id) ? { ...m, isStarred: true } : m
+        )
+      }));
+      addToast(`${selectedDmMessageIds.length} message(s) starred`, "success");
+      setSelectedDmMessageIds([]);
+      setIsDmSelectionMode(false);
+    } catch (err) {
+      addToast("Failed to star messages", "error");
+    }
+  };
+
+  const handleBulkForwardDms = () => {
+    if (!activeDmConvId || selectedDmMessageIds.length === 0) return;
+    const msgs = dmMessagesMap[activeDmConvId] || [];
+    const selected = msgs.filter((m) => selectedDmMessageIds.includes(m.id));
+    const preview = selected.map((m) => m.content).filter(Boolean).join("\n\n");
+    setForwardModal({
+      isOpen: true,
+      messageIds: selectedDmMessageIds,
+      sourceText: preview
+    });
+    setIsDmSelectionMode(false);
+    setSelectedDmMessageIds([]);
+  };
+
+  const handleForwardDMs = async (targetConversationIds: string[]) => {
+    if (!forwardModal) return;
+    try {
+      await directMessagesApi.forwardMessages(activeDmConvId || "", forwardModal.messageIds, targetConversationIds);
+      addToast("Message forwarded successfully", "success");
+      setForwardModal(null);
+    } catch (err) {
+      addToast("Failed to forward message", "error");
+    }
+  };
+
+  const handleForwardCircles = async (targetCommunityId: string, channelId?: string) => {
+    if (!forwardModal || !activeCircle) return;
+    try {
+      await chatApi.forward(activeCircle.id, {
+        messageIds: forwardModal.messageIds,
+        targetCommunityId,
+        targetChannelId: channelId
+      });
+      addToast("Message forwarded to study circle", "success");
+      setForwardModal(null);
+    } catch (err) {
+      addToast("Failed to forward message", "error");
+    }
+  };
+
+  const messagesToForward = useMemo(() => {
+    if (!forwardModal) return [];
+    if (viewMode === "circle") {
+      return messages.filter((m) => forwardModal.messageIds.includes(m._id));
+    }
+    const dms = activeDmConvId ? (dmMessagesMap[activeDmConvId] || []) : [];
+    return dms
+      .filter((m) => forwardModal.messageIds.includes(m.id))
+      .map((m) => ({
+        _id: m.id,
+        content: m.content,
+        senderId: { fullName: m.senderName },
+        createdAt: m.createdAt
+      })) as any[];
+  }, [forwardModal, viewMode, messages, activeDmConvId, dmMessagesMap]);
+
+  const currentStarredMessages = useMemo(() => {
+    if (viewMode === "circle") {
+      return messages.filter((m) => m.isStarred);
+    }
+    const dms = activeDmConvId ? (dmMessagesMap[activeDmConvId] || []) : [];
+    return dms
+      .filter((m) => m.isStarred)
+      .map((m) => ({
+        _id: m.id,
+        content: m.content,
+        senderId: { fullName: m.senderName },
+        createdAt: m.createdAt,
+        isStarred: true
+      })) as any[];
+  }, [viewMode, messages, activeDmConvId, dmMessagesMap]);
+
+  const handleUnstarMessageFromDrawer = async (messageId: string) => {
+    if (viewMode === "circle") {
+      await handleToggleStarCircle(messageId, false);
+    } else {
+      await handleToggleStarDm(messageId, false);
+    }
+  };
+
   // Selection mode handlers
   const handleToggleSelectDmMessage = (msgId: string) => {
     setSelectedDmMessageIds((prev) =>
@@ -1368,18 +2212,23 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     );
   };
 
-  const handleDeleteSelectedDmMessages = () => {
-    if (!activeDmConvId) return;
+  const handleDeleteSelectedDmMessages = async () => {
+    if (!activeDmConvId || selectedDmMessageIds.length === 0) return;
     const count = selectedDmMessageIds.length;
-    setDmMessagesMap((prev) => ({
-      ...prev,
-      [activeDmConvId]: (prev[activeDmConvId] || []).filter(
-        (m) => !selectedDmMessageIds.includes(m.id)
-      )
-    }));
-    addToast(`${count} message${count > 1 ? "s" : ""} deleted`, "info");
-    setSelectedDmMessageIds([]);
-    setIsDmSelectionMode(false);
+    try {
+      await directMessagesApi.bulkDeleteForMe(activeDmConvId, selectedDmMessageIds);
+      setDmMessagesMap((prev) => ({
+        ...prev,
+        [activeDmConvId]: (prev[activeDmConvId] || []).filter(
+          (m) => !selectedDmMessageIds.includes(m.id)
+        )
+      }));
+      addToast(`${count} message${count > 1 ? "s" : ""} deleted for you`, "info");
+      setSelectedDmMessageIds([]);
+      setIsDmSelectionMode(false);
+    } catch (err) {
+      addToast("Failed to delete messages", "error");
+    }
   };
 
   const handleCancelDmSelection = () => {
@@ -1607,6 +2456,14 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                 onDeleteForMe={handleCircleDeleteForMe}
                 onDeleteForEveryone={handleCircleDeleteForEveryone}
                 onOpenLockModal={() => setIsLockModalOpen(true)}
+                onOpenStarredMessages={() => setIsStarredDrawerOpen(true)}
+                onEditMessage={(m) => setCircleEditingTarget({ id: m._id, content: m.content || "" })}
+                onForwardMessage={(m) => setForwardModal({ isOpen: true, messageIds: [m._id], sourceText: m.content || "" })}
+                onToggleStar={handleToggleStarCircle}
+                editingTarget={circleEditingTarget}
+                onCancelEdit={() => setCircleEditingTarget(null)}
+                onSaveEdit={handleSaveCircleEdit}
+                onOpenLightbox={handleOpenLightbox}
               />
 
               {/* Pane 3: Inspector Drawer (Threads, Shared Vault, Roster & Presence) */}
@@ -1649,13 +2506,22 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
           /* ── Direct Messages Workspace (Discord Architecture) ── */
           <>
             {/* Pane 1: Direct Messages Sidebar */}
-            <DMSidebar
-              conversations={dmConversations}
-              activeConversationId={activeDmConvId}
-              onSelectConversation={(convId) => handleSelectDmConversation(convId)}
-              onOpenNewChat={() => setIsNewChatModalOpen(true)}
-              currentUser={user}
-            />
+            <div className="w-80 md:w-96 flex-shrink-0 h-full border-r border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0c1424]/80 backdrop-blur-xl flex flex-col overflow-hidden">
+              <ConversationList
+                conversations={dmConversations}
+                activeConversationId={activeDmConvId}
+                onSelectConversation={(convId) => handleSelectDmConversation(convId)}
+                currentUser={user}
+                onStartNewChat={(peerId, customPeer) => handleStartNewDm(peerId, customPeer)}
+                onTogglePin={handleTogglePin}
+                onToggleMute={handleToggleMute}
+                onToggleArchive={handleToggleArchive}
+                onMarkAsRead={handleMarkAsRead}
+                onMarkAsUnread={handleMarkAsUnread}
+                drafts={drafts}
+                typingMap={typingMap}
+              />
+            </div>
 
             {/* Pane 2 & 3: 1-on-1 Conversation OR Direct Messages Welcome State */}
             {activeDmConversation ? (
@@ -1704,7 +2570,30 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     }}
                     onDisappearingMessages={(_timer) => {}}
                     onScheduleCall={(_details) => {}}
+                    onOpenStarredMessages={() => setIsStarredDrawerOpen(true)}
                   />
+
+                  {/* Offline / Reconnecting Status Banner */}
+                  {connectionStatus !== "connected" && (
+                    <div
+                      className={`px-4 py-1 text-xs font-semibold flex items-center justify-center gap-2 select-none shrink-0 ${
+                        connectionStatus === "connecting"
+                          ? "bg-amber-500/20 text-amber-300 border-b border-amber-500/30"
+                          : "bg-rose-500/20 text-rose-300 border-b border-rose-500/30"
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          connectionStatus === "connecting" ? "bg-amber-400 animate-ping" : "bg-rose-400"
+                        }`}
+                      />
+                      <span>
+                        {connectionStatus === "connecting"
+                          ? "Reconnecting to chat server..."
+                          : "You are currently offline. Messages will be sent when reconnected."}
+                      </span>
+                    </div>
+                  )}
 
                   {/* In-Chat Search Bar */}
                   <AnimatePresence>
@@ -1759,24 +2648,40 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     onReact={handleDmReact}
                     onDeleteForMe={handleDmDeleteForMe}
                     onDeleteForEveryone={handleDmDeleteForEveryone}
+                    onRetry={handleRetryDirectMessage}
                     searchQuery={chatSearchQuery}
                     pinnedMessage={pinnedMessagesMap[activeDmConvId || ""] ?? pinnedMessagesMap.default}
                     onPinMessage={handlePinDmMessage}
                     onUnpinMessage={handleUnpinDmMessage}
+                    onEdit={(msg) => setDmEditingTarget({ id: msg.id, content: msg.content })}
+                    onForward={(msg) => setForwardModal({ isOpen: true, messageIds: [msg.id], sourceText: msg.content })}
+                    onToggleStar={handleToggleStarDm}
+                    onStartSelectionMode={(initialId) => {
+                      setIsDmSelectionMode(true);
+                      if (initialId) setSelectedDmMessageIds([initialId]);
+                    }}
                     isSelectionMode={isDmSelectionMode}
                     selectedMessageIds={selectedDmMessageIds}
                     onToggleSelectMessage={handleToggleSelectDmMessage}
                     onDeleteSelected={handleDeleteSelectedDmMessages}
+                    onForwardSelected={handleBulkForwardDms}
+                    onStarSelected={handleBulkStarDms}
                     onCancelSelection={handleCancelDmSelection}
+                    onOpenLightbox={handleOpenLightbox}
                   />
 
                   {/* Input Dock */}
                   <DirectMessageInput
+                    conversationId={activeDmConvId || undefined}
                     peerName={activeDmConversation.peer.name}
                     onSendMessage={handleSendDirectMessage}
                     onTyping={(isTyping) => {
                       const socket = socketService.get();
                       if (socket && activeDmConversation) {
+                        socket.emit(isTyping ? "dm:typing" : "dm:stopTyping", {
+                          conversationId: activeDmConvId,
+                          recipientId: activeDmConversation.peer.id
+                        });
                         socket.emit(isTyping ? "typing" : "stopTyping", {
                           conversationId: activeDmConvId,
                           receiverId: activeDmConversation.peer.id
@@ -1786,6 +2691,9 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
                     isPeerTyping={isPeerTyping}
                     replyTarget={dmReplyTarget}
                     onCancelReply={() => setDmReplyTarget(null)}
+                    editingTarget={dmEditingTarget}
+                    onCancelEdit={() => setDmEditingTarget(null)}
+                    onSaveEdit={handleSaveDmEdit}
                     isLocked={!!lockedConversations[activeDmConvId || ""]}
                     lockedReason={
                       dmConversations.find((c) => c.id === activeDmConvId)?.lockedReason ||
@@ -2531,6 +3439,44 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
             handleToggleDmLock(locked, reason);
           }
         }}
+      />
+
+      {/* ── Forward Message Modal ── */}
+      {forwardModal && (
+        <ForwardMessageModal
+          isOpen={forwardModal.isOpen}
+          onClose={() => setForwardModal(null)}
+          messagesToForward={messagesToForward}
+          onForwardDMs={handleForwardDMs}
+          onForwardCircles={handleForwardCircles}
+        />
+      )}
+
+      {/* ── Starred Messages Slide-Over Drawer ── */}
+      <StarredMessagesDrawer
+        isOpen={isStarredDrawerOpen}
+        onClose={() => setIsStarredDrawerOpen(false)}
+        starredMessages={currentStarredMessages}
+        onJumpToMessage={(messageId) => {
+          setIsStarredDrawerOpen(false);
+          const el = document.getElementById(`msg-${messageId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.classList.add("ring-2", "ring-[#1E90FF]", "ring-offset-2", "animate-pulse");
+            setTimeout(() => {
+              el.classList.remove("ring-2", "ring-[#1E90FF]", "ring-offset-2", "animate-pulse");
+            }, 2500);
+          }
+        }}
+        onUnstarMessage={handleUnstarMessageFromDrawer}
+      />
+
+      {/* ── Phase 3: Image Lightbox (shared by DM + Circle workspaces) ── */}
+      <ImageViewerModal
+        isOpen={lightboxState.isOpen}
+        images={lightboxState.images}
+        initialIndex={lightboxState.initialIndex}
+        onClose={handleCloseLightbox}
       />
     </div>
   );

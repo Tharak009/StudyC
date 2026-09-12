@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
@@ -14,11 +14,22 @@ import {
   Play,
   Pause,
   Mic,
-  Plus
+  Plus,
+  Clock,
+  AlertCircle,
+  RotateCw,
+  Star,
+  CornerUpRight,
+  Edit2,
+  Forward
 } from "lucide-react";
 import type { User } from "../../types/auth";
 import { EmojiPickerPopover, CAMPUS_STICKERS } from "../chat/EmojiPickerPopover";
 import { DeleteMessageModal } from "../chat/modals/DeleteMessageModal";
+import { MessageContextMenu } from "../chat/MessageContextMenu";
+import { ImageGallery } from "../chat/media/ImageGallery";
+import { VoiceMessagePlayer } from "../chat/media/VoiceMessagePlayer";
+import { FileDocumentCard } from "../chat/media/FileDocumentCard";
 
 export interface DMStreamItemData {
   id: string;
@@ -28,10 +39,19 @@ export interface DMStreamItemData {
   attachments?: Array<{
     name: string;
     size: string;
+    sizeBytes?: number;
     type: string;
+    mimeType?: string;
     url: string;
+    thumbnailUrl?: string;
+    width?: number;
+    height?: number;
+    duration?: number;
+    waveform?: number[];
   }>;
   replyTo?: {
+    _id?: string;
+    id?: string;
     senderName: string;
     content: string;
   };
@@ -41,7 +61,9 @@ export interface DMStreamItemData {
   };
   voiceNote?: {
     duration: string;
+    durationSec?: number;
     url?: string;
+    waveform?: number[];
   };
   reactions?: any; // Record<string, string[]> or Array<{ emoji, count, users, category }>
   deletedFor?: string[];
@@ -50,8 +72,19 @@ export interface DMStreamItemData {
   deletedAt?: string;
   isRead: boolean;
   isDelivered?: boolean;
+  status?: "SENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED";
+  clientMessageId?: string;
   time: string;
   createdAt: string;
+  isStarred?: boolean;
+  starredBy?: string[];
+  isPinned?: boolean;
+  pinnedAt?: string;
+  pinnedBy?: any;
+  isForwarded?: boolean;
+  forwardedFrom?: any;
+  edited?: boolean;
+  editedAt?: string;
 }
 
 interface DirectMessageItemProps {
@@ -67,6 +100,13 @@ interface DirectMessageItemProps {
   onReact?: (messageId: string, emoji: string, category?: "STANDARD" | "CAMPUS_CUSTOM") => void;
   onDeleteForMe?: (messageId: string) => void;
   onDeleteForEveryone?: (messageId: string) => void;
+  onRetry?: (msg: DMStreamItemData) => void;
+  onJumpToMessage?: (messageId: string) => void;
+  onEdit?: (msg: DMStreamItemData) => void;
+  onForward?: (msg: DMStreamItemData) => void;
+  onToggleStar?: (messageId: string, isStarred: boolean) => void;
+  onStartSelectionMode?: (initialId?: string) => void;
+  onOpenLightbox?: (images: Array<{ url: string; originalName: string; caption?: string }>, initialIndex?: number) => void;
 }
 
 const QUICK_EMOJIS = ["❤️", "👍", "💡", "🔥", "🚀", "👀"];
@@ -83,19 +123,79 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
   onPin,
   onReact,
   onDeleteForMe,
-  onDeleteForEveryone
+  onDeleteForEveryone,
+  onRetry,
+  onJumpToMessage,
+  onEdit,
+  onForward,
+  onToggleStar,
+  onStartSelectionMode,
+  onOpenLightbox
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean;
+    x: number;
+    y: number;
+    isMobileSheet: boolean;
+  } | null>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
     setCopiedSnippet(true);
     setTimeout(() => setCopiedSnippet(false), 2000);
   };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isSelectionMode) return;
+    const touch = e.touches[0];
+    longPressTimerRef.current = setTimeout(() => {
+      setContextMenu({
+        isOpen: true,
+        x: touch.clientX,
+        y: touch.clientY,
+        isMobileSheet: true
+      });
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (isSelectionMode) return;
+    e.preventDefault();
+    setContextMenu({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      isMobileSheet: false
+    });
+  };
+
+  const canEdit =
+    isMe &&
+    !msg.isDeletedForEveryone &&
+    Date.now() - new Date(msg.createdAt).getTime() <= 24 * 60 * 60 * 1000;
+
+  const canDeleteForEveryone =
+    isMe &&
+    !msg.isDeletedForEveryone &&
+    Date.now() - new Date(msg.createdAt).getTime() <= 24 * 60 * 60 * 1000;
+
+  const isStarred = Boolean(
+    msg.isStarred || (currentUser?._id && msg.starredBy?.includes(currentUser._id))
+  );
+  const isPinned = Boolean(msg.isPinned);
 
   // Normalize reactions into an array of { emoji, count, users, isCampus }
   const normalizedReactions = useMemo(() => {
@@ -118,6 +218,34 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
       isCampus: emoji.startsWith(":")
     }));
   }, [msg.reactions]);
+
+  const imageAttachments = useMemo(() => {
+    return (msg.attachments || []).filter(
+      (a) =>
+        a.mimeType?.startsWith("image/") ||
+        a.type === "image" ||
+        ["jpg", "jpeg", "png", "gif", "webp"].includes(
+          a.name.split(".").pop()?.toLowerCase() || ""
+        )
+    );
+  }, [msg.attachments]);
+
+  const audioAttachments = useMemo(() => {
+    return (msg.attachments || []).filter(
+      (a) =>
+        a.mimeType?.startsWith("audio/") ||
+        a.type === "audio" ||
+        ["mp3", "ogg", "wav", "webm", "m4a"].includes(
+          a.name.split(".").pop()?.toLowerCase() || ""
+        )
+    );
+  }, [msg.attachments]);
+
+  const docAttachments = useMemo(() => {
+    return (msg.attachments || []).filter(
+      (a) => !imageAttachments.includes(a) && !audioAttachments.includes(a)
+    );
+  }, [msg.attachments, imageAttachments, audioAttachments]);
 
   // Tombstone Rendering when message was purged for everyone
   if (msg.isDeletedForEveryone) {
@@ -142,6 +270,10 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
       onClick={isSelectionMode ? onSelect : undefined}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchEnd}
     >
       {/* Selection Checkbox */}
       {isSelectionMode && (
@@ -228,10 +360,38 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
                 <button
                   type="button"
                   onClick={() => onPin(msg)}
-                  className="p-1 rounded-full text-slate-400 hover:text-amber-500 transition-colors cursor-pointer"
-                  title="Pin message"
+                  className={`p-1 rounded-full transition-colors cursor-pointer ${
+                    isPinned ? "text-amber-500" : "text-slate-400 hover:text-amber-500"
+                  }`}
+                  title={isPinned ? "Unpin message" : "Pin message"}
                 >
                   <Pin size={12} />
+                </button>
+              )}
+
+              {/* Star */}
+              {onToggleStar && (
+                <button
+                  type="button"
+                  onClick={() => onToggleStar(msg.id, !isStarred)}
+                  className={`p-1 rounded-full transition-colors cursor-pointer ${
+                    isStarred ? "text-amber-400" : "text-slate-400 hover:text-amber-400"
+                  }`}
+                  title={isStarred ? "Unstar message" : "Star message"}
+                >
+                  <Star size={12} className={isStarred ? "fill-amber-400" : ""} />
+                </button>
+              )}
+
+              {/* Forward */}
+              {onForward && (
+                <button
+                  type="button"
+                  onClick={() => onForward(msg)}
+                  className="p-1 rounded-full text-slate-400 hover:text-[#1E90FF] transition-colors cursor-pointer"
+                  title="Forward message"
+                >
+                  <Forward size={12} />
                 </button>
               )}
 
@@ -258,14 +418,27 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
               : "bg-white/95 dark:bg-[#202c33] border border-slate-200/80 dark:border-slate-700/60 text-slate-900 dark:text-slate-100 rounded-2xl rounded-tl-xs shadow-slate-200/40 dark:shadow-none"
           }`}
         >
+          {/* Sender Name in Received Message Bubble */}
+          {!isMe && (
+            <div className="text-[11px] font-bold text-[#1E90FF] dark:text-[#60a5fa] mb-1 select-none flex items-center gap-1">
+              <span>{msg.senderName || "Classmate"}</span>
+            </div>
+          )}
+
           {/* Quoted Reply Context */}
           {msg.replyTo && (
             <div
-              className={`mb-2 pl-2.5 py-1 text-[11px] rounded-r-lg border-l-3 ${
+              onClick={(e) => {
+                e.stopPropagation();
+                const targetId = msg.replyTo?._id || msg.replyTo?.id;
+                if (targetId) onJumpToMessage?.(targetId);
+              }}
+              className={`mb-2 pl-2.5 py-1 text-[11px] rounded-r-lg border-l-3 cursor-pointer hover:opacity-90 transition-opacity ${
                 isMe
                   ? "border-blue-200 bg-white/15 text-white"
                   : "border-[#1E90FF] bg-[#1E90FF]/10 text-slate-700 dark:text-slate-300"
               }`}
+              title="Click to jump to message"
             >
               <div
                 className={`font-bold text-[10px] flex items-center gap-1 ${
@@ -281,6 +454,14 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
             </div>
           )}
 
+          {/* Forwarded Indicator Badge */}
+          {msg.isForwarded && (
+            <div className="flex items-center gap-1 text-[10px] italic opacity-75 mb-1 select-none">
+              <CornerUpRight size={10} className="shrink-0" />
+              <span>Forwarded</span>
+            </div>
+          )}
+
           {/* Main Message Text */}
           {msg.content && (
             <p className="text-xs sm:text-[13px] leading-relaxed break-words whitespace-pre-wrap">
@@ -289,39 +470,38 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
           )}
 
           {/* Voice Note Player */}
-          {msg.voiceNote && (
-            <div className="mt-1 flex items-center gap-2.5 p-2 rounded-xl bg-black/10 dark:bg-black/20">
-              <button
-                type="button"
-                onClick={() => setIsPlayingVoice(!isPlayingVoice)}
-                className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
-                  isMe ? "bg-white text-[#1E90FF]" : "bg-[#1E90FF] text-white"
-                }`}
-              >
-                {isPlayingVoice ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
-              </button>
-              <div className="flex-1 flex flex-col gap-1">
-                <div className="flex items-center gap-0.5 h-4">
-                  {[40, 70, 30, 90, 60, 45, 80, 100, 65, 30, 85, 55, 95, 40, 60, 75, 50].map((h, i) => (
-                    <div
-                      key={i}
-                      className={`w-0.5 rounded-full transition-all ${
-                        isPlayingVoice
-                          ? isMe ? "bg-white animate-pulse" : "bg-[#1E90FF] animate-pulse"
-                          : isMe ? "bg-white/50" : "bg-slate-400/50 dark:bg-slate-500"
-                      }`}
-                      style={{ height: `${h}%` }}
-                    />
-                  ))}
-                </div>
-                <div className="flex items-center justify-between text-[9px] opacity-80 tabular-nums">
-                  <span className="flex items-center gap-1">
-                    <Mic size={9} />
-                    Voice Note
-                  </span>
-                  <span>{msg.voiceNote.duration}</span>
-                </div>
-              </div>
+          {(msg.voiceNote || audioAttachments.length > 0) && (
+            <div className="mt-1">
+              <VoiceMessagePlayer
+                id={msg.id}
+                url={msg.voiceNote?.url || audioAttachments[0]?.url || ""}
+                duration={msg.voiceNote?.durationSec || audioAttachments[0]?.duration}
+                waveform={msg.voiceNote?.waveform || audioAttachments[0]?.waveform}
+                isMe={isMe}
+              />
+            </div>
+          )}
+
+          {/* Image Gallery (1, 2, 3, 4+ Grid Layout with Lightbox trigger) */}
+          {imageAttachments.length > 0 && (
+            <div className="mt-1.5">
+              <ImageGallery
+                images={imageAttachments.map((img) => ({
+                  url: img.url,
+                  originalName: img.name,
+                  mimeType: img.mimeType
+                }))}
+                onImageClick={(idx) =>
+                  onOpenLightbox?.(
+                    imageAttachments.map((img) => ({
+                      url: img.url,
+                      originalName: img.name
+                    })),
+                    idx
+                  )
+                }
+                isMe={isMe}
+              />
             </div>
           )}
 
@@ -348,66 +528,81 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
             </div>
           )}
 
-          {/* File Attachments */}
-          {msg.attachments && msg.attachments.length > 0 && (
+          {/* Document File Cards */}
+          {docAttachments.length > 0 && (
             <div className="mt-2 space-y-1.5">
-              {msg.attachments.map((att, aIdx) => (
-                <div
+              {docAttachments.map((att, aIdx) => (
+                <FileDocumentCard
                   key={aIdx}
-                  className={`flex items-center justify-between gap-2.5 p-2 rounded-xl border ${
-                    isMe
-                      ? "bg-white/10 border-white/20 text-white"
-                      : "bg-slate-50 dark:bg-[#111b21] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 truncate">
-                    <div className="p-1.5 rounded-lg bg-[#1E90FF]/15 text-[#1E90FF] shrink-0">
-                      <FileText size={16} />
-                    </div>
-                    <div className="truncate">
-                      <span className="text-xs font-bold truncate max-w-[170px] block">
-                        {att.name}
-                      </span>
-                      <span className="text-[10px] opacity-75 tabular-nums block">
-                        {att.size} • {att.type.toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-                  <a
-                    href={att.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-1.5 rounded-lg hover:bg-white/20 transition-colors shrink-0"
-                    title="Download Note"
-                  >
-                    <Download size={14} />
-                  </a>
-                </div>
+                  originalName={att.name}
+                  size={att.sizeBytes || 0}
+                  url={att.url}
+                  mimeType={att.mimeType}
+                  isMe={isMe}
+                />
               ))}
             </div>
           )}
 
-          {/* Timestamp & Delivery status */}
+          {/* Timestamp, Edited, Star, Pin & Delivery status */}
           <div
             className={`mt-1 flex items-center justify-end gap-1 text-[10px] tabular-nums leading-none ${
               isMe ? "text-white/80" : "text-slate-400"
             }`}
           >
+            {msg.edited && (
+              <span className="opacity-75 italic text-[9px] mr-0.5">(edited)</span>
+            )}
+            {isStarred && (
+              <Star size={10} className="fill-amber-400 text-amber-400 shrink-0 inline mr-0.5" />
+            )}
+            {isPinned && (
+              <Pin size={10} className="text-amber-400 shrink-0 inline mr-0.5" />
+            )}
             <span>{msg.time}</span>
-            {isMe && (
+            {isMe && msg.status === "FAILED" ? (
+              <div className="flex items-center gap-1 text-rose-300">
+                <AlertCircle size={12} className="text-rose-400" />
+                <span className="text-[10px] font-medium text-rose-200">Failed</span>
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRetry(msg);
+                    }}
+                    className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-500/25 hover:bg-rose-500/40 text-[9px] font-semibold text-rose-100 transition-colors"
+                    title="Retry sending message"
+                  >
+                    <RotateCw size={10} />
+                    <span>Retry</span>
+                  </button>
+                )}
+              </div>
+            ) : isMe ? (
               <span
                 className="ml-0.5 inline-flex items-center"
-                title={msg.isRead ? "Read" : msg.isDelivered ? "Delivered" : "Sent"}
+                title={
+                  msg.status === "SENDING"
+                    ? "Sending..."
+                    : msg.status === "READ" || msg.isRead
+                    ? "Read"
+                    : msg.status === "DELIVERED" || msg.isDelivered
+                    ? "Delivered"
+                    : "Sent"
+                }
               >
-                {msg.isRead ? (
+                {msg.status === "SENDING" ? (
+                  <Clock size={12} className="animate-pulse text-white/60" />
+                ) : msg.status === "READ" || msg.isRead ? (
                   <CheckCheck size={13} className="text-cyan-200" />
-                ) : msg.isDelivered ? (
+                ) : msg.status === "DELIVERED" || msg.isDelivered ? (
                   <CheckCheck size={13} className="text-white/70" />
                 ) : (
                   <Check size={13} className="text-white/70" />
                 )}
               </span>
-            )}
+            ) : null}
           </div>
 
           {/* ── Reaction Badges Pill ── */}
@@ -471,6 +666,38 @@ export const DirectMessageItem: React.FC<DirectMessageItemProps> = ({
         isModeratorOrAdmin={false}
         messageSnippet={msg.content}
       />
+
+      {/* ── Context Menu (Desktop Dropdown + Mobile Sheet) ── */}
+      {contextMenu && (
+        <MessageContextMenu
+          isOpen={contextMenu.isOpen}
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          onClose={() => setContextMenu(null)}
+          isSender={isMe}
+          isDeleted={msg.isDeletedForEveryone}
+          isPinned={isPinned}
+          isStarred={isStarred}
+          canEdit={canEdit}
+          canDeleteForEveryone={canDeleteForEveryone}
+          canPin={true}
+          onReply={() => onReply?.(msg)}
+          onReact={(emoji) => onReact?.(msg.id, emoji, "STANDARD")}
+          onOpenEmojiPicker={() => setIsEmojiPickerOpen(true)}
+          onCopyText={() => {
+            if (msg.content) {
+              navigator.clipboard.writeText(msg.content);
+            }
+          }}
+          onEdit={() => onEdit?.(msg)}
+          onForward={() => onForward?.(msg)}
+          onToggleStar={() => onToggleStar?.(msg.id, !isStarred)}
+          onTogglePin={() => onPin?.(msg)}
+          onSelectMode={() => onStartSelectionMode?.(msg.id)}
+          onDeleteForMe={() => onDeleteForMe?.(msg.id)}
+          onDeleteForEveryone={() => onDeleteForEveryone?.(msg.id)}
+          isMobileSheet={contextMenu.isMobileSheet}
+        />
+      )}
     </div>
   );
 };

@@ -62,6 +62,16 @@ export interface ChatStoreState {
   setRejectionNotice: (notice: ChatStoreState["rejectionNotice"]) => void;
   clearRejectionNotice: () => void;
   resetChat: () => void;
+
+  // Message Interaction Actions
+  editMessageInStore: (messageId: string, content: string, editedAt?: string) => void;
+  toggleStarInStore: (messageId: string, isStarred: boolean) => void;
+  togglePinInStore: (messageId: string, isPinned: boolean) => void;
+  updateReactionInStore: (messageId: string, reactions: ChatMessage["reactions"]) => void;
+  deleteMessageForMeInStore: (messageId: string) => void;
+  purgeMessageForEveryoneInStore: (messageId: string, purgeData?: Partial<ChatMessage>) => void;
+  bulkDeleteForMeInStore: (messageIds: string[]) => void;
+  bulkStarInStore: (messageIds: string[], isStarred: boolean) => void;
 }
 
 export const useChatStore = create<ChatStoreState>((set) => ({
@@ -307,5 +317,98 @@ export const useChatStore = create<ChatStoreState>((set) => ({
       activeVoiceStage: null,
       typingUsers: [],
       rejectionNotice: null
+    }),
+
+  editMessageInStore: (messageId, content, editedAt) =>
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m._id === messageId ? { ...m, content, edited: true, editedAt: editedAt || new Date().toISOString() } : m
+      ),
+      pinnedMessages: state.pinnedMessages.map((m) =>
+        m._id === messageId ? { ...m, content, edited: true, editedAt: editedAt || new Date().toISOString() } : m
+      ),
+      threadParentMessage:
+        state.threadParentMessage?._id === messageId
+          ? { ...state.threadParentMessage, content, edited: true, editedAt: editedAt || new Date().toISOString() }
+          : state.threadParentMessage
+    })),
+
+  toggleStarInStore: (messageId, isStarred) =>
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m._id === messageId ? { ...m, isStarred } : m
+      ),
+      pinnedMessages: state.pinnedMessages.map((m) =>
+        m._id === messageId ? { ...m, isStarred } : m
+      )
+    })),
+
+  togglePinInStore: (messageId, isPinned) =>
+    set((state) => {
+      const messages = state.messages.map((m) =>
+        m._id === messageId ? { ...m, isPinned } : m
+      );
+      const pinnedMessages = isPinned
+        ? [
+            ...state.pinnedMessages.filter((m) => m._id !== messageId),
+            messages.find((m) => m._id === messageId)!
+          ].filter(Boolean)
+        : state.pinnedMessages.filter((m) => m._id !== messageId);
+      return { messages, pinnedMessages };
+    }),
+
+  updateReactionInStore: (messageId, reactions) =>
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m._id === messageId ? { ...m, reactions } : m
+      ),
+      pinnedMessages: state.pinnedMessages.map((m) =>
+        m._id === messageId ? { ...m, reactions } : m
+      ),
+      threadParentMessage:
+        state.threadParentMessage?._id === messageId
+          ? { ...state.threadParentMessage, reactions }
+          : state.threadParentMessage
+    })),
+
+  deleteMessageForMeInStore: (messageId) =>
+    set((state) => ({
+      messages: state.messages.filter((m) => m._id !== messageId),
+      pinnedMessages: state.pinnedMessages.filter((m) => m._id !== messageId)
+    })),
+
+  purgeMessageForEveryoneInStore: (messageId, purgeData) =>
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m._id === messageId
+          ? {
+              ...m,
+              isDeletedForEveryone: true,
+              content: "",
+              attachments: [],
+              deletedBy: purgeData?.deletedBy || m.deletedBy,
+              deletedAt: purgeData?.deletedAt || new Date().toISOString()
+            }
+          : m
+      ),
+      pinnedMessages: state.pinnedMessages.filter((m) => m._id !== messageId)
+    })),
+
+  bulkDeleteForMeInStore: (messageIds) =>
+    set((state) => {
+      const idSet = new Set(messageIds);
+      return {
+        messages: state.messages.filter((m) => !idSet.has(m._id)),
+        pinnedMessages: state.pinnedMessages.filter((m) => !idSet.has(m._id))
+      };
+    }),
+
+  bulkStarInStore: (messageIds, isStarred) =>
+    set((state) => {
+      const idSet = new Set(messageIds);
+      return {
+        messages: state.messages.map((m) => (idSet.has(m._id) ? { ...m, isStarred } : m)),
+        pinnedMessages: state.pinnedMessages.map((m) => (idSet.has(m._id) ? { ...m, isStarred } : m))
+      };
     })
 }));

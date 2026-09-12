@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,7 +15,14 @@ import {
   CheckCheck,
   FileText,
   FileCode,
-  Filter
+  Filter,
+  Pin,
+  BellOff,
+  Archive,
+  Mail,
+  MailCheck,
+  MoreVertical,
+  Clock
 } from "lucide-react";
 import type { User as AuthUser } from "../../types/auth";
 import { usersApi } from "../../api/users.api";
@@ -43,8 +50,12 @@ export interface ConversationItem {
   unreadCount: number;
   isPinned?: boolean;
   isFavorite?: boolean;
+  isMuted?: boolean;
+  isArchived?: boolean;
   isLocked?: boolean;
   lockedReason?: string;
+  draft?: string;
+  isTyping?: boolean;
 }
 
 export interface PeerSearchResult {
@@ -63,9 +74,16 @@ interface ConversationListProps {
   currentUser?: AuthUser | null;
   onStartNewChat?: (peerId: string, customPeer?: { name: string; roll?: string; dept?: string }) => void;
   directoryPeers?: PeerSearchResult[];
+  onTogglePin?: (conversationId: string) => void;
+  onToggleMute?: (conversationId: string) => void;
+  onToggleArchive?: (conversationId: string) => void;
+  onMarkAsRead?: (conversationId: string) => void;
+  onMarkAsUnread?: (conversationId: string) => void;
+  drafts?: Record<string, string>;
+  typingMap?: Record<string, boolean>;
 }
 
-type FilterTab = "all" | "unread" | "favorites" | "classmates";
+type FilterTab = "all" | "unread" | "pinned" | "archived" | "classmates";
 
 export function ConversationList({
   conversations,
@@ -73,7 +91,14 @@ export function ConversationList({
   onSelectConversation,
   currentUser,
   onStartNewChat,
-  directoryPeers = []
+  directoryPeers = [],
+  onTogglePin,
+  onToggleMute,
+  onToggleArchive,
+  onMarkAsRead,
+  onMarkAsUnread,
+  drafts = {},
+  typingMap = {}
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
@@ -116,12 +141,19 @@ export function ConversationList({
       .toUpperCase();
   };
 
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+
   const filteredConversations = conversations.filter((c) => {
     // 1. Filter Tab
     if (filterTab === "unread" && c.unreadCount === 0) return false;
-    if (filterTab === "favorites" && !c.isFavorite) return false;
+    if (filterTab === "pinned" && !c.isPinned) return false;
+    if (filterTab === "archived") {
+      if (!c.isArchived) return false;
+    } else {
+      if (c.isArchived) return false;
+    }
     if (filterTab === "classmates" && c.peer.dept !== (currentUser?.department || "CSE")) {
-      // If filtering by department classmates
+      return false;
     }
 
     // 2. Text Search
@@ -135,7 +167,11 @@ export function ConversationList({
     );
   });
 
-  const totalUnread = conversations.reduce((acc, c) => acc + c.unreadCount, 0);
+  const totalUnread = conversations
+    .filter((c) => !c.isArchived)
+    .reduce((acc, c) => acc + c.unreadCount, 0);
+  const totalPinned = conversations.filter((c) => c.isPinned && !c.isArchived).length;
+  const totalArchived = conversations.filter((c) => c.isArchived).length;
 
   return (
     <aside className="w-full md:w-80 h-full flex flex-col justify-between border-r border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-[#0B1324]/95 backdrop-blur-xl shrink-0 select-none">
@@ -210,12 +246,13 @@ export function ConversationList({
           </div>
         </div>
 
-        {/* ── 3. WhatsApp Filter Chips (All, Unread, Favorites) ────────── */}
+        {/* ── 3. WhatsApp Filter Chips (All, Unread, Pinned, Archived, Classmates) ────────── */}
         <div className="px-2.5 py-2 flex items-center gap-1.5 border-b border-slate-200/60 dark:border-slate-800/60 overflow-x-auto scrollbar-none shrink-0 bg-slate-50/40 dark:bg-[#080D1A]/30">
           {[
             { id: "all", label: "All" },
             { id: "unread", label: totalUnread > 0 ? `Unread (${totalUnread})` : "Unread" },
-            { id: "favorites", label: "Favorites" },
+            { id: "pinned", label: totalPinned > 0 ? `Pinned (${totalPinned})` : "Pinned" },
+            { id: "archived", label: totalArchived > 0 ? `Archived (${totalArchived})` : "Archived" },
             { id: "classmates", label: "Classmates" }
           ].map((chip) => {
             const isActive = filterTab === chip.id;
@@ -242,10 +279,20 @@ export function ConversationList({
             <div className="p-8 text-center text-xs text-slate-400 space-y-3">
               <MessageCircle size={32} className="mx-auto text-slate-300 dark:text-slate-600" />
               <p className="font-semibold text-slate-700 dark:text-slate-300">
-                {filterTab === "unread" ? "No unread messages" : "No chats yet"}
+                {search
+                  ? `No chats matching "${search}"`
+                  : filterTab === "unread"
+                  ? "No unread messages"
+                  : filterTab === "pinned"
+                  ? "No pinned conversations"
+                  : filterTab === "archived"
+                  ? "No archived chats"
+                  : "No chats yet"}
               </p>
               <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                Start a peer conversation to collaborate on campus assignments and study materials.
+                {search
+                  ? "Try searching for a different classmate or student roll number."
+                  : "Start a peer conversation to collaborate on campus assignments and study materials."}
               </p>
               <button
                 type="button"
@@ -263,115 +310,232 @@ export function ConversationList({
                 currentUser?._id === c.lastMessage?.senderId ||
                 currentUser?.fullName === "Aarav Sharma" ||
                 c.lastMessage?.senderId === "u-me";
+              const isPeerTyping = c.isTyping || !!typingMap[c.id];
+              const draftText = c.draft || drafts[c.id];
 
               return (
-                <motion.button
-                  key={c.id}
-                  onClick={() => onSelectConversation(c.id)}
-                  whileHover={{ scale: 1.008 }}
-                  whileTap={{ scale: 0.99 }}
-                  className={`w-full text-left p-2.5 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 relative group ${
-                    isActive
-                      ? "border-[#1E90FF]/40 bg-[#1E90FF]/10 dark:bg-[#1E90FF]/15 shadow-sm shadow-[#1E90FF]/10"
-                      : "border-transparent hover:border-slate-200/80 dark:hover:border-slate-800/80 hover:bg-slate-100/70 dark:hover:bg-[#0F1A30]/60"
-                  }`}
-                >
-                  {/* Active Indicator Bar */}
-                  {isActive && (
-                    <motion.div
-                      layoutId="activeDmIndicator"
-                      className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full bg-[#1E90FF]"
-                    />
-                  )}
+                <div key={c.id} className="relative group">
+                  <motion.button
+                    onClick={() => onSelectConversation(c.id)}
+                    whileHover={{ scale: 1.008 }}
+                    whileTap={{ scale: 0.99 }}
+                    className={`w-full text-left p-2.5 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 relative ${
+                      isActive
+                        ? "border-[#1E90FF]/40 bg-[#1E90FF]/10 dark:bg-[#1E90FF]/15 shadow-sm shadow-[#1E90FF]/10"
+                        : "border-transparent hover:border-slate-200/80 dark:hover:border-slate-800/80 hover:bg-slate-100/70 dark:hover:bg-[#0F1A30]/60"
+                    }`}
+                  >
+                    {/* Active Indicator Bar */}
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeDmIndicator"
+                        className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full bg-[#1E90FF]"
+                      />
+                    )}
 
-                  {/* Avatar with Status Ring */}
-                  <div className="relative shrink-0">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl overflow-hidden bg-[#1E90FF] text-white font-bold text-xs shadow-sm ring-1 ring-black/5 dark:ring-white/10">
-                      {c.peer.avatar ? (
-                        <img
-                          src={c.peer.avatar}
-                          alt={c.peer.name}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        getInitials(c.peer.name)
-                      )}
-                    </div>
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white dark:border-[#0B1324] ${
-                        c.peer.isOnline ? "bg-emerald-500" : "bg-slate-400"
-                      }`}
-                      title={c.peer.isOnline ? "Active" : "Offline"}
-                    />
-                  </div>
-
-                  {/* Peer Info & Last Message */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
-                          {c.peer.name}
-                        </span>
-                        <span className="text-[9px] font-bold text-[#1E90FF] bg-[#1E90FF]/10 px-1 py-0.2 rounded">
-                          {c.peer.dept}
-                        </span>
+                    {/* Avatar with Status Ring */}
+                    <div className="relative shrink-0">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl overflow-hidden bg-[#1E90FF] text-white font-bold text-xs shadow-sm ring-1 ring-black/5 dark:ring-white/10 relative">
+                        <span className="select-none">{getInitials(c.peer.name || "Classmate")}</span>
+                        {c.peer.avatar && (
+                          <img
+                            src={c.peer.avatar}
+                            alt={c.peer.name || "User"}
+                            className="absolute inset-0 h-full w-full object-cover"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLElement).style.display = "none";
+                            }}
+                          />
+                        )}
                       </div>
                       <span
-                        className={`text-[10px] tabular-nums shrink-0 ml-1 ${
-                          c.unreadCount > 0
-                            ? "text-[#1E90FF] font-bold"
-                            : "text-slate-400"
+                        className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white dark:border-[#0B1324] ${
+                          c.peer.isOnline ? "bg-emerald-500" : "bg-slate-400"
                         }`}
-                      >
-                        {c.lastMessage?.time}
-                      </span>
+                        title={c.peer.isOnline ? "Active" : "Offline"}
+                      />
                     </div>
 
-                    {/* WhatsApp-Style Message Line with Delivery Ticks */}
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 truncate leading-relaxed min-w-0">
-                        {/* WhatsApp checkmarks for messages sent by me */}
-                        {isSentByMe && c.lastMessage && (
+                    {/* Peer Info & Last Message */}
+                    <div className="flex-1 min-w-0 pr-2">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden mr-1">
                           <span
-                            className="shrink-0 inline-flex items-center"
-                            title={c.lastMessage.isRead ? "Read" : c.lastMessage.isDelivered ? "Delivered" : "Sent"}
+                            className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate shrink-0 max-w-[140px]"
+                            title={c.peer.name || "Classmate"}
                           >
-                            {c.lastMessage.isRead ? (
-                              <CheckCheck size={14} className="text-[#1E90FF]" />
-                            ) : c.lastMessage.isDelivered ? (
-                              <CheckCheck size={14} className="text-slate-400" />
-                            ) : (
-                              <Check size={14} className="text-slate-400" />
-                            )}
+                            {c.peer.name || "Classmate"}
                           </span>
-                        )}
-
-                        {c.lastMessage?.hasAttachment && (
-                          <FileText size={12} className="text-[#1E90FF] shrink-0" />
-                        )}
-
-                        {c.lastMessage?.hasCodeSnippet && (
-                          <FileCode size={12} className="text-[#1E90FF] shrink-0" />
-                        )}
-
-                        <span className="truncate">
-                          {c.lastMessage ? (
-                            c.lastMessage.text
-                          ) : (
-                            <span className="italic text-slate-400">Started conversation</span>
+                          {c.peer.dept && (
+                            <span
+                              className="text-[9px] font-bold text-[#1E90FF] bg-[#1E90FF]/10 px-1.5 py-0.5 rounded shrink-0 max-w-[65px] truncate"
+                              title={c.peer.dept}
+                            >
+                              {c.peer.dept}
+                            </span>
                           )}
+                          {c.isPinned && (
+                            <span title="Pinned" className="shrink-0 inline-flex items-center">
+                              <Pin size={11} className="text-[#1E90FF] fill-[#1E90FF]/30" />
+                            </span>
+                          )}
+                          {c.isMuted && (
+                            <span title="Muted" className="shrink-0 inline-flex items-center">
+                              <BellOff size={11} className="text-slate-400" />
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          className={`text-[10px] tabular-nums shrink-0 ml-1 ${
+                            c.unreadCount > 0
+                              ? "text-[#1E90FF] font-bold"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          {c.lastMessage?.time}
                         </span>
                       </div>
 
-                      {/* Unread Count Badge */}
-                      {c.unreadCount > 0 && (
-                        <span className="h-4.5 min-w-4.5 px-1.5 rounded-full bg-[#1E90FF] text-white text-[10px] font-black flex items-center justify-center shadow-xs shrink-0">
-                          {c.unreadCount}
-                        </span>
-                      )}
+                      {/* Message Line with Delivery Ticks / Typing / Draft */}
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 truncate leading-relaxed min-w-0">
+                          {isPeerTyping ? (
+                            <span className="text-[11px] font-bold text-[#1E90FF] animate-pulse">
+                              typing...
+                            </span>
+                          ) : draftText && !isActive ? (
+                            <span className="text-[11px] italic text-amber-500 dark:text-amber-400 truncate">
+                              Draft: &quot;{draftText}&quot;
+                            </span>
+                          ) : (
+                            <>
+                              {isSentByMe && c.lastMessage && (
+                                <span
+                                  className="shrink-0 inline-flex items-center"
+                                  title={c.lastMessage.isRead ? "Read" : c.lastMessage.isDelivered ? "Delivered" : "Sent"}
+                                >
+                                  {c.lastMessage.isRead ? (
+                                    <CheckCheck size={14} className="text-[#1E90FF]" />
+                                  ) : c.lastMessage.isDelivered ? (
+                                    <CheckCheck size={14} className="text-slate-400" />
+                                  ) : (
+                                    <Check size={14} className="text-slate-400" />
+                                  )}
+                                </span>
+                              )}
+
+                              {c.lastMessage?.hasAttachment && (
+                                <FileText size={12} className="text-[#1E90FF] shrink-0" />
+                              )}
+
+                              {c.lastMessage?.hasCodeSnippet && (
+                                <FileCode size={12} className="text-[#1E90FF] shrink-0" />
+                              )}
+
+                              <span className="truncate">
+                                {c.lastMessage ? (
+                                  c.lastMessage.text
+                                ) : (
+                                  <span className="italic text-slate-400">Started conversation</span>
+                                )}
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Unread Count Badge */}
+                        {c.unreadCount > 0 && (
+                          <span className="h-4.5 min-w-4.5 px-1.5 rounded-full bg-[#1E90FF] text-white text-[10px] font-black flex items-center justify-center shadow-xs shrink-0">
+                            {c.unreadCount}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                  </motion.button>
+
+                  {/* ── Context Menu Trigger (More Options) ── */}
+                  <div className="absolute right-2 top-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenuId(activeMenuId === c.id ? null : c.id);
+                      }}
+                      className="p-1 rounded-lg hover:bg-slate-200/80 dark:hover:bg-slate-700/80 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                      title="More options"
+                    >
+                      <MoreVertical size={13} />
+                    </button>
+
+                    {activeMenuId === c.id && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute right-0 mt-1 w-40 bg-white dark:bg-[#0F1A30] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-1 z-50 text-xs text-slate-700 dark:text-slate-200"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onTogglePin?.(c.id);
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors"
+                        >
+                          <Pin size={12} className={c.isPinned ? "text-[#1E90FF]" : ""} />
+                          <span>{c.isPinned ? "Unpin chat" : "Pin chat"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (c.unreadCount > 0) {
+                              onMarkAsRead?.(c.id);
+                            } else {
+                              onMarkAsUnread?.(c.id);
+                            }
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors"
+                        >
+                          {c.unreadCount > 0 ? (
+                            <>
+                              <MailCheck size={12} />
+                              <span>Mark as read</span>
+                            </>
+                          ) : (
+                            <>
+                              <Mail size={12} />
+                              <span>Mark as unread</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onToggleMute?.(c.id);
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors"
+                        >
+                          <BellOff size={12} className={c.isMuted ? "text-amber-500" : ""} />
+                          <span>{c.isMuted ? "Unmute" : "Mute"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onToggleArchive?.(c.id);
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-[#162544] transition-colors"
+                        >
+                          <Archive size={12} />
+                          <span>{c.isArchived ? "Unarchive" : "Archive"}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                </motion.button>
+                </div>
               );
             })
           )}

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Send,
@@ -8,26 +8,45 @@ import {
   X,
   FileText,
   Mic,
-  Image,
+  Image as ImageIcon,
   Square,
   Sparkles,
   Check,
-  Lock
+  Lock,
+  Edit2,
+  UploadCloud,
+  FileArchive,
+  FileSpreadsheet,
+  FileCode
 } from "lucide-react";
 import { useToastStore } from "../../store/toast.store";
+import { useDirectMessageStore } from "../../store/direct-message.store";
+import { VoiceRecorderDock } from "../chat/media/VoiceRecorderDock";
+
+export interface DMVoiceNotePayload {
+  file?: File;
+  duration: string;
+  durationSec?: number;
+  waveform?: number[];
+  url?: string;
+}
 
 interface DirectMessageInputProps {
+  conversationId?: string;
   peerName: string;
   onSendMessage: (
     content: string,
     codeSnippet?: { language: string; code: string },
     files?: File[],
-    voiceNote?: { duration: string; url?: string }
+    voiceNote?: DMVoiceNotePayload
   ) => void;
   onTyping?: (isTyping: boolean) => void;
   isPeerTyping?: boolean;
   replyTarget?: { senderName: string; content: string } | null;
   onCancelReply?: () => void;
+  editingTarget?: { id: string; content: string } | null;
+  onCancelEdit?: () => void;
+  onSaveEdit?: (messageId: string, newContent: string) => void;
   isLocked?: boolean;
   lockedReason?: string;
 }
@@ -38,16 +57,29 @@ const COMMON_EMOJIS = [
 ];
 
 export function DirectMessageInput({
+  conversationId,
   peerName,
   onSendMessage,
   onTyping,
   isPeerTyping = false,
   replyTarget,
   onCancelReply,
+  editingTarget,
+  onCancelEdit,
+  onSaveEdit,
   isLocked = false,
   lockedReason = ""
 }: DirectMessageInputProps) {
-  const [content, setContent] = useState("");
+  const drafts = useDirectMessageStore((state) => state.drafts);
+  const setDraft = useDirectMessageStore((state) => state.setDraft);
+  const clearDraft = useDirectMessageStore((state) => state.clearDraft);
+
+  const [content, setContent] = useState(() => {
+    if (conversationId && drafts[conversationId]) {
+      return drafts[conversationId];
+    }
+    return "";
+  });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [codeDrawerOpen, setCodeDrawerOpen] = useState(false);
   const [codeLang, setCodeLang] = useState("C++");
@@ -56,33 +88,52 @@ export function DirectMessageInput({
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
-  // Voice recording simulation state
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { addToast } = useToastStore();
 
+  // Object URLs for image previews
+  const filePreviews = useMemo(() => {
+    return selectedFiles.map((file) => ({
+      file,
+      isImage: file.type.startsWith("image/"),
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null
+    }));
+  }, [selectedFiles]);
+
   useEffect(() => {
-    if (isRecordingVoice) {
-      setRecordingSeconds(0);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      setRecordingSeconds(0);
-    }
     return () => {
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      filePreviews.forEach((p) => {
+        if (p.previewUrl) URL.revokeObjectURL(p.previewUrl);
+      });
     };
-  }, [isRecordingVoice]);
+  }, [filePreviews]);
+
+  useEffect(() => {
+    if (editingTarget) {
+      setContent(editingTarget.content);
+    }
+  }, [editingTarget]);
+
+  useEffect(() => {
+    if (conversationId && drafts[conversationId] !== undefined && !editingTarget) {
+      setContent(drafts[conversationId]);
+    } else if (!editingTarget) {
+      setContent("");
+    }
+  }, [conversationId, editingTarget]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setContent(e.target.value);
+    const val = e.target.value;
+    setContent(val);
+    if (conversationId && !editingTarget) {
+      setDraft(conversationId, val);
+    }
 
     // Trigger typing emission
     onTyping?.(true);
@@ -99,20 +150,26 @@ export function DirectMessageInput({
     }
   };
 
+  const handleAddFiles = (filesArr: File[]) => {
+    const validFiles: File[] = [];
+
+    for (const file of filesArr) {
+      if (file.size > 25 * 1024 * 1024) {
+        addToast(`File "${file.name}" exceeds 25MB maximum limit.`, "warning");
+      } else {
+        validFiles.push(file);
+      }
+    }
+
+    if (validFiles.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...validFiles]);
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const filesArr = Array.from(e.target.files);
-      const validFiles: File[] = [];
-
-      for (const file of filesArr) {
-        if (file.size > 15 * 1024 * 1024) {
-          addToast(`File ${file.name} exceeds 15MB maximum limit.`, "warning");
-        } else {
-          validFiles.push(file);
-        }
-      }
-
-      setSelectedFiles((prev) => [...prev, ...validFiles]);
+      handleAddFiles(Array.from(e.target.files));
+      e.target.value = "";
       setAttachMenuOpen(false);
     }
   };
@@ -121,38 +178,96 @@ export function DirectMessageInput({
     setSelectedFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+      e.preventDefault();
+      const files = Array.from(e.clipboardData.files);
+      handleAddFiles(files);
+      addToast(
+        files.length === 1 && files[0].type.startsWith("image/")
+          ? "Image pasted from clipboard"
+          : `${files.length} attachment(s) pasted from clipboard`,
+        "info"
+      );
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDraggingOver(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleAddFiles(Array.from(e.dataTransfer.files));
+    }
+  };
+
   const handleInsertEmoji = (emoji: string) => {
     setContent((prev) => prev + emoji);
     setEmojiPickerOpen(false);
   };
 
-  const handleStartVoiceRecording = () => {
-    setIsRecordingVoice(true);
-  };
-
-  const handleCancelVoiceRecording = () => {
-    setIsRecordingVoice(false);
-  };
-
-  const handleSendVoiceNote = () => {
-    const mins = Math.floor(recordingSeconds / 60);
-    const secs = recordingSeconds % 60;
+  const handleSendVoiceNote = (voiceFile: File, durationSec: number, waveform: number[]) => {
+    const mins = Math.floor(durationSec / 60);
+    const secs = Math.floor(durationSec % 60);
     const duration = `${mins}:${secs < 10 ? "0" : ""}${secs}`;
 
     onSendMessage(
-      "🎙️ Voice Note",
+      "",
       undefined,
       undefined,
-      { duration: duration === "0:00" ? "0:05" : duration }
+      {
+        file: voiceFile,
+        duration: duration === "0:00" ? "0:05" : duration,
+        durationSec,
+        waveform
+      }
     );
 
     setIsRecordingVoice(false);
     addToast("Voice note sent", "success");
   };
 
+  const getFileIcon = (file: File) => {
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    if (file.type.includes("pdf") || ext === "pdf") return <FileText size={14} className="text-rose-500" />;
+    if (["zip", "tar", "gz", "rar"].includes(ext)) return <FileArchive size={14} className="text-amber-500" />;
+    if (["xls", "xlsx", "csv"].includes(ext)) return <FileSpreadsheet size={14} className="text-emerald-500" />;
+    if (["js", "ts", "py", "java", "cpp", "c", "html", "css"].includes(ext)) return <FileCode size={14} className="text-cyan-500" />;
+    return <FileText size={14} className="text-[#1E90FF]" />;
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const handleSubmit = async () => {
     if (isSending) return;
     if (!content.trim() && !codeText.trim() && selectedFiles.length === 0) return;
+
+    if (editingTarget && onSaveEdit) {
+      if (!content.trim()) return;
+      const toSave = content.trim();
+      setContent("");
+      onCancelEdit?.();
+      onSaveEdit(editingTarget.id, toSave);
+      return;
+    }
 
     const codeObj = codeDrawerOpen && codeText.trim()
       ? { language: codeLang, code: codeText.trim() }
@@ -162,6 +277,9 @@ export function DirectMessageInput({
     const filesToSend = selectedFiles.length > 0 ? selectedFiles : undefined;
 
     setContent("");
+    if (conversationId) {
+      clearDraft(conversationId);
+    }
     setCodeText("");
     setCodeDrawerOpen(false);
     setSelectedFiles([]);
@@ -181,8 +299,29 @@ export function DirectMessageInput({
   const hasContentToSend = content.trim().length > 0 || codeText.trim().length > 0 || selectedFiles.length > 0;
 
   return (
-    <div className="relative p-3 sm:p-4 shrink-0 bg-white/95 dark:bg-[#0c1424]/95 border-t border-slate-200/80 dark:border-slate-800/80 backdrop-blur-xl z-20">
-      
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="relative p-3 sm:p-4 shrink-0 bg-white/95 dark:bg-[#0c1424]/95 border-t border-slate-200/80 dark:border-slate-800/80 backdrop-blur-xl z-20"
+    >
+      {/* ── Drag & Drop Active Overlay ───────────────────────────────── */}
+      <AnimatePresence>
+        {isDraggingOver && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-[#1E90FF]/15 border-2 border-dashed border-[#1E90FF] rounded-2xl z-40 backdrop-blur-xs flex items-center justify-center pointer-events-none"
+          >
+            <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-white dark:bg-[#0c1424] shadow-xl text-[#1E90FF] font-bold text-xs">
+              <UploadCloud size={18} className="animate-bounce" />
+              <span>Drop photos or documents here to attach</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Live Peer Typing Feedback Banner ─────────────────────────── */}
       <AnimatePresence>
         {isPeerTyping && (
@@ -198,6 +337,39 @@ export function DirectMessageInput({
               <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce delay-200" />
             </span>
             <span>{peerName} is typing...</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Editing Message Target Banner ────────────────────────────── */}
+      <AnimatePresence>
+        {editingTarget && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-2.5 flex items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs shadow-xs"
+          >
+            <div className="flex items-center gap-2 truncate">
+              <Edit2 size={13} className="text-emerald-500 shrink-0" />
+              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                Editing message:
+              </span>
+              <span className="text-slate-600 dark:text-slate-300 truncate max-w-sm">
+                "{editingTarget.content}"
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setContent("");
+                onCancelEdit?.();
+              }}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              title="Cancel editing"
+            >
+              <X size={13} />
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -230,23 +402,51 @@ export function DirectMessageInput({
         )}
       </AnimatePresence>
 
-      {/* ── Selected Attachments Queue ────────────────────────────────── */}
+      {/* ── Selected Attachments Queue (Thumbnails & File Pills) ──────── */}
       {selectedFiles.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-2.5">
-          {selectedFiles.map((file, fIdx) => (
+        <div className="flex flex-wrap items-center gap-2 mb-2.5 max-h-36 overflow-y-auto no-scrollbar p-1">
+          {filePreviews.map(({ file, isImage, previewUrl }, fIdx) => (
             <div
               key={fIdx}
-              className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-2.5 py-1 text-[11px] text-slate-700 dark:text-slate-300 shadow-xs"
+              className={`relative group rounded-xl border transition-all ${
+                isImage
+                  ? "w-14 h-14 overflow-hidden border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
+                  : "flex items-center gap-2 rounded-xl border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-2.5 py-1.5 text-[11px] text-slate-700 dark:text-slate-300 shadow-xs"
+              }`}
             >
-              <FileText size={12} className="text-[#1E90FF] shrink-0" />
-              <span className="truncate max-w-[130px] font-medium">{file.name}</span>
-              <button
-                type="button"
-                onClick={() => removeFile(fIdx)}
-                className="text-slate-400 hover:text-rose-500 cursor-pointer"
-              >
-                <X size={11} />
-              </button>
+              {isImage && previewUrl ? (
+                <>
+                  <img
+                    src={previewUrl}
+                    alt={file.name}
+                    className="w-full h-full object-cover rounded-xl"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeFile(fIdx)}
+                    className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 text-white hover:bg-rose-600 flex items-center justify-center transition-colors cursor-pointer"
+                    title="Remove photo"
+                  >
+                    <X size={11} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  {getFileIcon(file)}
+                  <div className="flex flex-col truncate max-w-[130px]">
+                    <span className="truncate font-medium leading-tight">{file.name}</span>
+                    <span className="text-[9px] text-slate-400 tabular-nums">{formatSize(file.size)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(fIdx)}
+                    className="text-slate-400 hover:text-rose-500 cursor-pointer p-0.5 ml-1"
+                    title="Remove file"
+                  >
+                    <X size={12} />
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -356,7 +556,7 @@ export function DirectMessageInput({
               className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500">
-                <Image size={15} />
+                <ImageIcon size={15} />
               </div>
               <span>Photos & Media</span>
             </button>
@@ -386,7 +586,7 @@ export function DirectMessageInput({
         multiple
         onChange={handleFileSelect}
         className="hidden"
-        accept=".pdf,.doc,.docx,.zip,.tar,.gz,.ipynb,.cpp,.java,.py"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.tar,.gz,.rar,.txt,.md,.ipynb,.cpp,.java,.py"
       />
       <input
         ref={imageInputRef}
@@ -397,7 +597,7 @@ export function DirectMessageInput({
         accept="image/*"
       />
 
-      {/* ── Main WhatsApp Input Bar ───────────────────────────────────── */}
+      {/* ── Main WhatsApp Input Bar or Voice Recording Dock ───────────── */}
       {isLocked ? (
         /* Locked Conversation State */
         <div className="flex items-center justify-between gap-3 p-3.5 rounded-3xl bg-slate-100/90 dark:bg-[#111b21]/90 border border-amber-500/30 text-slate-500 dark:text-slate-400 select-none shadow-md backdrop-blur-xl">
@@ -419,33 +619,12 @@ export function DirectMessageInput({
           </span>
         </div>
       ) : isRecordingVoice ? (
-        /* WhatsApp Voice Recording Dock */
-        <div className="flex items-center justify-between gap-3 p-2 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400">
-          <div className="flex items-center gap-2.5 px-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-ping" />
-            <span className="font-bold tabular-nums text-xs">
-              Recording 0:{recordingSeconds < 10 ? `0${recordingSeconds}` : recordingSeconds}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCancelVoiceRecording}
-              className="px-3 py-1 rounded-xl text-xs font-semibold hover:bg-rose-500/20 transition-colors cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSendVoiceNote}
-              className="h-8 px-3 rounded-xl bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-rose-700 transition-colors cursor-pointer"
-            >
-              <Send size={12} />
-              <span>Send Voice</span>
-            </button>
-          </div>
-        </div>
+        /* WhatsApp-Style In-Browser Voice Recording Dock */
+        <VoiceRecorderDock
+          isOpen={isRecordingVoice}
+          onCancel={() => setIsRecordingVoice(false)}
+          onSendVoice={handleSendVoiceNote}
+        />
       ) : (
         /* Regular Input Dock */
         <div className="relative flex items-center gap-2 rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/80 dark:bg-[#080D1A]/90 px-3 py-1.5 shadow-sm backdrop-blur-2xl transition-all focus-within:border-[#1E90FF]/50">
@@ -480,11 +659,13 @@ export function DirectMessageInput({
 
           {/* Message Textarea */}
           <textarea
+            ref={textareaRef}
             rows={1}
-            placeholder="Type a message"
+            placeholder="Type a message or paste images (Ctrl+V)..."
             value={content}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             className="flex-1 bg-transparent py-1.5 text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-400 focus:outline-none resize-none max-h-32 leading-relaxed"
           />
 
@@ -501,7 +682,7 @@ export function DirectMessageInput({
           ) : (
             <motion.button
               whileTap={{ scale: 0.95 }}
-              onClick={handleStartVoiceRecording}
+              onClick={() => setIsRecordingVoice(true)}
               className="h-9 w-9 rounded-2xl bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-[#1E90FF] flex items-center justify-center transition-all cursor-pointer shrink-0"
               title="Record Voice Note"
             >

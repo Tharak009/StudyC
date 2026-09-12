@@ -18,7 +18,12 @@ export interface ConversationListParams {
 export interface CreateMessagePayload {
   content: string;
   replyTo?: string;
+  clientMessageId?: string;
   attachments?: File[];
+  duration?: number;
+  waveform?: number[];
+  onUploadProgress?: (progressEvent: { loaded: number; total?: number }) => void;
+  signal?: AbortSignal;
 }
 
 export const directMessagesApi = {
@@ -49,12 +54,19 @@ export const directMessagesApi = {
     const form = new FormData();
     form.append("content", payload.content);
     if (payload.replyTo) form.append("replyTo", payload.replyTo);
+    if (payload.clientMessageId) form.append("clientMessageId", payload.clientMessageId);
+    if (payload.duration !== undefined) form.append("duration", String(payload.duration));
+    if (payload.waveform) form.append("waveform", JSON.stringify(payload.waveform));
     payload.attachments?.forEach((file) => form.append("attachments", file));
     return (
       await apiClient.post<ApiResponse<DirectMessage>>(
         `/api/direct-messages/conversations/${conversationId}/messages`,
         form,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+          onUploadProgress: payload.onUploadProgress,
+          signal: payload.signal
+        }
       )
     ).data.data;
   },
@@ -74,8 +86,115 @@ export const directMessagesApi = {
       await apiClient.post<ApiResponse<null>>("/api/direct-messages/messages/read", { conversationId })
     ).data.data,
 
+  markAsUnread: async (conversationId: string) =>
+    (
+      await apiClient.post<ApiResponse<null>>(`/api/direct-messages/conversations/${conversationId}/unread`)
+    ).data.data,
+
+  markAsDelivered: async (conversationId: string) =>
+    (
+      await apiClient.post<ApiResponse<null>>(`/api/direct-messages/conversations/${conversationId}/delivered`)
+    ).data.data,
+
+  togglePin: async (conversationId: string) =>
+    (
+      await apiClient.patch<ApiResponse<{ isPinned: boolean }>>(`/api/direct-messages/conversations/${conversationId}/pin`)
+    ).data.data,
+
+  toggleMute: async (conversationId: string) =>
+    (
+      await apiClient.patch<ApiResponse<{ isMuted: boolean }>>(`/api/direct-messages/conversations/${conversationId}/mute`)
+    ).data.data,
+
+  toggleArchive: async (conversationId: string) =>
+    (
+      await apiClient.patch<ApiResponse<{ isArchived: boolean }>>(`/api/direct-messages/conversations/${conversationId}/archive`)
+    ).data.data,
+
   unreadCount: async () =>
     (
       await apiClient.get<ApiResponse<{ count: number }>>("/api/direct-messages/conversations/unread")
+    ).data.data,
+
+  deleteForMe: async (messageId: string) =>
+    (
+      await apiClient.post<ApiResponse<{ success: boolean; messageId: string }>>(
+        `/api/direct-messages/messages/${messageId}/delete-for-me`
+      )
+    ).data.data,
+
+  deleteForEveryone: async (messageId: string) =>
+    (
+      await apiClient.post<ApiResponse<DirectMessage>>(
+        `/api/direct-messages/messages/${messageId}/delete-for-everyone`
+      )
+    ).data.data,
+
+  toggleReaction: async (messageId: string, emoji: string, category: "STANDARD" | "CAMPUS_CUSTOM" = "STANDARD") =>
+    (
+      await apiClient.post<ApiResponse<{ reactions: DirectMessage["reactions"] }>>(
+        `/api/direct-messages/messages/${messageId}/reaction`,
+        { emoji, category }
+      )
+    ).data.data,
+
+  toggleStar: async (messageId: string) =>
+    (
+      await apiClient.post<ApiResponse<{ isStarred: boolean }>>(
+        `/api/direct-messages/messages/${messageId}/star`
+      )
+    ).data.data,
+
+  togglePinMessage: async (messageId: string) =>
+    (
+      await apiClient.post<ApiResponse<{ isPinned: boolean }>>(
+        `/api/direct-messages/messages/${messageId}/pin`
+      )
+    ).data.data,
+
+  getStarredMessages: async (conversationId: string) =>
+    (
+      await apiClient.get<ApiResponse<DirectMessage[]>>(
+        `/api/direct-messages/conversations/${conversationId}/starred`
+      )
+    ).data.data,
+
+  getPinnedMessages: async (conversationId: string) =>
+    (
+      await apiClient.get<ApiResponse<DirectMessage[]>>(
+        `/api/direct-messages/conversations/${conversationId}/pinned`
+      )
+    ).data.data,
+
+  forwardMessages: async (conversationId: string, messageIds: string[], targetConversationIds: string[]) =>
+    (
+      await apiClient.post<ApiResponse<DirectMessage[]>>(
+        `/api/direct-messages/conversations/${conversationId}/messages/forward`,
+        { messageIds, targetConversationIds }
+      )
+    ).data.data,
+
+  bulkDeleteForMe: async (conversationId: string, messageIds: string[]) =>
+    (
+      await apiClient.post<ApiResponse<{ count: number }>>(
+        `/api/direct-messages/conversations/${conversationId}/messages/bulk-delete-for-me`,
+        { messageIds }
+      )
+    ).data.data,
+
+  bulkDeleteForEveryone: async (conversationId: string, messageIds: string[]) =>
+    (
+      await apiClient.post<ApiResponse<{ deletedIds: string[] }>>(
+        `/api/direct-messages/conversations/${conversationId}/messages/bulk-delete-for-everyone`,
+        { messageIds }
+      )
+    ).data.data,
+
+  bulkStar: async (conversationId: string, messageIds: string[], star = true) =>
+    (
+      await apiClient.post<ApiResponse<{ count: number }>>(
+        `/api/direct-messages/conversations/${conversationId}/messages/bulk-star`,
+        { messageIds, star }
+      )
     ).data.data
 };

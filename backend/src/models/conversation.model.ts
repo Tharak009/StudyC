@@ -12,6 +12,10 @@ export interface IConversation {
   lockedBy?: Types.ObjectId | string;
   lockedReason?: string;
   lockedAt?: Date;
+  pinnedBy?: Types.ObjectId[];
+  mutedBy?: Types.ObjectId[];
+  archivedBy?: Types.ObjectId[];
+  unreadBy?: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,12 +47,18 @@ const conversationSchema = new Schema<IConversation, ConversationModel>(
     isLocked: { type: Boolean, default: false },
     lockedBy: { type: Schema.Types.ObjectId, ref: "User" },
     lockedReason: { type: String, trim: true, default: "" },
-    lockedAt: Date
+    lockedAt: Date,
+    pinnedBy: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
+    mutedBy: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
+    archivedBy: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
+    unreadBy: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] }
   },
   { timestamps: true, versionKey: false }
 );
 
 conversationSchema.index({ participants: 1 });
 conversationSchema.index({ lastMessageAt: -1 });
+conversationSchema.index({ pinnedBy: 1 });
+conversationSchema.index({ archivedBy: 1 });
 
 export const Conversation = model<IConversation, ConversationModel>("Conversation", conversationSchema);

@@ -1,6 +1,6 @@
 import type { User } from "./auth";
 
-export type MessageType = "TEXT" | "IMAGE" | "PDF" | "DOCUMENT";
+export type MessageType = "TEXT" | "IMAGE" | "PDF" | "DOCUMENT" | "AUDIO";
 
 export interface MessageAttachment {
   key: string;
@@ -8,6 +8,11 @@ export interface MessageAttachment {
   originalName: string;
   mimeType: string;
   size: number;
+  thumbnailUrl?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  waveform?: number[];
 }
 
 export interface CodeSnippet {
@@ -27,6 +32,8 @@ export interface ChatReply {
   _id: string;
   content: string;
   deleted: boolean;
+  isDeletedForEveryone?: boolean;
+  messageType?: MessageType;
   senderId?: Pick<User, "_id" | "fullName">;
   codeSnippet?: CodeSnippet;
   intent?: "chat" | "question" | "solution" | "code";
@@ -49,6 +56,12 @@ export interface ChatMessage {
   isAcceptedSolution?: boolean;
   karmaAwarded?: number;
   isPinned?: boolean;
+  pinnedAt?: string;
+  pinnedBy?: string | Pick<User, "_id" | "fullName">;
+  isStarred?: boolean;
+  starredBy?: string[];
+  isForwarded?: boolean;
+  forwardedFrom?: any;
   threadCount?: number;
   threadLastReplyAt?: string;
   reactions?: MessageReaction[];

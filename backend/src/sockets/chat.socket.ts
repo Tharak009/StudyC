@@ -549,8 +549,8 @@ export const registerChatHandlers = (
         if (!message.reactions) message.reactions = [];
         const existingIdx = message.reactions.findIndex((r) => r.emoji === emoji);
 
-        if (existingIdx !== -1) {
-          const rx = message.reactions[existingIdx];
+        if (existingIdx !== -1 && message.reactions[existingIdx]) {
+          const rx = message.reactions[existingIdx]!;
           const userIndex = rx.users.findIndex((u) => u.toString() === userId);
           if (userIndex !== -1) {
             rx.users.splice(userIndex, 1);
@@ -759,6 +759,30 @@ export const registerChatHandlers = (
       const data = updated.toJSON?.() ?? updated;
       io.to(`room:${input.communityId}`).emit("messageUpdated", data);
       io.to(`community:${input.communityId}`).emit("messageUpdated", data);
+      io.to(`room:${input.communityId}`).emit("chat:messageEdited", data);
+      io.to(`community:${input.communityId}`).emit("chat:messageEdited", data);
+      if (typeof acknowledge === "function") acknowledge({ success: true, data });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to edit message";
+      if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      socket.emit("chatError", { message });
+    }
+  });
+
+  socket.on("chat:editMessage", async (payload: unknown, acknowledge?: unknown) => {
+    try {
+      const input = socketEditMessageSchema.parse(payload);
+      const updated = await chatService.editMessage(
+        input.communityId,
+        input.messageId,
+        userId,
+        input.content
+      );
+      const data = updated.toJSON?.() ?? updated;
+      io.to(`room:${input.communityId}`).emit("messageUpdated", data);
+      io.to(`community:${input.communityId}`).emit("messageUpdated", data);
+      io.to(`room:${input.communityId}`).emit("chat:messageEdited", data);
+      io.to(`community:${input.communityId}`).emit("chat:messageEdited", data);
       if (typeof acknowledge === "function") acknowledge({ success: true, data });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to edit message";
@@ -781,6 +805,110 @@ export const registerChatHandlers = (
       if (typeof acknowledge === "function") acknowledge({ success: true, data });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to delete message";
+      if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      socket.emit("chatError", { message });
+    }
+  });
+
+  socket.on("chat:deleteForMe", async (payload: { communityId: string; messageId: string }, acknowledge?: (res: unknown) => void) => {
+    try {
+      const { communityId, messageId } = payload;
+      const result = await chatService.deleteMessageForMe(communityId, messageId, userId);
+      io.to(`user:${userId}`).emit("chat:messageDeletedForMe", { communityId, messageId });
+      if (typeof acknowledge === "function") acknowledge({ success: true, data: result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete message for me";
+      if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      socket.emit("chatError", { message });
+    }
+  });
+
+  socket.on("chat:deleteForEveryone", async (payload: { communityId: string; messageId: string; channelId?: string }, acknowledge?: (res: unknown) => void) => {
+    try {
+      const { communityId, messageId, channelId } = payload;
+      const deleted = await chatService.deleteMessageForEveryone(communityId, messageId, userId, true);
+      const data = deleted.toJSON?.() ?? deleted;
+      const purgeData = {
+        communityId,
+        channelId,
+        messageId,
+        isDeletedForEveryone: true,
+        deletedBy: userId,
+        deletedAt: deleted.deletedAt || new Date()
+      };
+      const roomName = communityRoomFor(communityId, channelId);
+      io.to(roomName).emit("chat:messagePurged", purgeData);
+      io.to(`room:${communityId}`).emit("chat:messagePurged", purgeData);
+      io.to(`community:${communityId}`).emit("messageDeleted", data);
+      if (typeof acknowledge === "function") acknowledge({ success: true, data: purgeData });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete message for everyone";
+      if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      socket.emit("chatError", { message });
+    }
+  });
+
+  socket.on("chat:reaction", async (payload: { communityId: string; messageId: string; emoji: string; channelId?: string }, acknowledge?: (res: unknown) => void) => {
+    try {
+      const { communityId, messageId, emoji, channelId } = payload;
+      const reactions = await chatService.toggleReaction(communityId, messageId, userId, emoji);
+      const roomName = communityRoomFor(communityId, channelId);
+      const reactionData = { communityId, channelId, messageId, reactions, userId, emoji };
+      io.to(roomName).emit("chat:reactionUpdated", reactionData);
+      io.to(`room:${communityId}`).emit("chat:reactionUpdated", reactionData);
+      if (typeof acknowledge === "function") acknowledge({ success: true, reactions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to toggle reaction";
+      if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      socket.emit("chatError", { message });
+    }
+  });
+
+  socket.on("chat:star", async (payload: { communityId: string; messageId: string }, acknowledge?: (res: unknown) => void) => {
+    try {
+      const { communityId, messageId } = payload;
+      const result = await chatService.toggleStar(communityId, messageId, userId);
+      io.to(`user:${userId}`).emit("chat:starUpdated", { communityId, messageId, isStarred: result.isStarred });
+      if (typeof acknowledge === "function") acknowledge({ success: true, isStarred: result.isStarred });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to toggle star";
+      if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      socket.emit("chatError", { message });
+    }
+  });
+
+  socket.on("chat:pin", async (payload: { communityId: string; messageId: string; channelId?: string }, acknowledge?: (res: unknown) => void) => {
+    try {
+      const { communityId, messageId, channelId } = payload;
+      const result = await chatService.togglePin(communityId, messageId, userId);
+      const pinPayload = {
+        communityId,
+        channelId,
+        messageId,
+        isPinned: result.isPinned,
+        pinnedBy: userId,
+        pinnedAt: result.message?.pinnedAt || new Date()
+      };
+      const roomName = communityRoomFor(communityId, channelId);
+      io.to(roomName).emit("chat:pinUpdated", pinPayload);
+      io.to(roomName).emit("chat:messagePinned", pinPayload);
+      io.to(`room:${communityId}`).emit("chat:pinUpdated", pinPayload);
+      io.to(`room:${communityId}`).emit("chat:messagePinned", pinPayload);
+      if (typeof acknowledge === "function") acknowledge({ success: true, isPinned: result.isPinned });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to toggle pin";
+      if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      socket.emit("chatError", { message });
+    }
+  });
+
+  socket.on("chat:forward", async (payload: { messageIds: string[]; targetCommunityId: string; targetChannelId?: string }, acknowledge?: (res: unknown) => void) => {
+    try {
+      const { messageIds, targetCommunityId, targetChannelId } = payload;
+      const messages = await chatService.forwardMessages(messageIds, targetCommunityId, targetChannelId, userId);
+      if (typeof acknowledge === "function") acknowledge({ success: true, data: messages });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to forward messages";
       if (typeof acknowledge === "function") acknowledge({ success: false, message });
       socket.emit("chatError", { message });
     }

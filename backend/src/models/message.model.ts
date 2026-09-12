@@ -7,6 +7,11 @@ export interface MessageAttachment {
   originalName: string;
   mimeType: string;
   size: number;
+  thumbnailUrl?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  waveform?: number[];
 }
 
 export interface CodeSnippet {
@@ -35,6 +40,8 @@ export interface IMessage {
   isAcceptedSolution?: boolean;
   karmaAwarded?: number;
   isPinned?: boolean;
+  pinnedAt?: Date;
+  pinnedBy?: Types.ObjectId;
   threadCount?: number;
   threadLastReplyAt?: Date;
   reactions?: MessageReaction[];
@@ -45,6 +52,9 @@ export interface IMessage {
   isDeletedForEveryone?: boolean;
   deletedBy?: Types.ObjectId;
   deletedAt?: Date;
+  starredBy?: Types.ObjectId[];
+  isForwarded?: boolean;
+  forwardedFrom?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -58,7 +68,12 @@ const attachmentSchema = new Schema<MessageAttachment>(
     url: { type: String, required: true },
     originalName: { type: String, required: true },
     mimeType: { type: String, required: true },
-    size: { type: Number, required: true }
+    size: { type: Number, required: true },
+    thumbnailUrl: { type: String },
+    width: { type: Number },
+    height: { type: Number },
+    duration: { type: Number },
+    waveform: { type: [Number], default: undefined }
   },
   { _id: false }
 );
@@ -96,6 +111,8 @@ const messageSchema = new Schema<IMessage, MessageModel>(
     isAcceptedSolution: { type: Boolean, default: false },
     karmaAwarded: { type: Number, default: 0 },
     isPinned: { type: Boolean, default: false, index: true },
+    pinnedAt: Date,
+    pinnedBy: { type: Schema.Types.ObjectId, ref: "User" },
     threadCount: { type: Number, default: 0 },
     threadLastReplyAt: Date,
     reactions: { type: [messageReactionSchema], default: [] },
@@ -105,12 +122,16 @@ const messageSchema = new Schema<IMessage, MessageModel>(
     deletedFor: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     isDeletedForEveryone: { type: Boolean, default: false, index: true },
     deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
-    deletedAt: Date
+    deletedAt: Date,
+    starredBy: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
+    isForwarded: { type: Boolean, default: false },
+    forwardedFrom: { type: Schema.Types.ObjectId, ref: "Message" }
   },
   { timestamps: true, versionKey: false }
 );
 
 messageSchema.index({ communityId: 1, channelId: 1, createdAt: -1, _id: -1 });
 messageSchema.index({ replyTo: 1, createdAt: 1 });
+messageSchema.index({ communityId: 1, starredBy: 1 });
 
 export const Message = model<IMessage, MessageModel>("Message", messageSchema);

@@ -17,6 +17,7 @@ interface SendDirectMessagePayload {
   conversationId: string;
   recipientId: string;
   content: string;
+  clientMessageId?: string;
   attachments?: Array<{
     key: string;
     url: string;
@@ -50,15 +51,21 @@ export const registerDmHandlers = (
     "dm:sendMessage",
     async (payload: SendDirectMessagePayload, acknowledge?: (res: unknown) => void) => {
       try {
-        const { conversationId, recipientId, content, replyTo } = payload;
+        const { conversationId, recipientId, content, replyTo, clientMessageId } = payload;
         if (!conversationId || !recipientId) {
           throw new Error("conversationId and recipientId are required");
         }
 
+        const isRecipientOnline = registry.onlineUsersMap.has(recipientId);
         const { message } = await directMessageService.sendMessage(
           conversationId,
           userId,
-          { content: content || "", replyTo },
+          {
+            content: content || "",
+            replyTo,
+            clientMessageId,
+            delivered: isRecipientOnline
+          },
           []
         );
 
@@ -67,26 +74,36 @@ export const registerDmHandlers = (
           senderName: socket.data.user?.name || "Student",
           senderDepartment: socket.data.user?.department,
           senderRoll: socket.data.user?.rollNumber,
-          isDelivered: registry.onlineUsersMap.has(recipientId),
-          isRead: false
+          isDelivered: isRecipientOnline,
+          isRead: false,
+          clientMessageId
         };
 
-        // dmBus automatically broadcasts to dm room & recipient user room
+        // If recipient is online, notify sender immediately of delivery
+        if (isRecipientOnline) {
+          io.to(userRoomFor(userId)).emit("dm:messageDelivered", {
+            messageId: message._id.toString(),
+            conversationId,
+            clientMessageId,
+            deliveredAt: new Date().toISOString()
+          });
+        }
 
-        // Optimistic single-checkmark response to sender
+        // Optimistic response to sender with clientMessageId
         if (typeof acknowledge === "function") {
           acknowledge({
             success: true,
             data: messageData,
-            delivered: registry.onlineUsersMap.has(recipientId)
+            clientMessageId,
+            delivered: isRecipientOnline
           });
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to send direct message";
         if (typeof acknowledge === "function") {
-          acknowledge({ success: false, message });
+          acknowledge({ success: false, message, clientMessageId: payload?.clientMessageId });
         }
-        socket.emit("dmError", { message });
+        socket.emit("dmError", { message, clientMessageId: payload?.clientMessageId });
       }
     }
   );
@@ -95,17 +112,39 @@ export const registerDmHandlers = (
   socket.on("sendDirectMessage", async (payload: unknown, acknowledge?: unknown) => {
     try {
       const input = socketSendDirectMessageSchema.parse(payload);
+      const conversation = await Conversation.findById(input.conversationId);
+      const receiverId = conversation?.participants.find((p) => p.toString() !== userId)?.toString() || "";
+      const isRecipientOnline = receiverId ? registry.onlineUsersMap.has(receiverId) : false;
+
       const { message } = await directMessageService.sendMessage(
         input.conversationId,
         userId,
-        { content: input.content, replyTo: input.replyTo },
+        {
+          content: input.content,
+          replyTo: input.replyTo,
+          clientMessageId: input.clientMessageId,
+          delivered: isRecipientOnline
+        },
         []
       );
 
-      const data = message.toJSON?.() ?? message;
+      const data = {
+        ...(message.toJSON?.() ?? message),
+        clientMessageId: input.clientMessageId,
+        isDelivered: isRecipientOnline
+      };
+
+      if (isRecipientOnline) {
+        io.to(userRoomFor(userId)).emit("dm:messageDelivered", {
+          messageId: message._id.toString(),
+          conversationId: input.conversationId,
+          clientMessageId: input.clientMessageId,
+          deliveredAt: new Date().toISOString()
+        });
+      }
 
       if (typeof acknowledge === "function") {
-        acknowledge({ success: true, data });
+        acknowledge({ success: true, data, clientMessageId: input.clientMessageId, delivered: isRecipientOnline });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to send direct message";
@@ -119,9 +158,17 @@ export const registerDmHandlers = (
   // ── 2. Delivery Receipt (Double Grey Checkmark) ───────────────────────────
   socket.on(
     "dm:delivered",
-    (payload: { messageId: string; conversationId: string; senderId: string }) => {
+    async (payload: { messageId?: string; conversationId: string; senderId?: string }) => {
       const { messageId, conversationId, senderId } = payload;
-      if (!messageId || !senderId) return;
+      if (!conversationId) return;
+
+      if (messageId) {
+        await DirectMessage.findByIdAndUpdate(messageId, {
+          $set: { delivered: true, deliveredAt: new Date() }
+        });
+      } else {
+        await directMessageService.markAsDelivered(conversationId, userId);
+      }
 
       const deliveryData = {
         messageId,
@@ -129,8 +176,10 @@ export const registerDmHandlers = (
         deliveredAt: new Date().toISOString()
       };
 
-      // Notify message author across their active tabs
-      io.to(userRoomFor(senderId)).emit("dm:messageDelivered", deliveryData);
+      if (senderId) {
+        io.to(userRoomFor(senderId)).emit("dm:messageDelivered", deliveryData);
+      }
+      io.to(dmRoomFor(conversationId)).emit("dm:messageDelivered", deliveryData);
     }
   );
 
@@ -392,8 +441,8 @@ export const registerDmHandlers = (
         if (!message.reactions) message.reactions = [];
         const existingIdx = message.reactions.findIndex((r) => r.emoji === emoji);
 
-        if (existingIdx !== -1) {
-          const rx = message.reactions[existingIdx];
+        if (existingIdx !== -1 && message.reactions[existingIdx]) {
+          const rx = message.reactions[existingIdx]!;
           const userIdx = rx.users.findIndex((u) => u.toString() === userId);
           if (userIdx !== -1) {
             rx.users.splice(userIdx, 1);
@@ -448,7 +497,7 @@ export const registerDmHandlers = (
           $addToSet: { deletedFor: new Types.ObjectId(userId) }
         });
 
-        socket.emit("dm:messageDeletedForMe", { messageId, conversationId });
+        io.to(userRoomFor(userId)).emit("dm:messageDeletedForMe", { messageId, conversationId });
         if (typeof acknowledge === "function") acknowledge({ success: true, messageId });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to delete direct message for me";
@@ -488,6 +537,28 @@ export const registerDmHandlers = (
         message.attachments = [];
         await message.save();
 
+        // Keep Conversation.lastMessage preview consistent with latest active message
+        const latestActiveMsg = await DirectMessage.findOne({
+          conversationId,
+          deleted: { $ne: true }
+        })
+          .sort({ createdAt: -1 })
+          .exec();
+
+        if (latestActiveMsg) {
+          await Conversation.findByIdAndUpdate(conversationId, {
+            $set: {
+              lastMessage: {
+                content: latestActiveMsg.isDeletedForEveryone
+                  ? "🗑️ This message was deleted"
+                  : latestActiveMsg.content || (latestActiveMsg.attachments?.length ? "📎 Attachment" : ""),
+                senderId: latestActiveMsg.senderId,
+                createdAt: latestActiveMsg.createdAt
+              }
+            }
+          });
+        }
+
         const purgeData = {
           messageId,
           conversationId,
@@ -510,7 +581,100 @@ export const registerDmHandlers = (
     }
   );
 
-  // ── 9. Direct Message Lock Toggle ─────────────────────────────────────────
+  // ── 9. Direct Message Edit ────────────────────────────────────────────────
+  socket.on(
+    "dm:editMessage",
+    async (
+      payload: { messageId: string; conversationId: string; content: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { messageId, conversationId, content } = payload;
+        const updated = await directMessageService.editMessage(messageId, userId, content);
+        const data = updated.toJSON?.() ?? updated;
+        io.to(dmRoomFor(conversationId)).emit("dm:messageEdited", data);
+        io.to(dmRoomFor(conversationId)).emit("directMessageUpdated", data);
+        if (typeof acknowledge === "function") acknowledge({ success: true, data });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to edit direct message";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+        socket.emit("dmError", { message });
+      }
+    }
+  );
+
+  // ── 10. Direct Message Star Toggle ────────────────────────────────────────
+  socket.on(
+    "dm:star",
+    async (
+      payload: { messageId: string; conversationId: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { messageId, conversationId } = payload;
+        const result = await directMessageService.toggleStar(messageId, userId);
+        io.to(userRoomFor(userId)).emit("dm:starUpdated", {
+          messageId,
+          conversationId,
+          isStarred: result.isStarred
+        });
+        if (typeof acknowledge === "function") acknowledge({ success: true, isStarred: result.isStarred });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to toggle star";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+        socket.emit("dmError", { message });
+      }
+    }
+  );
+
+  // ── 11. Direct Message Pin Toggle ─────────────────────────────────────────
+  socket.on(
+    "dm:pin",
+    async (
+      payload: { messageId: string; conversationId: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { messageId, conversationId } = payload;
+        const result = await directMessageService.togglePinMessage(messageId, userId);
+        const pinPayload = {
+          messageId,
+          conversationId,
+          isPinned: result.isPinned,
+          pinnedBy: userId,
+          message: result.message
+        };
+        io.to(dmRoomFor(conversationId)).emit("dm:messagePinned", pinPayload);
+        io.to(dmRoomFor(conversationId)).emit("dm:pinUpdated", pinPayload);
+        if (typeof acknowledge === "function") acknowledge({ success: true, isPinned: result.isPinned, data: pinPayload });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to toggle pin";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+        socket.emit("dmError", { message });
+      }
+    }
+  );
+
+  // ── 12. Direct Message Forward ────────────────────────────────────────────
+  socket.on(
+    "dm:forward",
+    async (
+      payload: { messageIds: string[]; targetConversationIds: string[] },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { messageIds, targetConversationIds } = payload;
+        const messages = await directMessageService.forwardMessages(messageIds, targetConversationIds, userId);
+        if (typeof acknowledge === "function") acknowledge({ success: true, data: messages });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to forward messages";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+        socket.emit("dmError", { message });
+      }
+    }
+  );
+
+  // ── 13. Direct Message Lock Toggle ────────────────────────────────────────
   socket.on(
     "dm:toggleLock",
     async (

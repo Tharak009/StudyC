@@ -12,7 +12,9 @@ import {
   Sparkles,
   ArrowDown,
   Lock,
-  Unlock
+  Unlock,
+  Pin,
+  Star
 } from "lucide-react";
 import type { Channel, ChatMessage } from "../../types/chat";
 import { useChatStore } from "../../store/chat.store";
@@ -20,6 +22,7 @@ import { MessageItem } from "./MessageItem";
 import { ChatInput } from "./ChatInput";
 import { SprintWidget } from "../study-circles/SprintWidget";
 import { socketService } from "../../services/socket.service";
+import { useToastStore } from "../../store/toast.store";
 
 interface ChatContainerProps {
   community: {
@@ -42,6 +45,15 @@ interface ChatContainerProps {
   onDeleteForMe?: (messageId: string) => void;
   onDeleteForEveryone?: (messageId: string) => void;
   onOpenLockModal?: () => void;
+  onJumpToMessage?: (messageId: string) => void;
+  onEditMessage?: (message: ChatMessage) => void;
+  onForwardMessage?: (message: ChatMessage) => void;
+  onToggleStar?: (messageId: string, isStarred: boolean) => void;
+  onOpenStarredMessages?: () => void;
+  editingTarget?: { id: string; content: string } | null;
+  onCancelEdit?: () => void;
+  onSaveEdit?: (messageId: string, newContent: string) => void;
+  onOpenLightbox?: (images: Array<{ url: string; originalName: string; caption?: string }>, initialIndex?: number) => void;
   className?: string;
 }
 
@@ -80,6 +92,15 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   onDeleteForMe,
   onDeleteForEveryone,
   onOpenLockModal,
+  onJumpToMessage,
+  onEditMessage,
+  onForwardMessage,
+  onToggleStar,
+  onOpenStarredMessages,
+  editingTarget,
+  onCancelEdit,
+  onSaveEdit,
+  onOpenLightbox,
   className = ""
 }) => {
   const {
@@ -94,10 +115,25 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [glowingMessageId, setGlowingMessageId] = useState<string | null>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [replyTarget, setReplyTarget] = useState<{ senderName: string; content: string } | null>(
     null
   );
+  const { addToast } = useToastStore();
+
+  const handleJumpToMessage = (messageId: string) => {
+    if (onJumpToMessage) onJumpToMessage(messageId);
+    const el = messageRefs.current[messageId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setGlowingMessageId(messageId);
+      setTimeout(() => setGlowingMessageId(null), 2500);
+    } else {
+      addToast("Original message is further up in channel", "info");
+    }
+  };
 
   // Group messages by date for sticky frosted date separators
   const groupedMessages = useMemo(() => {
@@ -277,6 +313,18 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
 
+          {/* Starred Messages Trigger */}
+          {onOpenStarredMessages && (
+            <button
+              type="button"
+              onClick={onOpenStarredMessages}
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-[#162544] transition-all cursor-pointer"
+              title="Starred Messages"
+            >
+              <Star className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Inspector Mode Toggles */}
           <button
             onClick={() => setInspectorMode(inspectorMode === "thread" ? "closed" : "thread")}
@@ -356,21 +404,37 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
             {/* Messages in Group */}
             {group.items.map((msg) => (
-              <MessageItem
+              <div
                 key={msg._id}
-                message={msg}
-                currentUserId={currentUserId}
-                onReact={onReact || handleReact}
-                onPin={handlePin}
-                onMarkSolution={handleMarkSolution}
-                onDeleteForMe={onDeleteForMe}
-                onDeleteForEveryone={onDeleteForEveryone}
-                isModeratorOrAdmin={isModeratorOrAdmin}
-                onReplyInThread={(m) => {
-                  openThread(m);
-                  setInspectorMode("thread");
+                ref={(el) => {
+                  messageRefs.current[msg._id] = el;
                 }}
-              />
+                className={`transition-all duration-300 ${
+                  glowingMessageId === msg._id
+                    ? "ring-2 ring-[#1E90FF] ring-offset-2 ring-offset-white dark:ring-offset-[#080D1A] rounded-2xl animate-pulse"
+                    : ""
+                }`}
+              >
+                <MessageItem
+                  message={msg}
+                  currentUserId={currentUserId}
+                  onReact={onReact || handleReact}
+                  onPin={handlePin}
+                  onMarkSolution={handleMarkSolution}
+                  onDeleteForMe={onDeleteForMe}
+                  onDeleteForEveryone={onDeleteForEveryone}
+                  onJumpToMessage={handleJumpToMessage}
+                  onEdit={onEditMessage}
+                  onForward={onForwardMessage}
+                  onToggleStar={onToggleStar}
+                  isModeratorOrAdmin={isModeratorOrAdmin}
+                  onOpenLightbox={onOpenLightbox}
+                  onReplyInThread={(m) => {
+                    openThread(m);
+                    setInspectorMode("thread");
+                  }}
+                />
+              </div>
             ))}
           </div>
         ))}
@@ -396,6 +460,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           onSendMessage={onSendMessage}
           replyTarget={replyTarget}
           onCancelReply={() => setReplyTarget(null)}
+          editingTarget={editingTarget}
+          onCancelEdit={onCancelEdit}
+          onSaveEdit={onSaveEdit}
           typingUsers={typingUsers.map((u) => u.name)}
           isLocked={channel.isLocked}
           lockedReason={channel.lockedReason}

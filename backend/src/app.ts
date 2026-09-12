@@ -13,6 +13,10 @@ import {
 } from "./middlewares/error.middleware.js";
 import { apiLimiter } from "./middlewares/rate-limit.middleware.js";
 import { sanitizeInput } from "./middlewares/sanitize.middleware.js";
+import {
+  protectedChatAttachment,
+  protectedDirectMessageAttachment
+} from "./middlewares/attachment-auth.middleware.js";
 import { apiRouter } from "./routes/index.js";
 
 export const createApp = () => {
@@ -43,6 +47,10 @@ export const createApp = () => {
 
   app.get("/health", healthHandler);
   app.get("/api/health", healthHandler);
+
+  // Protected attachment routes (authenticated & permission-checked)
+  app.get("/uploads/direct-messages/:filename", protectedDirectMessageAttachment);
+  app.get("/uploads/chat/:filename", protectedChatAttachment);
 
   app.use("/uploads", express.static(path.resolve(process.cwd(), env.UPLOAD_DIR), {
     maxAge: env.NODE_ENV === "production" ? "1d" : 0,

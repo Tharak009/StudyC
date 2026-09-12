@@ -229,17 +229,41 @@ export const initializeSockets = (server: HttpServer): Server => {
     if (receiverId) {
       io.to(`user:${receiverId}`).emit("directMessageReceived", message);
       io.to(`user:${receiverId}`).emit("directMessageCreated", message);
+      io.to(`user:${receiverId}`).emit("dm:messageReceived", message);
     }
   });
   dmBus.onUpdated((conversationId, message) => {
     io.to(`dm:${conversationId}`).emit("directMessageUpdated", message);
+    io.to(`dm:${conversationId}`).emit("dm:messageEdited", message);
   });
   dmBus.onDeleted((conversationId, message) => {
     io.to(`dm:${conversationId}`).emit("directMessageDeleted", message);
+    io.to(`dm:${conversationId}`).emit("dm:messageDeleted", message);
   });
   dmBus.onRead((conversationId, message) => {
     io.to(`dm:${conversationId}`).emit("messageRead", message as Record<string, unknown>);
     io.to(`dm:${conversationId}`).emit("dm:messageRead", message as Record<string, unknown>);
+  });
+  dmBus.onPurged((conversationId, payload) => {
+    io.to(`dm:${conversationId}`).emit("dm:messagePurged", payload);
+    io.to(`dm:${conversationId}`).emit("directMessageDeleted", {
+      _id: payload.messageId,
+      conversationId,
+      isDeletedForEveryone: true
+    });
+  });
+  dmBus.onReaction((conversationId, payload) => {
+    io.to(`dm:${conversationId}`).emit("dm:reactionUpdated", payload);
+  });
+  dmBus.onPin((conversationId, payload) => {
+    io.to(`dm:${conversationId}`).emit("dm:pinUpdated", payload);
+    io.to(`dm:${conversationId}`).emit("dm:messagePinned", payload);
+  });
+  dmBus.onStar((userId, payload) => {
+    io.to(`user:${userId}`).emit("dm:starUpdated", payload);
+  });
+  dmBus.onDeletedForMe((userId, payload) => {
+    io.to(`user:${userId}`).emit("dm:messageDeletedForMe", payload);
   });
 
   notificationBus.onCreated((userId, notification) => {

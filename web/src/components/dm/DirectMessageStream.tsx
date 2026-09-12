@@ -4,7 +4,9 @@ import {
   Copy,
   MessageSquare,
   Trash2,
-  X
+  X,
+  Star,
+  Forward
 } from "lucide-react";
 import type { User } from "../../types/auth";
 import { ChatDoodleWallpaper } from "./ChatDoodleWallpaper";
@@ -21,7 +23,13 @@ interface DirectMessageStreamProps {
   onReact?: (messageId: string, emoji: string, category?: "STANDARD" | "CAMPUS_CUSTOM") => void;
   onDeleteForMe?: (messageId: string) => void;
   onDeleteForEveryone?: (messageId: string) => void;
+  onRetry?: (msg: DirectMessageItem) => void;
   searchQuery?: string;
+  onJumpToMessage?: (messageId: string) => void;
+  onEdit?: (msg: DirectMessageItem) => void;
+  onForward?: (msg: DirectMessageItem) => void;
+  onToggleStar?: (messageId: string, isStarred: boolean) => void;
+  onStartSelectionMode?: (initialId?: string) => void;
 
   // Pinned message banner props
   pinnedMessage?: PinnedMessageData | null;
@@ -33,7 +41,10 @@ interface DirectMessageStreamProps {
   selectedMessageIds?: string[];
   onToggleSelectMessage?: (messageId: string) => void;
   onDeleteSelected?: () => void;
+  onForwardSelected?: () => void;
+  onStarSelected?: () => void;
   onCancelSelection?: () => void;
+  onOpenLightbox?: (images: Array<{ url: string; originalName: string; caption?: string }>, initialIndex?: number) => void;
 }
 
 const QUICK_EMOJIS = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
@@ -45,7 +56,13 @@ export function DirectMessageStream({
   onReact,
   onDeleteForMe,
   onDeleteForEveryone,
+  onRetry,
   searchQuery = "",
+  onJumpToMessage,
+  onEdit,
+  onForward,
+  onToggleStar,
+  onStartSelectionMode,
   pinnedMessage,
   onPinMessage,
   onUnpinMessage,
@@ -53,13 +70,17 @@ export function DirectMessageStream({
   selectedMessageIds = [],
   onToggleSelectMessage,
   onDeleteSelected,
-  onCancelSelection
+  onForwardSelected,
+  onStarSelected,
+  onCancelSelection,
+  onOpenLightbox
 }: DirectMessageStreamProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [copiedSnippetId, setCopiedSnippetId] = useState<string | null>(null);
+  const [glowingMessageId, setGlowingMessageId] = useState<string | null>(null);
   const { addToast } = useToastStore();
 
   useEffect(() => {
@@ -95,6 +116,20 @@ export function DirectMessageStream({
       .join("\n");
     navigator.clipboard.writeText(formatted);
     addToast(`${selectedMsgs.length} messages copied to clipboard`, "success");
+  };
+
+  const handleJumpToMessage = (messageId: string) => {
+    if (onJumpToMessage) {
+      onJumpToMessage(messageId);
+    }
+    const el = messageRefs.current[messageId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setGlowingMessageId(messageId);
+      setTimeout(() => setGlowingMessageId(null), 2500);
+    } else {
+      addToast("Original message is further up in conversation", "info");
+    }
   };
 
   // Group messages by date
@@ -159,6 +194,32 @@ export function DirectMessageStream({
                 <span className="hidden sm:inline">Copy</span>
               </button>
 
+              {onForwardSelected && (
+                <button
+                  type="button"
+                  onClick={onForwardSelected}
+                  disabled={selectedMessageIds.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#111b21] text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                  title="Forward selected messages"
+                >
+                  <Forward size={13} />
+                  <span className="hidden sm:inline">Forward</span>
+                </button>
+              )}
+
+              {onStarSelected && (
+                <button
+                  type="button"
+                  onClick={onStarSelected}
+                  disabled={selectedMessageIds.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#111b21] text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                  title="Star selected messages"
+                >
+                  <Star size={13} />
+                  <span className="hidden sm:inline">Star</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onDeleteSelected}
@@ -205,8 +266,9 @@ export function DirectMessageStream({
             new Date(msg.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString();
 
           const isHighlight =
-            searchQuery.trim().length > 1 &&
-            msg.content.toLowerCase().includes(searchQuery.toLowerCase());
+            (searchQuery.trim().length > 1 &&
+              msg.content.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            glowingMessageId === msg.id;
 
           const isSelected = selectedMessageIds.includes(msg.id);
 
@@ -241,6 +303,13 @@ export function DirectMessageStream({
                   onReact={onReact}
                   onDeleteForMe={onDeleteForMe}
                   onDeleteForEveryone={onDeleteForEveryone}
+                  onRetry={onRetry}
+                  onJumpToMessage={handleJumpToMessage}
+                  onEdit={onEdit}
+                  onForward={onForward}
+                  onToggleStar={onToggleStar}
+                  onStartSelectionMode={onStartSelectionMode}
+                  onOpenLightbox={onOpenLightbox}
                 />
               </div>
             </React.Fragment>
