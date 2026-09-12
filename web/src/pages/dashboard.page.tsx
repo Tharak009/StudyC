@@ -102,7 +102,10 @@ const loadVaultResources = (): VaultItem[] => {
       ? parsed.map((r: any) => ({
           id: r.id || String(Math.random()),
           title: r.title || "Academic Document",
-          uploader: r.uploaderName || r.uploader || "Campus Scholar",
+          uploader:
+            typeof r.uploader === "object" && r.uploader !== null
+              ? r.uploader.name || r.uploader.fullName || "Campus Scholar"
+              : r.uploaderName || (typeof r.uploader === "string" ? r.uploader : "Campus Scholar"),
           dept: r.department || r.dept || "Academic Vault",
           size: r.fileSize || r.size || "1.2 MB",
           downloads: r.downloadCount ?? r.downloads ?? 0,
@@ -567,7 +570,12 @@ export function DashboardPage() {
                               {res.title}
                             </h4>
                             <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                              <span>Uploaded by {res.uploader}</span>
+                              <span>
+                                Uploaded by{" "}
+                                {typeof res.uploader === "object" && res.uploader !== null
+                                  ? (res.uploader as any).name || (res.uploader as any).fullName || "Campus Scholar"
+                                  : res.uploader}
+                              </span>
                               <span>•</span>
                               <span>{res.size}</span>
                               <span>•</span>

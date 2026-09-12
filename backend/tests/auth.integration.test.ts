@@ -16,7 +16,9 @@ const student = {
 };
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryServer.create({
+    instance: { launchTimeout: 120000 }
+  });
   await connectDatabase(mongo.getUri());
 });
 
@@ -26,7 +28,9 @@ afterEach(async () => {
 
 afterAll(async () => {
   await disconnectDatabase();
-  await mongo.stop();
+  if (mongo) {
+    await mongo.stop();
+  }
 });
 
 describe("authentication API", () => {

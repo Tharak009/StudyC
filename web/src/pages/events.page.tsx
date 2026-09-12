@@ -18,9 +18,12 @@ import { EventsFilterBar, eventDepartments } from "../components/events/EventsFi
 import { EventCard, type CampusEvent } from "../components/events/EventCard";
 import { MonthlyCalendarView } from "../components/events/MonthlyCalendarView";
 import { CreateEventModal } from "../components/events/CreateEventModal";
+import { EventDetailsModal } from "../components/events/EventDetailsModal";
 import { eventsApi, type BackendEvent, type CreateEventPayload } from "../api/events.api";
 import { useAuthStore } from "../store/auth.store";
 import { useToastStore } from "../store/toast.store";
+import { getOrganizerName } from "../types/event";
+import { socketService } from "../services/socket.service";
 
 function mapBackendToCampusEvent(b: BackendEvent, currentUserId?: string): CampusEvent {
   const creator = typeof b.createdBy === "object" ? b.createdBy : null;
@@ -34,7 +37,11 @@ function mapBackendToCampusEvent(b: BackendEvent, currentUserId?: string): Campu
     : "EV";
 
   const isRegistered = Array.isArray(b.attendees)
-    ? b.attendees.some((a) => (typeof a === "object" ? a._id === currentUserId : a === currentUserId))
+    ? b.attendees.some((a) => {
+        if (!a || !currentUserId) return false;
+        const targetId = typeof a === "object" ? (a._id || (a as any).id) : String(a);
+        return String(targetId) === String(currentUserId);
+      })
     : false;
 
   return {
@@ -42,14 +49,15 @@ function mapBackendToCampusEvent(b: BackendEvent, currentUserId?: string): Campu
     _id: b._id,
     title: b.title,
     category: b.category,
-    organizer: b.organizer,
+    organizer: getOrganizerName(b.organizer),
     dateStr: b.dateStr,
     timeStr: b.timeStr,
     venue: b.venue,
     isVirtual: b.isVirtual,
     description: b.description,
     tags: b.tags || [],
-    attendeesCount: b.attendeesCount || 1,
+    eventImage: b.eventImage,
+    attendeesCount: b.attendeesCount || (Array.isArray(b.attendees) ? b.attendees.length : 1),
     batchAttendeesCount: b.attendeesCount || 1,
     attendeeInitials: [initials],
     daysLeft: "Upcoming",
@@ -73,23 +81,82 @@ export function EventsPage() {
   const [selectedDept, setSelectedDept] = useState(eventDepartments[0]);
   const [myRsvpsOnly, setMyRsvpsOnly] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [selectedEventForDetails, setSelectedEventForDetails] = useState<CampusEvent | null>(null);
 
   // Load events from backend
   const loadEvents = useCallback(async () => {
     try {
       setLoading(true);
       const data = await eventsApi.list();
-      setEvents(data.map((item) => mapBackendToCampusEvent(item, currentUser?._id)));
+      const userId = currentUser?._id || (currentUser as any)?.id;
+      setEvents(data.map((item) => mapBackendToCampusEvent(item, userId)));
     } catch {
       addToast("Unable to fetch campus events from server.", "error");
     } finally {
       setLoading(false);
     }
-  }, [currentUser?._id, addToast]);
+  }, [currentUser, addToast]);
 
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  useEffect(() => {
+    const socket = socketService.connect();
+    if (!socket) return;
+
+    const handleAttendeesUpdate = (payload: { eventId: string; attendeesCount: number; attendees?: any[] }) => {
+      if (!payload?.eventId) return;
+      const targetId = payload.eventId;
+      const userId = currentUser?._id || (currentUser as any)?.id;
+
+      setEvents((prev) =>
+        prev.map((e) => {
+          if (e.id === targetId || e._id === targetId) {
+            let isReg = e.isRegistered;
+            if (Array.isArray(payload.attendees) && userId) {
+              isReg = payload.attendees.some((a) => {
+                const aId = typeof a === "object" ? (a._id || a.id) : String(a);
+                return String(aId) === String(userId);
+              });
+            }
+            return {
+              ...e,
+              attendeesCount: payload.attendeesCount,
+              isRegistered: isReg
+            };
+          }
+          return e;
+        })
+      );
+
+      setSelectedEventForDetails((prev) => {
+        if (prev && (prev.id === targetId || prev._id === targetId)) {
+          let isReg = prev.isRegistered;
+          if (Array.isArray(payload.attendees) && userId) {
+            isReg = payload.attendees.some((a) => {
+              const aId = typeof a === "object" ? (a._id || a.id) : String(a);
+              return String(aId) === String(userId);
+            });
+          }
+          return {
+            ...prev,
+            attendeesCount: payload.attendeesCount,
+            isRegistered: isReg
+          };
+        }
+        return prev;
+      });
+    };
+
+    socket.on("event:attendeesUpdated", handleAttendeesUpdate);
+    socket.on("eventRsvpUpdated", handleAttendeesUpdate);
+
+    return () => {
+      socket.off("event:attendeesUpdated", handleAttendeesUpdate);
+      socket.off("eventRsvpUpdated", handleAttendeesUpdate);
+    };
+  }, [currentUser]);
 
   // ── Dynamic KPI Calculations ──────────────────────────────────────────────
   const activeDeadlinesCount = useMemo(
@@ -118,7 +185,7 @@ export function EventsPage() {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchTitle = ev.title.toLowerCase().includes(q);
-        const matchOrg = ev.organizer.toLowerCase().includes(q);
+        const matchOrg = getOrganizerName(ev.organizer).toLowerCase().includes(q);
         const matchTags = ev.tags.some((t) => t.toLowerCase().includes(q));
         if (!matchTitle && !matchOrg && !matchTags) return false;
       }
@@ -136,20 +203,38 @@ export function EventsPage() {
             ? {
                 ...e,
                 isRegistered: res.isRegistered,
-                attendeesCount: res.event.attendeesCount
+                attendeesCount: res.event?.attendeesCount ?? e.attendeesCount
               }
             : e
         )
       );
-    } catch {
-      addToast("Failed to update RSVP status.", "error");
+
+      setSelectedEventForDetails((prev) =>
+        prev && prev.id === eventId
+          ? {
+              ...prev,
+              isRegistered: res.isRegistered,
+              attendeesCount: res.event?.attendeesCount ?? prev.attendeesCount
+            }
+          : prev
+      );
+
+      addToast(
+        res.isRegistered ? "Successfully registered for event!" : "Registration cancelled.",
+        res.isRegistered ? "success" : "info"
+      );
+    } catch (err: any) {
+      addToast(err?.response?.data?.message || err?.message || "Failed to update RSVP status.", "error");
+      throw err;
     }
   };
 
   const handleCreateEvent = async (payload: CreateEventPayload) => {
     const created = await eventsApi.create(payload);
-    const mapped = mapBackendToCampusEvent(created, currentUser?._id);
-    setEvents((prev) => [mapped, ...prev]);
+    if (created.approvalStatus === "APPROVED") {
+      const mapped = mapBackendToCampusEvent(created, currentUser?._id);
+      setEvents((prev) => [mapped, ...prev]);
+    }
   };
 
   const handleDeleteEvent = async (eventId: string) => {
@@ -347,6 +432,7 @@ export function EventsPage() {
                       onToggleRsvp={handleToggleRsvp}
                       onDelete={handleDeleteEvent}
                       canDelete={canDelete}
+                      onClick={() => setSelectedEventForDetails(ev)}
                     />
                   );
                 })}
@@ -356,7 +442,7 @@ export function EventsPage() {
             /* Monthly Calendar View */
             <MonthlyCalendarView
               events={events}
-              onSelectEvent={() => {}}
+              onSelectEvent={(ev) => setSelectedEventForDetails(ev)}
             />
           )}
 
@@ -370,6 +456,13 @@ export function EventsPage() {
             isOpen={createModalOpen}
             onClose={() => setCreateModalOpen(false)}
             onCreateEvent={handleCreateEvent}
+          />
+        )}
+        {selectedEventForDetails && (
+          <EventDetailsModal
+            event={events.find((e) => e.id === selectedEventForDetails.id) || selectedEventForDetails}
+            onClose={() => setSelectedEventForDetails(null)}
+            onToggleRsvp={handleToggleRsvp}
           />
         )}
       </AnimatePresence>

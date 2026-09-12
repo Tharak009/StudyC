@@ -10,6 +10,29 @@ export const eventIdParamsSchema = z.object({
   })
 });
 
+const booleanCoerce = z.preprocess((val) => {
+  if (typeof val === "boolean") return val;
+  if (typeof val === "string") {
+    if (val.toLowerCase() === "true") return true;
+    if (val.toLowerCase() === "false") return false;
+  }
+  return val;
+}, z.boolean());
+
+const tagsCoerce = z.preprocess((val) => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    if (!val.trim()) return [];
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return val.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  return val;
+}, z.array(z.string().trim()));
+
 export const createEventSchema = z.object({
   body: z.object({
     title: z.string().trim().min(2, "Title is too short").max(200, "Title is too long"),
@@ -20,8 +43,10 @@ export const createEventSchema = z.object({
     venue: z.string().trim().min(2).max(200),
     dateStr: z.string().trim().min(2).max(100),
     timeStr: z.string().trim().min(2).max(100),
-    isVirtual: z.boolean().optional().default(false),
-    tags: z.array(z.string().trim()).optional().default([])
+    isVirtual: booleanCoerce.optional().default(false),
+    tags: tagsCoerce.optional().default([]),
+    status: z.string().optional(),
+    approvalStatus: z.string().optional()
   })
 });
 
@@ -38,8 +63,11 @@ export const updateEventSchema = z.object({
     venue: z.string().trim().min(2).max(200).optional(),
     dateStr: z.string().trim().min(2).max(100).optional(),
     timeStr: z.string().trim().min(2).max(100).optional(),
-    isVirtual: z.boolean().optional(),
-    tags: z.array(z.string().trim()).optional()
+    isVirtual: booleanCoerce.optional(),
+    tags: tagsCoerce.optional(),
+    removeImage: booleanCoerce.optional(),
+    status: z.string().optional(),
+    approvalStatus: z.string().optional()
   })
 });
 
@@ -47,6 +75,7 @@ export const listEventsSchema = z.object({
   query: z.object({
     category: z.enum(EVENT_CATEGORIES).optional(),
     search: z.string().trim().max(100).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(50)
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    approvalStatus: z.enum(["PENDING", "APPROVED", "REJECTED", "all"]).optional()
   })
 });

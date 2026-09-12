@@ -9,7 +9,8 @@ import {
   Volume2,
   Tag,
   Sparkles,
-  Check
+  Check,
+  Upload
 } from "lucide-react";
 import { eventCategories, eventDepartments } from "./EventsFilterBar";
 import { useToastStore } from "../../store/toast.store";
@@ -39,10 +40,38 @@ export function CreateEventModal({
   const [description, setDescription] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [eventImageFile, setEventImageFile] = useState<File | null>(null);
+  const [eventImagePreview, setEventImagePreview] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   const { addToast } = useToastStore();
 
   if (!isOpen) return null;
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setImageError("Only JPEG, PNG, and WebP images are allowed");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError("Image file size must be less than 5 MB");
+      return;
+    }
+
+    setImageError(null);
+    setEventImageFile(file);
+    setEventImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleRemoveImage = () => {
+    setEventImageFile(null);
+    setEventImagePreview(null);
+    setImageError(null);
+  };
 
   const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
@@ -78,7 +107,8 @@ export function CreateEventModal({
       venue: isVirtual ? "Drop-in Voice Study Stage 1" : (venue.trim() || "Campus Classroom"),
       isVirtual,
       description: description.trim() || "Peer session and study review open to verified students.",
-      tags
+      tags,
+      eventImage: eventImageFile
     };
 
     try {
@@ -92,7 +122,7 @@ export function CreateEventModal({
         href: "/events",
         senderName: payload.organizer
       });
-      addToast(`Published "${title}" to the Campus Events calendar!`, "success");
+      addToast(`Submitted "${title}" for admin approval! Pending review before appearing on Campus Events.`, "info");
       onClose();
     } catch {
       addToast("Failed to create event. Please try again.", "error");
@@ -244,6 +274,61 @@ export function CreateEventModal({
                 onChange={(e) => setVenue(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#080D1A] px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-[#1E90FF]"
               />
+            )}
+          </div>
+
+          {/* Event Photo / Event Poster Upload */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Event Photo / Event Poster (Optional)
+            </label>
+            {eventImagePreview ? (
+              <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 group">
+                <img
+                  src={eventImagePreview}
+                  alt="Event Poster Preview"
+                  className="w-full h-32 object-cover"
+                />
+                <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-3 transition-opacity">
+                  <label className="cursor-pointer rounded-lg bg-white/90 dark:bg-slate-800/90 px-3 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-white transition-all">
+                    Change
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleImageChange}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRemoveImage}
+                    className="rounded-lg bg-rose-500/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600 transition-all cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-[#080D1A] hover:bg-slate-100/50 dark:hover:bg-white/[0.02] transition-all">
+                <div className="flex flex-col items-center justify-center pt-2 pb-2">
+                  <Upload size={18} className="mb-1 text-slate-400 dark:text-slate-500" />
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <span className="font-semibold text-[#1E90FF]">Select Image</span> or drag & drop
+                  </p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                    JPEG, PNG, or WebP (Max 5 MB)
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleImageChange}
+                />
+              </label>
+            )}
+            {imageError && (
+              <span className="mt-1 block text-[10px] text-rose-500">{imageError}</span>
             )}
           </div>
 

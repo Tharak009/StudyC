@@ -392,7 +392,7 @@ export const registerDmHandlers = (
         if (!message.reactions) message.reactions = [];
         const existingIdx = message.reactions.findIndex((r) => r.emoji === emoji);
 
-        if (existingIdx !== -1) {
+        if (existingIdx !== -1 && message.reactions[existingIdx]) {
           const rx = message.reactions[existingIdx];
           const userIdx = rx.users.findIndex((u) => u.toString() === userId);
           if (userIdx !== -1) {

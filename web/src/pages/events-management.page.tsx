@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useToastStore } from "../store/toast.store";
 import { useEventStore } from "../store/event.store";
+import { getOrganizerName } from "../types/event";
 import { EventTable } from "../components/event-table";
 import { CalendarView } from "../components/calendar-view";
 import { EventDetailsDrawer } from "../components/event-details-drawer";
@@ -166,7 +167,7 @@ export function EventsManagementPage() {
     const q = search.toLowerCase();
     const matchesSearch =
       ev.title.toLowerCase().includes(q) ||
-      ev.organizer.toLowerCase().includes(q) ||
+      getOrganizerName(ev.organizer).toLowerCase().includes(q) ||
       ev.department.toLowerCase().includes(q) ||
       ev.venue.toLowerCase().includes(q) ||
       ev._id.toLowerCase().includes(q);
@@ -176,7 +177,7 @@ export function EventsManagementPage() {
     const matchesCategory = !selectedCategory || ev.category === selectedCategory;
     const matchesStatus = !selectedStatus || ev.status === selectedStatus;
     const matchesApproval = !selectedApproval || ev.approvalStatus === selectedApproval;
-    const matchesOrganizer = !selectedOrganizer || ev.organizer.toLowerCase().includes(selectedOrganizer.toLowerCase());
+    const matchesOrganizer = !selectedOrganizer || getOrganizerName(ev.organizer).toLowerCase().includes(selectedOrganizer.toLowerCase());
 
     return matchesSearch && matchesDept && matchesCategory && matchesStatus && matchesApproval && matchesOrganizer;
   });
@@ -208,6 +209,10 @@ export function EventsManagementPage() {
 
   // Form submit handler (Create vs Edit)
   const handleSaveForm = (values: any) => {
+    const uploadedImageObj = values.eventImage instanceof File
+      ? { key: `img-${Date.now()}`, url: URL.createObjectURL(values.eventImage), originalName: values.eventImage.name, mimeType: values.eventImage.type, size: values.eventImage.size }
+      : values.removeImage ? null : undefined;
+
     if (editingEvent) {
       // Edit Mode
       setEvents((prev) =>
@@ -216,6 +221,7 @@ export function EventsManagementPage() {
             ? {
                 ...e,
                 ...values,
+                eventImage: uploadedImageObj !== undefined ? uploadedImageObj : e.eventImage,
                 updatedAt: new Date().toISOString(),
               }
             : e
@@ -241,6 +247,7 @@ export function EventsManagementPage() {
         status: "UPCOMING",
         approvalStatus: "APPROVED",
         bannerImage: values.bannerImage,
+        eventImage: uploadedImageObj || null,
         attachments: values.attachments,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

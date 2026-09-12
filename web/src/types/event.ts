@@ -20,13 +20,21 @@ export interface Participant {
   checkedIn: boolean;
 }
 
+export interface EventImage {
+  key: string;
+  url: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface Event {
   _id: string;
   title: string;
   description: string;
   category: EventCategory;
   department: string;
-  organizer: string;
+  organizer: string | any;
   venue: string;
   date: string; // ISO date string (YYYY-MM-DD)
   time: string; // HH:MM
@@ -36,6 +44,7 @@ export interface Event {
   status: EventStatus;
   approvalStatus: ApprovalStatus;
   bannerImage?: string;
+  eventImage?: EventImage | null;
   attachments?: { name: string; url: string }[];
   createdAt: string;
   updatedAt: string;
@@ -51,3 +60,18 @@ export const EVENT_CATEGORIES: EventCategory[] = [
   "Webinar",
   "Other",
 ];
+
+export function getOrganizerName(organizer: any): string {
+  if (!organizer) return "Student Organizer";
+  if (typeof organizer === "string") return organizer;
+  if (typeof organizer === "object" && organizer !== null) {
+    return (
+      organizer.name ||
+      organizer.fullName ||
+      organizer.organizer ||
+      "Student Organizer"
+    );
+  }
+  return String(organizer);
+}
+

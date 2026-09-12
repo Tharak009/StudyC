@@ -20,6 +20,7 @@ import { eventsApi, type BackendEvent, type CreateEventPayload } from "../../../
 import { CreateEventModal } from "../../events/CreateEventModal";
 import { ConfirmationDialog } from "../../confirmation-dialog";
 import { useToastStore } from "../../../store/toast.store";
+import { getOrganizerName } from "../../../types/event";
 
 export function EventsGovernanceTab() {
   const { addToast } = useToastStore();
@@ -33,7 +34,7 @@ export function EventsGovernanceTab() {
   const loadEvents = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await eventsApi.list();
+      const data = await eventsApi.list({ approvalStatus: "all" });
       setEvents(data);
     } catch {
       addToast("Failed to load campus events.", "error");
@@ -46,13 +47,33 @@ export function EventsGovernanceTab() {
     loadEvents();
   }, [loadEvents]);
 
+  const handleApproveEvent = async (eventId: string) => {
+    try {
+      const updated = await eventsApi.approve(eventId);
+      setEvents((prev) => prev.map((e) => (e._id === eventId ? updated : e)));
+      addToast("Event approved and published to Campus Events.", "success");
+    } catch {
+      addToast("Failed to approve event.", "error");
+    }
+  };
+
+  const handleRejectEvent = async (eventId: string) => {
+    try {
+      const updated = await eventsApi.reject(eventId);
+      setEvents((prev) => prev.map((e) => (e._id === eventId ? updated : e)));
+      addToast("Event rejected.", "info");
+    } catch {
+      addToast("Failed to reject event.", "error");
+    }
+  };
+
   const filteredEvents = useMemo(() => {
     return events.filter((ev) => {
       if (selectedCategory !== "all" && ev.category !== selectedCategory) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchTitle = ev.title.toLowerCase().includes(q);
-        const matchOrg = ev.organizer.toLowerCase().includes(q);
+        const matchOrg = getOrganizerName(ev.organizer).toLowerCase().includes(q);
         const matchDept = ev.department.toLowerCase().includes(q);
         const matchTags = ev.tags?.some((t) => t.toLowerCase().includes(q));
         if (!matchTitle && !matchOrg && !matchDept && !matchTags) return false;
@@ -66,7 +87,8 @@ export function EventsGovernanceTab() {
     const deadlines = events.filter((e) => e.category === "deadlines").length;
     const workshops = events.filter((e) => e.category === "workshops").length;
     const totalAttendees = events.reduce((acc, e) => acc + (e.attendeesCount || 0), 0);
-    return { hackathons, deadlines, workshops, totalAttendees, total: events.length };
+    const pendingCount = events.filter((e) => (e.approvalStatus || "PENDING") === "PENDING").length;
+    return { hackathons, deadlines, workshops, totalAttendees, total: events.length, pendingCount };
   }, [events]);
 
   const handleCreateEvent = async (payload: CreateEventPayload) => {
@@ -142,9 +164,9 @@ export function EventsGovernanceTab() {
           </p>
         </div>
         <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0F1A30]/80">
-          <span className="text-[10px] uppercase font-bold text-rose-500">Active Deadlines</span>
-          <p className="text-2xl font-black text-rose-500 mt-1 tabular-nums">
-            {kpis.deadlines}
+          <span className="text-[10px] uppercase font-bold text-amber-500">Pending Review</span>
+          <p className="text-2xl font-black text-amber-500 mt-1 tabular-nums">
+            {kpis.pendingCount}
           </p>
         </div>
         <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0F1A30]/80">
@@ -217,6 +239,7 @@ export function EventsGovernanceTab() {
               <thead className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-[#162544]/30 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="px-5 py-3.5">Event</th>
+                  <th className="px-5 py-3.5">Status</th>
                   <th className="px-5 py-3.5">Category</th>
                   <th className="px-5 py-3.5">Department</th>
                   <th className="px-5 py-3.5">Schedule</th>
@@ -228,6 +251,7 @@ export function EventsGovernanceTab() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {filteredEvents.map((ev) => {
                   const creator = typeof ev.createdBy === "object" ? ev.createdBy : null;
+                  const status = ev.approvalStatus || "APPROVED";
                   return (
                     <tr key={ev._id} className="hover:bg-slate-50/50 dark:hover:bg-[#162544]/20 transition-colors">
                       <td className="px-5 py-4 max-w-xs">
@@ -235,8 +259,26 @@ export function EventsGovernanceTab() {
                           {ev.title}
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                          By {ev.organizer} {creator ? `(${creator.fullName})` : ""}
+                          By {getOrganizerName(ev.organizer)} {creator ? `(${creator.fullName || (creator as any).name || ""})` : ""}
                         </p>
+                      </td>
+
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        {status === "PENDING" && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                            PENDING
+                          </span>
+                        )}
+                        {status === "APPROVED" && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                            APPROVED
+                          </span>
+                        )}
+                        {status === "REJECTED" && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                            REJECTED
+                          </span>
+                        )}
                       </td>
 
                       <td className="px-5 py-4 whitespace-nowrap">
@@ -270,14 +312,36 @@ export function EventsGovernanceTab() {
                       </td>
 
                       <td className="px-5 py-4 whitespace-nowrap text-right">
-                        <button
-                          type="button"
-                          onClick={() => setEventToDelete(ev)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                          title="Delete / Moderate Event"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          {status === "PENDING" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleApproveEvent(ev._id)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[11px] font-bold transition-colors cursor-pointer"
+                                title="Approve Event"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRejectEvent(ev._id)}
+                                className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[11px] font-bold transition-colors cursor-pointer"
+                                title="Reject Event"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setEventToDelete(ev)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Delete / Moderate Event"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

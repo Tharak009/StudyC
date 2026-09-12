@@ -149,7 +149,9 @@ export function AnnouncementDetailsDrawer({
             <div className="rounded-xl border border-slate-150 p-2 dark:border-white/5 dark:bg-white/[0.01]">
               <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Created By</span>
               <span className="block mt-1 text-[10px] font-bold text-slate-700 dark:text-slate-350 truncate">
-                {announcement.createdBy.split(" ").slice(-1)[0]}
+                {typeof announcement.createdBy === "string"
+                  ? announcement.createdBy.split(" ").slice(-1)[0]
+                  : (announcement.createdBy as any)?.fullName || (announcement.createdBy as any)?.name || "Admin"}
               </span>
             </div>
           </div>

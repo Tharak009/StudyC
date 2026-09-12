@@ -12,20 +12,42 @@ export interface CreateEventInput {
   timeStr: string;
   isVirtual?: boolean;
   tags?: string[];
+  eventImage?: IEvent["eventImage"];
   createdBy: string;
+  approvalStatus?: IEvent["approvalStatus"];
 }
 
 export class EventRepository {
   async list(filter: FilterQuery<IEvent> = {}, search?: string, limit = 50): Promise<EventDocument[]> {
     const query: FilterQuery<IEvent> = { ...filter };
+    
+    // Safely handle legacy documents that might not have approvalStatus set
+    if (query.approvalStatus === "APPROVED") {
+      delete query.approvalStatus;
+      query.$or = [
+        ...(query.$or || []),
+        { approvalStatus: "APPROVED" },
+        { approvalStatus: { $exists: false } },
+        { approvalStatus: null }
+      ];
+    } else if (query.approvalStatus === "all") {
+      delete query.approvalStatus;
+    }
+
     if (search && search.trim()) {
       const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      query.$or = [
+      const searchConditions = [
         { title: { $regex: escaped, $options: "i" } },
         { organizer: { $regex: escaped, $options: "i" } },
         { department: { $regex: escaped, $options: "i" } },
         { tags: { $in: [new RegExp(escaped, "i")] } }
       ];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: searchConditions }];
+        delete query.$or;
+      } else {
+        query.$or = searchConditions;
+      }
     }
 
     return Event.find(query)
@@ -44,6 +66,7 @@ export class EventRepository {
   async create(data: CreateEventInput): Promise<EventDocument> {
     return Event.create({
       ...data,
+      approvalStatus: data.approvalStatus || "PENDING",
       attendees: [data.createdBy],
       attendeesCount: 1
     });

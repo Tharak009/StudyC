@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { MoreVertical, Eye, Edit2, Play, Ban, CheckCircle, XCircle, Copy, Trash2, Calendar, ShieldAlert } from "lucide-react";
 import type { Event } from "../types/event";
+import { getOrganizerName } from "../types/event";
 
 interface EventTableProps {
   events: Event[];
@@ -114,9 +115,9 @@ export function EventTable({
                 {/* Event Name & Banner */}
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
-                    {event.bannerImage ? (
+                    {event.eventImage?.url || event.bannerImage ? (
                       <img
-                        src={event.bannerImage}
+                        src={event.eventImage?.url || event.bannerImage}
                         alt=""
                         className="size-10 rounded-xl object-cover border border-slate-100 dark:border-white/5 shrink-0"
                       />
@@ -146,7 +147,7 @@ export function EventTable({
                 {/* Organizer & Dept */}
                 <td className="px-6 py-4">
                   <span className="block font-semibold text-slate-750 dark:text-slate-300 truncate max-w-[130px]">
-                    {event.organizer}
+                    {getOrganizerName(event.organizer)}
                   </span>
                   <span className="block text-[10px] text-slate-400 dark:text-slate-500 truncate max-w-[130px] mt-0.5">
                     {event.department}
