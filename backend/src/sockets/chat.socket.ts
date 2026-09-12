@@ -2,6 +2,7 @@ import type { Server, Socket } from "socket.io";
 import { chatService } from "../services/chat.service.js";
 import { Message } from "../models/message.model.js";
 import { Community } from "../models/community.model.js";
+import { User } from "../models/user.model.js";
 import { academicClassifierService } from "../services/academic-classifier.service.js";
 import {
   socketCommunitySchema,
@@ -53,7 +54,9 @@ interface SendMessagePayload {
   codeSnippet?: {
     language: string;
     code: string;
+    title?: string;
   };
+  intent?: "chat" | "question" | "solution" | "code";
   replyTo?: string;
 }
 
@@ -243,7 +246,7 @@ export const registerChatHandlers = (
     "chat:sendMessage",
     async (payload: SendMessagePayload, acknowledge?: (res: unknown) => void) => {
       try {
-        const { communityId, channelId, content, replyTo } = payload;
+        const { communityId, channelId, content, replyTo, intent, codeSnippet } = payload;
         await chatService.requireMembership(communityId, userId);
 
         const chanKey = channelId || "general";
@@ -386,7 +389,7 @@ export const registerChatHandlers = (
         const created = await chatService.createMessage(
           communityId,
           userId,
-          { content: content || "", replyTo },
+          { content: content || "", replyTo, channelId, intent, codeSnippet },
           []
         );
 
@@ -397,7 +400,9 @@ export const registerChatHandlers = (
           senderName: socket.data.user?.name || "Student",
           senderDepartment: socket.data.user?.department,
           senderRoll: socket.data.user?.rollNumber,
-          channelId
+          channelId,
+          intent,
+          codeSnippet
         };
 
         // Broadcast to all room members
@@ -427,7 +432,13 @@ export const registerChatHandlers = (
       const created = await chatService.createMessage(
         input.communityId,
         userId,
-        { content: input.content, replyTo: input.replyTo },
+        {
+          content: input.content,
+          replyTo: input.replyTo,
+          channelId: input.channelId,
+          intent: input.intent,
+          codeSnippet: input.codeSnippet
+        },
         []
       );
 
@@ -588,6 +599,316 @@ export const registerChatHandlers = (
           success: true,
           data: recentFocusInterceptions
         });
+      }
+    }
+  );
+  // ── 8. Thread Discussion Handlers ─────────────────────────────────────────
+  socket.on(
+    "chat:sendThreadReply",
+    async (
+      payload: {
+        communityId: string;
+        channelId?: string;
+        parentMessageId: string;
+        content: string;
+        codeSnippet?: { language: string; code: string; title?: string };
+      },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, channelId, parentMessageId, content, codeSnippet } = payload;
+        await chatService.requireMembership(communityId, userId);
+
+        const parent = await Message.findById(parentMessageId);
+        if (!parent || parent.deleted) {
+          throw new Error("Parent message not found");
+        }
+
+        const reply = await chatService.createMessage(
+          communityId,
+          userId,
+          {
+            content: content || "",
+            replyTo: parentMessageId,
+            channelId,
+            intent: "chat",
+            codeSnippet
+          },
+          []
+        );
+
+        // Update parent metrics
+        parent.threadCount = (parent.threadCount || 0) + 1;
+        parent.threadLastReplyAt = new Date();
+        await parent.save();
+
+        const replyData = {
+          ...(reply.toJSON?.() ?? reply),
+          senderName: socket.data.user?.name || "Student",
+          senderDepartment: socket.data.user?.department,
+          senderRoll: socket.data.user?.rollNumber,
+          parentMessageId
+        };
+
+        const roomName = communityRoomFor(communityId, channelId);
+        io.to(roomName).emit("chat:threadReplyReceived", replyData);
+        io.to(`room:${communityId}`).emit("chat:threadReplyReceived", replyData);
+        io.to(`thread:${parentMessageId}`).emit("chat:threadReplyReceived", replyData);
+
+        if (typeof acknowledge === "function") {
+          acknowledge({ success: true, data: replyData });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to send thread reply";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+        socket.emit("chatError", { message });
+      }
+    }
+  );
+
+  socket.on(
+    "chat:getThreadReplies",
+    async (
+      payload: { communityId: string; parentMessageId: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, parentMessageId } = payload;
+        await chatService.requireMembership(communityId, userId);
+        await socket.join(`thread:${parentMessageId}`);
+
+        const replies = await Message.find({
+          communityId,
+          replyTo: parentMessageId,
+          deleted: { $ne: true }
+        })
+          .sort({ createdAt: 1 })
+          .populate("senderId", "fullName rollNumber profilePicture karma")
+          .exec();
+
+        if (typeof acknowledge === "function") {
+          acknowledge({ success: true, replies });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to get thread replies";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      }
+    }
+  );
+
+  // ── 9. Message Pinning & Academic Accepted Solution ───────────────────────
+  socket.on(
+    "chat:pinMessage",
+    async (
+      payload: { communityId: string; channelId?: string; messageId: string; isPinned: boolean },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, channelId, messageId, isPinned } = payload;
+        await chatService.requireMembership(communityId, userId);
+
+        const updated = await Message.findByIdAndUpdate(
+          messageId,
+          { isPinned },
+          { new: true }
+        ).populate("senderId", "fullName rollNumber profilePicture karma");
+
+        if (!updated) throw new Error("Message not found");
+
+        const roomName = communityRoomFor(communityId, channelId);
+        const pinData = { messageId, isPinned, message: updated, pinnedBy: userId };
+        io.to(roomName).emit("chat:messagePinned", pinData);
+        io.to(`room:${communityId}`).emit("chat:messagePinned", pinData);
+
+        if (typeof acknowledge === "function") acknowledge({ success: true, data: pinData });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to pin message";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      }
+    }
+  );
+
+  socket.on(
+    "chat:markAcceptedSolution",
+    async (
+      payload: { communityId: string; channelId?: string; messageId: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, channelId, messageId } = payload;
+        await chatService.requireMembership(communityId, userId);
+
+        const message = await Message.findById(messageId);
+        if (!message || message.deleted) throw new Error("Message not found");
+
+        message.isAcceptedSolution = true;
+        message.karmaAwarded = (message.karmaAwarded || 0) + 25;
+        await message.save();
+
+        // Award 25 karma to solution author
+        await User.findByIdAndUpdate(message.senderId, { $inc: { karma: 25 } });
+
+        const roomName = communityRoomFor(communityId, channelId);
+        const solutionData = {
+          messageId,
+          channelId,
+          solverId: message.senderId.toString(),
+          karmaAwarded: 25
+        };
+
+        io.to(roomName).emit("chat:solutionAccepted", solutionData);
+        io.to(`room:${communityId}`).emit("chat:solutionAccepted", solutionData);
+
+        if (typeof acknowledge === "function") acknowledge({ success: true, data: solutionData });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to mark accepted solution";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      }
+    }
+  );
+
+  // ── 10. Synchronized Study Sprints (Pomodoro) ─────────────────────────────
+  socket.on(
+    "sprint:start",
+    async (
+      payload: { communityId: string; channelId?: string; durationMinutes?: number; topic?: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, channelId, durationMinutes = 25, topic = "Deep Work Focus Session" } = payload;
+        await chatService.requireMembership(communityId, userId);
+
+        const startedAt = new Date();
+        const endsAt = new Date(startedAt.getTime() + durationMinutes * 60 * 1000);
+
+        const sprintData = {
+          communityId,
+          channelId,
+          isActive: true,
+          durationMinutes,
+          startedAt: startedAt.toISOString(),
+          endsAt: endsAt.toISOString(),
+          topic,
+          startedBy: userId,
+          startedByName: socket.data.user?.name || "Student",
+          participants: [userId]
+        };
+
+        await Community.findByIdAndUpdate(communityId, { sprintState: sprintData });
+
+        const roomName = communityRoomFor(communityId, channelId);
+        io.to(roomName).emit("sprint:started", sprintData);
+        io.to(`room:${communityId}`).emit("sprint:started", sprintData);
+
+        if (typeof acknowledge === "function") acknowledge({ success: true, sprint: sprintData });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to start sprint";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      }
+    }
+  );
+
+  socket.on(
+    "sprint:join",
+    async (
+      payload: { communityId: string; channelId?: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, channelId } = payload;
+        await chatService.requireMembership(communityId, userId);
+
+        await Community.findByIdAndUpdate(communityId, {
+          $addToSet: { "sprintState.participants": userId }
+        });
+
+        const data = { communityId, channelId, userId, userName: socket.data.user?.name || "Student" };
+        const roomName = communityRoomFor(communityId, channelId);
+        io.to(roomName).emit("sprint:joined", data);
+        io.to(`room:${communityId}`).emit("sprint:joined", data);
+
+        if (typeof acknowledge === "function") acknowledge({ success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to join sprint";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      }
+    }
+  );
+
+  socket.on(
+    "sprint:leave",
+    async (
+      payload: { communityId: string; channelId?: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, channelId } = payload;
+        await Community.findByIdAndUpdate(communityId, {
+          $pull: { "sprintState.participants": userId }
+        });
+
+        const data = { communityId, channelId, userId };
+        const roomName = communityRoomFor(communityId, channelId);
+        io.to(roomName).emit("sprint:left", data);
+        io.to(`room:${communityId}`).emit("sprint:left", data);
+
+        if (typeof acknowledge === "function") acknowledge({ success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to leave sprint";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      }
+    }
+  );
+
+  socket.on(
+    "sprint:complete",
+    async (
+      payload: { communityId: string; channelId?: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const { communityId, channelId } = payload;
+        const community = await Community.findById(communityId);
+        const participantIds = community?.sprintState?.participants || [];
+
+        if (participantIds.length > 0) {
+          await User.updateMany(
+            { _id: { $in: participantIds } },
+            { $inc: { karma: 15 } }
+          );
+        }
+
+        await Community.findByIdAndUpdate(communityId, {
+          "sprintState.isActive": false
+        });
+
+        const roomName = communityRoomFor(communityId, channelId);
+        const completeData = { communityId, channelId, karmaAwarded: 15, participants: participantIds };
+        io.to(roomName).emit("sprint:completed", completeData);
+        io.to(`room:${communityId}`).emit("sprint:completed", completeData);
+
+        if (typeof acknowledge === "function") acknowledge({ success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to complete sprint";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
+      }
+    }
+  );
+
+  socket.on(
+    "sprint:getState",
+    async (
+      payload: { communityId: string },
+      acknowledge?: (res: unknown) => void
+    ) => {
+      try {
+        const community = await Community.findById(payload.communityId, { sprintState: 1 }).lean();
+        if (typeof acknowledge === "function") {
+          acknowledge({ success: true, sprint: community?.sprintState });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to fetch sprint state";
+        if (typeof acknowledge === "function") acknowledge({ success: false, message });
       }
     }
   );

@@ -16,6 +16,7 @@ export interface IUser {
   interests: string[];
   role: Role;
   status: UserStatus;
+  karma?: number;
   lastLogin?: Date;
   passwordResetTokenHash?: string;
   passwordResetExpiresAt?: Date;
@@ -58,6 +59,7 @@ const userSchema = new Schema<IUser, UserModel, UserMethods>(
       default: USER_STATUS.ACTIVE,
       index: true
     },
+    karma: { type: Number, default: 0, index: true },
     lastLogin: { type: Date },
     passwordResetTokenHash: { type: String, select: false },
     passwordResetExpiresAt: { type: Date, select: false },

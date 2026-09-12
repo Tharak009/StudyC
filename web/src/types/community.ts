@@ -1,4 +1,5 @@
 import type { User } from "./auth";
+import type { Channel } from "./chat";
 
 export type CommunityRole = "OWNER" | "MODERATOR" | "MEMBER";
 export type CommunityVisibility = "public" | "private";
@@ -28,6 +29,7 @@ export interface Community {
   owner: Pick<User, "_id" | "fullName" | "rollNumber" | "profilePicture">;
   moderators: string[];
   memberCount: number;
+  channels?: Channel[];
   extensionPoints: {
     chatEnabled: boolean;
     resourcesEnabled: boolean;

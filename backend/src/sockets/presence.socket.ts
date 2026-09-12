@@ -8,6 +8,7 @@ export interface VoicePeer {
   name: string;
   isSpeaking: boolean;
   isMuted: boolean;
+  isScreenSharing?: boolean;
 }
 
 export interface SocketRegistry {

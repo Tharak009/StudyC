@@ -5,7 +5,7 @@ export interface IChannel {
   _id?: Types.ObjectId | string;
   name: string;
   type: "text" | "voice" | "announcement";
-  category?: "announcements" | "text" | "voice";
+  category?: "announcements" | "focus" | "watercooler" | "stages" | "text" | "voice";
   topic?: string;
   isPrivate?: boolean;
   isStrictStudyMode: boolean;
@@ -14,6 +14,25 @@ export interface IChannel {
   allowCodeSnippetsOnly: boolean;
   strikeLimitBeforeTimeout: number;
   timeoutDurationMinutes: number;
+  sprintState?: {
+    isActive: boolean;
+    title: string;
+    durationMinutes: number;
+    startedAt?: Date;
+    endsAt?: Date;
+    participants: string[];
+  };
+}
+
+export interface ICommunitySprintState {
+  isActive: boolean;
+  durationMinutes: number;
+  startedAt?: Date | string;
+  endsAt?: Date | string;
+  topic?: string;
+  startedBy?: string;
+  startedByName?: string;
+  participants: string[];
 }
 
 export interface ICommunity {
@@ -28,6 +47,7 @@ export interface ICommunity {
   moderators: Types.ObjectId[];
   memberCount: number;
   channels: IChannel[];
+  sprintState?: ICommunitySprintState;
   extensionPoints: {
     chatEnabled: boolean;
     resourcesEnabled: boolean;
@@ -44,7 +64,11 @@ const channelSchema = new Schema<IChannel>(
   {
     name: { type: String, required: true, trim: true },
     type: { type: String, enum: ["text", "voice", "announcement"], default: "text" },
-    category: { type: String, enum: ["announcements", "text", "voice"], default: "text" },
+    category: {
+      type: String,
+      enum: ["announcements", "focus", "watercooler", "stages", "text", "voice"],
+      default: "focus"
+    },
     topic: { type: String, trim: true, default: "" },
     isPrivate: { type: Boolean, default: false },
     isStrictStudyMode: { type: Boolean, default: true },
@@ -55,7 +79,15 @@ const channelSchema = new Schema<IChannel>(
     strictnessThreshold: { type: Number, default: 0.4, min: 0.2, max: 0.7 },
     allowCodeSnippetsOnly: { type: Boolean, default: false },
     strikeLimitBeforeTimeout: { type: Number, default: 3, min: 1, max: 10 },
-    timeoutDurationMinutes: { type: Number, default: 5, min: 1, max: 60 }
+    timeoutDurationMinutes: { type: Number, default: 5, min: 1, max: 60 },
+    sprintState: {
+      isActive: { type: Boolean, default: false },
+      title: { type: String, default: "" },
+      durationMinutes: { type: Number, default: 25 },
+      startedAt: Date,
+      endsAt: Date,
+      participants: { type: [String], default: [] }
+    }
   },
   { _id: true }
 );
@@ -82,6 +114,16 @@ const communitySchema = new Schema<ICommunity, CommunityModel>(
     moderators: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     memberCount: { type: Number, default: 0, min: 0 },
     channels: { type: [channelSchema], default: [] },
+    sprintState: {
+      isActive: { type: Boolean, default: false },
+      durationMinutes: { type: Number, default: 25 },
+      startedAt: Date,
+      endsAt: Date,
+      topic: { type: String, default: "" },
+      startedBy: String,
+      startedByName: String,
+      participants: { type: [String], default: [] }
+    },
     extensionPoints: {
       chatEnabled: { type: Boolean, default: false },
       resourcesEnabled: { type: Boolean, default: false },

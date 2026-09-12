@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router";
 import { App } from "./app";
 import { AuthBootstrap } from "./routes/auth-bootstrap";
 import { useThemeStore } from "./store/theme.store";
+import "katex/dist/katex.min.css";
 import "./styles/index.css";
 
 const queryClient = new QueryClient({

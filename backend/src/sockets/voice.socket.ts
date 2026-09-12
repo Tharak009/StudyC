@@ -22,6 +22,17 @@ interface MuteStatePayload {
   isMuted: boolean;
 }
 
+interface ScreenshareStatePayload {
+  stageId: string;
+  isSharing: boolean;
+}
+
+interface StageStatePayload {
+  stageId: string;
+  topic?: string;
+  isLocked?: boolean;
+}
+
 const voiceRoomFor = (stageId: string) => `voice:${stageId}`;
 
 /**
@@ -185,4 +196,40 @@ export const registerVoiceHandlers = (
       }
     }
   );
+
+  // ── 6. Screenshare State Synchronization ─────────────────────────────────
+  socket.on("voice:screenshareState", (payload: ScreenshareStatePayload) => {
+    const { stageId, isSharing } = payload;
+    if (!stageId) return;
+
+    const peers = registry.activeVoiceRooms.get(stageId);
+    if (peers) {
+      for (const peer of peers) {
+        if (peer.socketId === socket.id) {
+          peer.isScreenSharing = Boolean(isSharing);
+          break;
+        }
+      }
+    }
+
+    socket.to(voiceRoomFor(stageId)).emit("voice:peerScreenshare", {
+      stageId,
+      socketId: socket.id,
+      userId,
+      isSharing: Boolean(isSharing)
+    });
+  });
+
+  // ── 7. Stage State Synchronization ───────────────────────────────────────
+  socket.on("voice:stageState", (payload: StageStatePayload) => {
+    const { stageId, topic, isLocked } = payload;
+    if (!stageId) return;
+
+    socket.to(voiceRoomFor(stageId)).emit("voice:stageStateUpdated", {
+      stageId,
+      topic,
+      isLocked,
+      updatedBy: userId
+    });
+  });
 };

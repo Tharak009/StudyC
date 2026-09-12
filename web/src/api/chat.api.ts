@@ -6,6 +6,7 @@ export interface MessageListParams {
   page?: number;
   limit?: number;
   order?: "latest" | "oldest";
+  channelId?: string;
 }
 
 export interface CreateMessagePayload {

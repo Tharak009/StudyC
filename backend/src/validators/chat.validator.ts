@@ -20,7 +20,8 @@ export const listMessagesSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(50).default(30),
-    order: z.enum(["latest", "oldest"]).default("latest")
+    order: z.enum(["latest", "oldest"]).default("latest"),
+    channelId: z.string().optional()
   })
 });
 
@@ -28,14 +29,32 @@ export const createMessageSchema = z.object({
   params: z.object({ communityId: objectId }),
   body: z.object({
     content,
-    replyTo: objectId.optional()
+    replyTo: objectId.optional(),
+    channelId: z.string().optional(),
+    intent: z.enum(["chat", "question", "solution", "code"]).optional(),
+    codeSnippet: z
+      .object({
+        language: z.string(),
+        code: z.string(),
+        title: z.string().optional()
+      })
+      .optional()
   })
 });
 
 export const socketSendMessageSchema = z.object({
   communityId: objectId,
-  content: z.string().trim().min(1).max(2000),
-  replyTo: objectId.optional()
+  content: z.string().trim().max(2000).default(""),
+  replyTo: objectId.optional(),
+  channelId: z.string().optional(),
+  intent: z.enum(["chat", "question", "solution", "code"]).optional(),
+  codeSnippet: z
+    .object({
+      language: z.string(),
+      code: z.string(),
+      title: z.string().optional()
+    })
+    .optional()
 });
 
 export const socketEditMessageSchema = z.object({

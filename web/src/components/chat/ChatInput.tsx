@@ -13,7 +13,13 @@ import {
   Square,
   Plus,
   ArrowUp,
-  CornerDownRight
+  CornerDownRight,
+  Bold,
+  Italic,
+  Code,
+  Link,
+  HelpCircle,
+  CheckCircle2
 } from "lucide-react";
 import type { ChatPoll } from "./MessageList";
 import { recordStudyActivity } from "../../utils/streak";
@@ -25,10 +31,11 @@ interface ChatInputProps {
   channelName: string;
   onSendMessage: (
     content: string,
-    codeSnippet?: { language: string; code: string },
+    codeSnippet?: { language: string; code: string; title?: string },
     files?: File[],
     poll?: ChatPoll,
-    voiceNote?: { duration: string; waveform: number[] }
+    voiceNote?: { duration: string; waveform: number[] },
+    intent?: "chat" | "question" | "solution" | "code"
   ) => void;
   onTyping?: (isTyping: boolean) => void;
   typingUsers?: string[];
@@ -51,6 +58,22 @@ export function ChatInput({
 }: ChatInputProps) {
   const [content, setContent] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [intent, setIntent] = useState<"chat" | "question" | "solution" | "code">("chat");
+
+  const insertMarkdown = (prefix: string, suffix: string = prefix) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selected = content.substring(start, end);
+    const replacement = `${prefix}${selected || "text"}${suffix}`;
+    const nextContent = content.substring(0, start) + replacement + content.substring(end);
+    setContent(nextContent);
+    setTimeout(() => {
+      el.focus();
+      el.setSelectionRange(start + prefix.length, start + prefix.length + (selected ? selected.length : 4));
+    }, 0);
+  };
   
   // Code drawer state
   const [codeDrawerOpen, setCodeDrawerOpen] = useState(false);
@@ -232,13 +255,17 @@ export function ChatInput({
     onSendMessage(
       content.trim(),
       codeObj,
-      selectedFiles.length > 0 ? selectedFiles : undefined
+      selectedFiles.length > 0 ? selectedFiles : undefined,
+      undefined,
+      undefined,
+      intent
     );
 
     setContent("");
     setCodeText("");
     setCodeDrawerOpen(false);
     setSelectedFiles([]);
+    setIntent("chat");
     onTyping?.(false);
     onCancelReply?.();
   };
@@ -476,12 +503,111 @@ export function ChatInput({
           </div>
         </div>
       ) : (
-        /* ── Main Input Card Surface (WhatsApp + Discord Blend) ───────── */
-        <motion.div
-          animate={isShaking ? { x: [-12, 12, -10, 10, -6, 6, -2, 2, 0] } : {}}
-          transition={{ duration: 0.5, ease: "easeInOut" }}
-          className="relative flex items-end gap-2 rounded-3xl border border-slate-200/90 dark:border-white/[0.08] bg-white/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl p-2 shadow-[0_10px_35px_rgba(0,0,0,0.06)] dark:shadow-[0_10px_40px_rgba(0,0,0,0.3)]"
-        >
+        <div className="space-y-1.5">
+          {/* ── Academic Intent Pills & Markdown Quick Toolbar ── */}
+          <div className="flex items-center justify-between gap-2 px-2 text-xs">
+            {/* Intent Pills */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setIntent("chat")}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all ${
+                  intent === "chat"
+                    ? "bg-blue-600/20 text-blue-300 border border-blue-500/30"
+                    : "text-gray-400 hover:text-gray-300"
+                }`}
+              >
+                Chat
+              </button>
+              <button
+                type="button"
+                onClick={() => setIntent("question")}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all ${
+                  intent === "question"
+                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                    : "text-gray-400 hover:text-gray-300"
+                }`}
+              >
+                ❓ Question
+              </button>
+              <button
+                type="button"
+                onClick={() => setIntent("solution")}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all ${
+                  intent === "solution"
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                    : "text-gray-400 hover:text-gray-300"
+                }`}
+              >
+                💡 Solution
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIntent("code");
+                  setCodeDrawerOpen(true);
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all ${
+                  intent === "code"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                    : "text-gray-400 hover:text-gray-300"
+                }`}
+              >
+                💻 Code
+              </button>
+            </div>
+
+            {/* Markdown Action Hotkeys */}
+            <div className="flex items-center gap-1 text-gray-400">
+              <button
+                type="button"
+                onClick={() => insertMarkdown("**")}
+                className="p-1 hover:text-white hover:bg-white/5 rounded transition-colors"
+                title="Bold (**text**)"
+              >
+                <Bold size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertMarkdown("*")}
+                className="p-1 hover:text-white hover:bg-white/5 rounded transition-colors"
+                title="Italic (*text*)"
+              >
+                <Italic size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertMarkdown("`")}
+                className="p-1 hover:text-white hover:bg-white/5 rounded transition-colors"
+                title="Inline Code (`code`)"
+              >
+                <Code size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => insertMarkdown("$")}
+                className="px-1 py-0.5 font-mono text-[10px] hover:text-cyan-300 hover:bg-white/5 rounded transition-colors"
+                title="LaTeX Math ($x^2$ or $$\sum$$)"
+              >
+                $x$
+              </button>
+              <button
+                type="button"
+                onClick={() => insertMarkdown("[", "](url)")}
+                className="p-1 hover:text-white hover:bg-white/5 rounded transition-colors"
+                title="Link ([title](url))"
+              >
+                <Link size={13} />
+              </button>
+            </div>
+          </div>
+
+          {/* ── Main Input Card Surface (WhatsApp + Discord Blend) ───────── */}
+          <motion.div
+            animate={isShaking ? { x: [-12, 12, -10, 10, -6, 6, -2, 2, 0] } : {}}
+            transition={{ duration: 0.5, ease: "easeInOut" }}
+            className="relative flex items-end gap-2 rounded-3xl border border-slate-200/90 dark:border-white/[0.08] bg-white/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl p-2 shadow-[0_10px_35px_rgba(0,0,0,0.06)] dark:shadow-[0_10px_40px_rgba(0,0,0,0.3)]"
+          >
           {/* ── Left Action Sheet Trigger (+) ─────────────────────────── */}
           <div className="relative">
             <button
@@ -626,6 +752,7 @@ export function ChatInput({
             )}
           </div>
         </motion.div>
+        </div>
       )}
     </div>
   );

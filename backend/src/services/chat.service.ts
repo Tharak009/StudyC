@@ -29,17 +29,20 @@ export class ChatService {
     emit = true
   ) {
     await this.requireMembership(communityId, userId);
-    if (!input.content && files.length === 0) {
-      throw new ApiError(422, "Message content or attachment is required", [], "MESSAGE_EMPTY");
+    if (!input.content && files.length === 0 && !input.codeSnippet) {
+      throw new ApiError(422, "Message content, code snippet, or attachment is required", [], "MESSAGE_EMPTY");
     }
     const attachments = await Promise.all(files.map((file) => this.storeAttachment(file)));
     const created = await this.messages.create({
       communityId,
+      channelId: input.channelId,
       senderId: userId,
-      content: input.content,
+      content: input.content || "",
       messageType: this.messageTypeFor(attachments),
       attachments,
-      replyTo: input.replyTo
+      replyTo: input.replyTo,
+      intent: input.intent || "chat",
+      codeSnippet: input.codeSnippet
     });
     const hydrated = await this.messages.findById(created.id);
     if (!hydrated) throw new ApiError(500, "Message could not be loaded", [], "MESSAGE_LOAD_FAILED");
