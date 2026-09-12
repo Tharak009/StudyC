@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { GridFSStorageProvider } from "../uploads/gridfs.provider.js";
 
 export interface StoredFile {
   key: string;
@@ -43,3 +44,7 @@ export class StorageService {
     return this.provider.delete(key);
   }
 }
+
+export const defaultStorageProvider = new GridFSStorageProvider();
+export const sharedStorageService = new StorageService(defaultStorageProvider);
+

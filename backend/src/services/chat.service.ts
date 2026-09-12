@@ -3,11 +3,10 @@ import { COMMUNITY_ROLES } from "../constants/community-roles.js";
 import { MESSAGE_TYPES, type MessageType } from "../constants/message-types.js";
 import { communityMemberRepository, type CommunityMemberRepository } from "../repositories/community-member.repository.js";
 import { messageRepository, type MessageRepository } from "../repositories/message.repository.js";
-import { LocalStorageProvider } from "../uploads/local-storage.provider.js";
 import { ApiError } from "../utils/api-error.js";
 import type { CreateMessageInput, ListMessagesQuery } from "../validators/chat.validator.js";
 import { chatBus } from "./chat-bus.service.js";
-import { StorageService, type StoredFile } from "./storage.service.js";
+import { StorageService, sharedStorageService, type StoredFile } from "./storage.service.js";
 
 export class ChatService {
   constructor(
@@ -317,5 +316,5 @@ export class ChatService {
 export const chatService = new ChatService(
   messageRepository,
   communityMemberRepository,
-  new StorageService(new LocalStorageProvider())
+  sharedStorageService
 );

@@ -37,12 +37,14 @@ export function FormattedHtmlDescription({ description }: { description: string 
 export function EventDetailsModal({ event, onClose, onToggleRsvp }: EventDetailsModalProps) {
   const [loading, setLoading] = useState(false);
   const [liveAttendeesCount, setLiveAttendeesCount] = useState(event?.attendeesCount ?? 0);
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
+    setImgError(false);
     if (event?.attendeesCount !== undefined) {
       setLiveAttendeesCount(event.attendeesCount);
     }
-  }, [event?.attendeesCount]);
+  }, [event?.attendeesCount, event?.eventImage?.url, event?.bannerImage]);
 
   useEffect(() => {
     if (!event) return;
@@ -131,12 +133,13 @@ export function EventDetailsModal({ event, onClose, onToggleRsvp }: EventDetails
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
           
           {/* 1. Complete Event Poster Image */}
-          {imageUrl ? (
+          {imageUrl && !imgError ? (
             <div className="w-full rounded-2xl overflow-hidden border border-slate-200/80 dark:border-slate-800/80 bg-slate-100/60 dark:bg-[#080D1A]/80 flex items-center justify-center p-1 sm:p-2">
               <img
                 src={imageUrl}
                 alt={event.title}
                 className="w-full max-h-[480px] object-contain rounded-xl mx-auto"
+                onError={() => setImgError(true)}
               />
             </div>
           ) : (

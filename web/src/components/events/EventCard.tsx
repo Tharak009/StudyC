@@ -62,10 +62,12 @@ export function EventCard({
 }: EventCardProps) {
   const { addToast } = useToastStore();
   const [isGoing, setIsGoing] = useState(Boolean(event.isRegistered));
+  const [imgError, setImgError] = useState(false);
 
   React.useEffect(() => {
     setIsGoing(Boolean(event.isRegistered));
-  }, [event.isRegistered]);
+    setImgError(false);
+  }, [event.isRegistered, event.eventImage?.url, event.bannerImage]);
 
   const handleRsvpClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -124,11 +126,12 @@ export function EventCard({
     >
       {/* ── Small Event Poster Thumbnail (Left Side) ──────────────────── */}
       <div className="relative h-24 w-24 sm:h-28 sm:w-28 shrink-0 overflow-hidden rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-slate-100 dark:bg-[#080D1A] flex items-center justify-center">
-        {imageUrl ? (
+        {imageUrl && !imgError ? (
           <img
             src={imageUrl}
             alt={event.title}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            onError={() => setImgError(true)}
           />
         ) : (
           <div className="flex flex-col items-center justify-center text-[#1E90FF]/60 p-2 text-center">

@@ -6,10 +6,9 @@ import type { CommunityDocument } from "../models/community.model.js";
 import { communityMemberRepository, type CommunityMemberRepository } from "../repositories/community-member.repository.js";
 import { communityRepository, type CommunityListOptions, type CommunityRepository } from "../repositories/community.repository.js";
 import { userRepository, type IUserRepository } from "../repositories/user.repository.js";
-import { LocalStorageProvider } from "../uploads/local-storage.provider.js";
 import { ApiError } from "../utils/api-error.js";
 import type { CreateCommunityInput, ListCommunitiesQuery, UpdateCommunityInput } from "../validators/community.validator.js";
-import { StorageService } from "./storage.service.js";
+import { StorageService, sharedStorageService } from "./storage.service.js";
 
 export class CommunityService {
   constructor(
@@ -241,5 +240,5 @@ export const communityService = new CommunityService(
   communityRepository,
   communityMemberRepository,
   userRepository,
-  new StorageService(new LocalStorageProvider())
+  sharedStorageService
 );

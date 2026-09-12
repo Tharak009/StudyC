@@ -3,8 +3,7 @@ import { ApiError } from "../utils/api-error.js";
 import { eventRepository, type EventRepository, type CreateEventInput } from "../repositories/event.repository.js";
 import { userRepository, type IUserRepository } from "../repositories/user.repository.js";
 import type { EventCategory, EventApprovalStatus } from "../models/event.model.js";
-import { StorageService } from "./storage.service.js";
-import { LocalStorageProvider } from "../uploads/local-storage.provider.js";
+import { StorageService, sharedStorageService } from "./storage.service.js";
 import { getSocketServer } from "../sockets/index.js";
 
 export interface ListEventsFilter {
@@ -229,5 +228,5 @@ export class EventService {
 export const eventService = new EventService(
   eventRepository,
   userRepository,
-  new StorageService(new LocalStorageProvider())
+  sharedStorageService
 );

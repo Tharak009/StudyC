@@ -3,11 +3,10 @@ import { MESSAGE_TYPES, type MessageType } from "../constants/message-types.js";
 import { conversationRepository, type ConversationRepository } from "../repositories/conversation.repository.js";
 import { directMessageRepository, type DirectMessageRepository } from "../repositories/direct-message.repository.js";
 import { userRepository, type UserRepository } from "../repositories/user.repository.js";
-import { LocalStorageProvider } from "../uploads/local-storage.provider.js";
 import { ApiError } from "../utils/api-error.js";
 import { DirectMessage } from "../models/direct-message.model.js";
 import { dmBus } from "./dm-bus.service.js";
-import { StorageService, type StoredFile } from "./storage.service.js";
+import { StorageService, sharedStorageService, type StoredFile } from "./storage.service.js";
 
 export class DirectMessageService {
   constructor(
@@ -603,5 +602,5 @@ export const directMessageService = new DirectMessageService(
   conversationRepository,
   directMessageRepository,
   userRepository,
-  new StorageService(new LocalStorageProvider())
+  sharedStorageService
 );

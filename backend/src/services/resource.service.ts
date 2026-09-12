@@ -2,9 +2,8 @@ import type { Express } from "express";
 import { COMMUNITY_ROLES } from "../constants/community-roles.js";
 import { communityMemberRepository, type CommunityMemberRepository } from "../repositories/community-member.repository.js";
 import { resourceRepository, type ResourceRepository } from "../repositories/resource.repository.js";
-import { LocalStorageProvider } from "../uploads/local-storage.provider.js";
 import { ApiError } from "../utils/api-error.js";
-import { StorageService } from "./storage.service.js";
+import { StorageService, sharedStorageService } from "./storage.service.js";
 import type { CreateResourceInput, ListResourcesQuery, UpdateResourceInput } from "../validators/resource.validator.js";
 
 export class ResourceService {
@@ -132,5 +131,5 @@ export class ResourceService {
 export const resourceService = new ResourceService(
   resourceRepository,
   communityMemberRepository,
-  new StorageService(new LocalStorageProvider())
+  sharedStorageService
 );

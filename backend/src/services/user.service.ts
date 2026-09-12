@@ -1,8 +1,7 @@
 import type { Express } from "express";
 import { ApiError } from "../utils/api-error.js";
 import { userRepository, type IUserRepository } from "../repositories/user.repository.js";
-import { LocalStorageProvider } from "../uploads/local-storage.provider.js";
-import { StorageService } from "./storage.service.js";
+import { StorageService, sharedStorageService } from "./storage.service.js";
 
 export interface UpdateProfileInput {
   fullName?: string;
@@ -51,5 +50,5 @@ export class UserService {
 
 export const userService = new UserService(
   userRepository,
-  new StorageService(new LocalStorageProvider())
+  sharedStorageService
 );

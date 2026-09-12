@@ -1,6 +1,7 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
 import type { Request, Response, NextFunction } from "express";
+import mongoose from "mongoose";
 import { env } from "../config/env.js";
 import { verifyAccessToken } from "../utils/tokens.js";
 import { DirectMessage } from "../models/direct-message.model.js";
@@ -83,6 +84,22 @@ export const protectedDirectMessageAttachment = async (
 
   const filePath = path.resolve(process.cwd(), env.UPLOAD_DIR, "direct-messages", filename);
   if (!existsSync(filePath)) {
+    try {
+      const db = mongoose.connection.db;
+      if (db) {
+        const bucket = new mongoose.mongo.GridFSBucket(db, { bucketName: "uploads" });
+        const key = `direct-messages/${filename}`;
+        const files = await bucket.find({ filename: key }).toArray();
+        const firstFile = files?.[0];
+        if (firstFile) {
+          res.setHeader("Content-Type", firstFile.contentType || "application/octet-stream");
+          res.setHeader("X-Content-Type-Options", "nosniff");
+          return bucket.openDownloadStreamByName(key).pipe(res) as unknown as void;
+        }
+      }
+    } catch {
+      // Fall through to 404
+    }
     res.status(404).json({ success: false, message: "File not found on server", code: "FILE_NOT_FOUND" });
     return;
   }
@@ -143,6 +160,22 @@ export const protectedChatAttachment = async (
 
   const filePath = path.resolve(process.cwd(), env.UPLOAD_DIR, "chat", filename);
   if (!existsSync(filePath)) {
+    try {
+      const db = mongoose.connection.db;
+      if (db) {
+        const bucket = new mongoose.mongo.GridFSBucket(db, { bucketName: "uploads" });
+        const key = `chat/${filename}`;
+        const files = await bucket.find({ filename: key }).toArray();
+        const firstFile = files?.[0];
+        if (firstFile) {
+          res.setHeader("Content-Type", firstFile.contentType || "application/octet-stream");
+          res.setHeader("X-Content-Type-Options", "nosniff");
+          return bucket.openDownloadStreamByName(key).pipe(res) as unknown as void;
+        }
+      }
+    } catch {
+      // Fall through to 404
+    }
     res.status(404).json({ success: false, message: "File not found on server", code: "FILE_NOT_FOUND" });
     return;
   }
