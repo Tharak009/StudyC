@@ -24,7 +24,6 @@ import {
   Mic,
   MicOff
 } from "lucide-react";
-import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { CircleSwitcher, type StudyCircle } from "../components/chat/CircleSwitcher";
 import { CircleSidebar } from "../components/study-circles/CircleSidebar";
 import { ChatContainer } from "../components/chat/ChatContainer";
@@ -212,9 +211,6 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     }
   }, [modeParam, viewMode]);
 
-  // Layout sidebar states
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-
   // ── Study Circles Workspace State ─────────────────────────────────────────
   const {
     activeChannel,
@@ -311,7 +307,11 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
           if (current && mapped.some((c) => c.id === current.id)) {
             return current;
           }
-          return mapped[0] || null;
+          const joinedCircle = mapped.find((m) => {
+            const raw = res.items.find((rc: any) => rc._id === m.id);
+            return raw?.isMember || raw?.owner?._id === user?._id;
+          });
+          return joinedCircle || mapped[0] || null;
         });
       }
     } catch (err) {
@@ -673,10 +673,23 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
     const handleTyping = () => setIsPeerTyping(true);
     const handleStopTyping = () => setIsPeerTyping(false);
 
+    const handleChatError = (err: any) => {
+      const msg = err?.message || (typeof err === "string" ? err : "Chat error occurred");
+      addToast(msg, "error");
+    };
+
+    const handleChatRejected = (data: any) => {
+      if (data?.reason) {
+        addToast(data.reason, "error");
+      }
+    };
+
     // Attach listeners
     socket.on("chat:messageReceived", handleMessageReceived);
     socket.on("messageCreated", handleMessageReceived);
     socket.on("newMessage", handleMessageReceived);
+    socket.on("chatError", handleChatError);
+    socket.on("chat:messageRejected", handleChatRejected);
     socket.on("chat:threadReplyReceived", handleThreadReplyReceived);
     socket.on("chat:messagePinned", handleMessagePinned);
     socket.on("chat:solutionAccepted", handleSolutionAccepted);
@@ -698,6 +711,8 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       socket.off("chat:messageReceived", handleMessageReceived);
       socket.off("messageCreated", handleMessageReceived);
       socket.off("newMessage", handleMessageReceived);
+      socket.off("chatError", handleChatError);
+      socket.off("chat:messageRejected", handleChatRejected);
       socket.off("chat:threadReplyReceived", handleThreadReplyReceived);
       socket.off("chat:messagePinned", handleMessagePinned);
       socket.off("chat:solutionAccepted", handleSolutionAccepted);
@@ -752,24 +767,77 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
   ) => {
     if (!activeCircle || !activeChannel) return;
 
-    const socket = socketService.get();
     const chanId = activeChannel._id || activeChannel.name;
+    const tempId = `circle-opt-${Date.now()}`;
 
+    // Ensure student is joined in this circle before dispatching message
+    const rawComm = rawCommunities.find((rc) => rc._id === activeCircle.id);
+    const isMemberAlready = rawComm?.isMember || rawComm?.owner?._id === user?._id;
+    if (!isMemberAlready) {
+      try {
+        await communitiesApi.join(activeCircle.id);
+        setRawCommunities((prev) =>
+          prev.map((c) => (c._id === activeCircle.id ? { ...c, isMember: true } : c))
+        );
+      } catch (joinErr) {
+        console.warn("Could not auto-join circle before messaging:", joinErr);
+      }
+    }
+
+    // 1. Optimistic Message in UI
+    const optimisticMsg: ChatMessage = {
+      _id: tempId,
+      communityId: activeCircle.id,
+      channelId: chanId,
+      senderId: {
+        _id: user?._id || "u-me",
+        fullName: user?.fullName || "Student",
+        profilePicture: user?.profilePicture,
+        department: user?.department,
+        rollNumber: user?.rollNumber
+      } as any,
+      content: content || "",
+      messageType: files && files.length > 0 ? "DOCUMENT" : "TEXT",
+      attachments:
+        files?.map((f) => ({
+          key: f.name,
+          url: "#",
+          originalName: f.name,
+          mimeType: f.type,
+          size: f.size
+        })) || [],
+      codeSnippet,
+      intent: intent || (codeSnippet ? "code" : "chat"),
+      edited: false,
+      deleted: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    addMessage(optimisticMsg);
+
+    // 2. Attachments handling via multipart upload
     if (files && files.length > 0) {
       try {
         const uploaded = await chatApi.create(activeCircle.id, {
           content: content || "",
+          channelId: chanId,
           attachments: files
         });
         if (uploaded) {
-          addMessage(uploaded);
+          useChatStore.getState().setMessages(
+            useChatStore.getState().messages.map((m) => (m._id === tempId ? uploaded : m))
+          );
         }
       } catch (err: any) {
         addToast(err?.response?.data?.message || "Failed to upload attachments", "error");
+        useChatStore.getState().setMessages(
+          useChatStore.getState().messages.filter((m) => m._id !== tempId)
+        );
       }
       return;
     }
 
+    // 3. Socket dispatch with fallback to HTTP REST
     const payload = {
       communityId: activeCircle.id,
       channelId: chanId,
@@ -778,11 +846,38 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
       intent: intent || (codeSnippet ? "code" : "chat")
     };
 
-    socket?.emit("chat:sendMessage", payload, (res: any) => {
-      if (res?.success && res.data) {
-        addMessage(res.data);
+    const socket = socketService.get() || socketService.connect();
+    if (socket && socket.connected) {
+      socket.emit("chat:sendMessage", payload, (res: any) => {
+        if (res?.success && res.data) {
+          useChatStore.getState().setMessages(
+            useChatStore.getState().messages.map((m) => (m._id === tempId ? res.data : m))
+          );
+        } else if (res && !res.success) {
+          addToast(res.message || "Failed to send message", "error");
+          useChatStore.getState().setMessages(
+            useChatStore.getState().messages.filter((m) => m._id !== tempId)
+          );
+        }
+      });
+    } else {
+      try {
+        const created = await chatApi.create(activeCircle.id, {
+          content: content || "",
+          channelId: chanId
+        });
+        if (created) {
+          useChatStore.getState().setMessages(
+            useChatStore.getState().messages.map((m) => (m._id === tempId ? created : m))
+          );
+        }
+      } catch (err: any) {
+        addToast(err?.response?.data?.message || "Failed to send message", "error");
+        useChatStore.getState().setMessages(
+          useChatStore.getState().messages.filter((m) => m._id !== tempId)
+        );
       }
-    });
+    }
   };
 
   // ── 7. Send Direct Message Dispatcher ─────────────────────────────────────
@@ -1024,12 +1119,6 @@ export function ChatPage({ initialMode }: ChatPageProps = {}) {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-slate-50 font-sans antialiased transition-colors duration-300">
-      {/* ── App Navigation Sidebar ── */}
-      <DashboardSidebar
-        collapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-      />
-
       {/* ── High-Density Slack / Discord Grade Split Layout ── */}
       <div className="flex-1 flex h-full overflow-hidden">
         {/* Rail: Discord-Style Circle Switcher with Top DMs Hub */}

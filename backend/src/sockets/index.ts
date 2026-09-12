@@ -203,6 +203,13 @@ export const initializeSockets = (server: HttpServer): Server => {
     io.to(`community:${communityId}`).emit("messageCreated", message);
     io.to(`room:${communityId}`).emit("messageCreated", message);
     io.to(`room:${communityId}`).emit("newMessage", message);
+    io.to(`room:${communityId}`).emit("chat:messageReceived", message);
+    const channelId = (message as any)?.channelId;
+    if (channelId) {
+      io.to(`room:${communityId}:${channelId}`).emit("chat:messageReceived", message);
+      io.to(`room:${communityId}:${channelId}`).emit("newMessage", message);
+      io.to(`room:${communityId}:${channelId}`).emit("messageCreated", message);
+    }
   });
   chatBus.onUpdated((communityId, message) => {
     io.to(`community:${communityId}`).emit("messageUpdated", message);

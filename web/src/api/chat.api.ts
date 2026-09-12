@@ -11,6 +11,7 @@ export interface MessageListParams {
 
 export interface CreateMessagePayload {
   content: string;
+  channelId?: string;
   replyTo?: string;
   attachments?: File[];
 }
@@ -26,6 +27,7 @@ export const chatApi = {
   create: async (communityId: string, payload: CreateMessagePayload) => {
     const form = new FormData();
     form.append("content", payload.content);
+    if (payload.channelId) form.append("channelId", payload.channelId);
     if (payload.replyTo) form.append("replyTo", payload.replyTo);
     payload.attachments?.forEach((file) => form.append("attachments", file));
     return (

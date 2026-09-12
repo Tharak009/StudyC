@@ -1,6 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { Plus, Compass, Sparkles, MessageSquare, Flame } from "lucide-react";
+import { Plus, Compass, Sparkles, MessageSquare, Flame, GraduationCap } from "lucide-react";
+import { useNavigate } from "react-router";
 
 export interface StudyCircle {
   id: string;
@@ -37,6 +38,7 @@ export function CircleSwitcher({
   onSelectDMs,
   unreadDMsCount = 0
 }: CircleSwitcherProps) {
+  const navigate = useNavigate();
   const isDMsActive = activeMode === "dms";
 
   return (
@@ -44,8 +46,27 @@ export function CircleSwitcher({
       aria-label="Study Circles navigation"
       className="w-18 h-full shrink-0 flex flex-col items-center py-3 bg-slate-100/90 dark:bg-[#080D1A] border-r border-slate-200/80 dark:border-slate-800/80 select-none justify-between z-10"
     >
-      {/* ── Top: Discord Direct Messages (DMs) Hub ───────────────────── */}
+      {/* ── Top: App Home / Dashboard Link & Discord Direct Messages (DMs) Hub ── */}
       <div className="flex flex-col items-center gap-2 w-full">
+        {/* Back to Campus Dashboard Button */}
+        <div className="relative group flex items-center justify-center w-full">
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            title="Back to Campus Dashboard"
+            className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-[#0F1A30] text-slate-700 dark:text-slate-300 hover:rounded-xl hover:bg-[#1E90FF] hover:text-white dark:hover:bg-[#1E90FF] dark:hover:text-white border border-slate-200/80 dark:border-slate-800/80 transition-all cursor-pointer shadow-xs group"
+          >
+            <GraduationCap size={22} className="transition-transform duration-200 group-hover:scale-110" />
+          </button>
+
+          {/* Tooltip */}
+          <div className="absolute left-16 z-50 whitespace-nowrap rounded-xl bg-slate-900/95 dark:bg-[#0F1A30]/95 backdrop-blur-xl border border-slate-700/80 dark:border-slate-700/80 px-3 py-1.5 text-xs font-bold text-white shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+            <span>Campus Dashboard</span>
+          </div>
+        </div>
+
+        {/* Small Divider */}
+        <div className="w-8 h-0.5 rounded-full bg-slate-200 dark:bg-slate-800 my-0.5" />
         <div className="relative group flex items-center justify-center w-full">
           {/* Active Left Indicator Bar (Discord Style) */}
           <span

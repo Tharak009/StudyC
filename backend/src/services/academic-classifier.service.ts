@@ -57,7 +57,13 @@ const GLOBAL_ACADEMIC_LEXICON = new Set([
   "discrete", "boolean", "logic", "combinatorics", "permutation", "graph", "set",
   "circuit", "resistor", "capacitor", "inductor", "voltage", "current", "impedance",
   "kirchhoff", "ohm", "signal", "fourier", "laplace", "transform", "frequency",
-  "mechanics", "thermodynamics", "optics", "kinematics", "electromagnetism"
+  "mechanics", "thermodynamics", "optics", "kinematics", "electromagnetism",
+
+  // Academic Collaboration & Salutations
+  "hi", "hello", "hey", "help", "thanks", "thank", "welcome", "please", "doubt",
+  "morning", "afternoon", "evening", "yes", "no", "ok", "okay", "sure", "cool",
+  "done", "group", "team", "meet", "meeting", "share", "review", "check", "discuss",
+  "understand", "concept", "topic", "class", "session", "study", "peer"
 ]);
 
 // ── Banter, Gaming, and Slang Blacklist (Penalties) ──────────────────────────

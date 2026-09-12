@@ -116,11 +116,25 @@ export const useChatStore = create<ChatStoreState>((set) => ({
 
   addMessage: (message) =>
     set((state) => {
-      // Avoid duplicates
       if (state.messages.some((m) => m._id === message._id)) return state;
-      const updatedMessages = [...state.messages, message];
+      const senderId = (message.senderId as any)?._id || message.senderId;
+      const optIdx = state.messages.findIndex(
+        (m) =>
+          m._id.startsWith("circle-opt-") &&
+          m.content === message.content &&
+          ((m.senderId as any)?._id === senderId || (m.senderId as any)?._id === "u-me")
+      );
+
+      let updatedMessages: ChatMessage[];
+      if (optIdx !== -1) {
+        updatedMessages = [...state.messages];
+        updatedMessages[optIdx] = message;
+      } else {
+        updatedMessages = [...state.messages, message];
+      }
+
       const updatedPinned = message.isPinned
-        ? [...state.pinnedMessages, message]
+        ? [...state.pinnedMessages.filter((m) => m._id !== message._id), message]
         : state.pinnedMessages;
       return {
         messages: updatedMessages,

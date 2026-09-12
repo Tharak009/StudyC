@@ -269,7 +269,7 @@ export const registerChatHandlers = (
         }
 
         // 2. Resolve Channel Strict Study Configuration
-        let isStrict = true;
+        let isStrict = false;
         let academicTags: string[] = ["algorithms", "code", "homework", "exam", "syllabus", "lecture", "assignment"];
         let strictnessThreshold = 0.40;
         let allowCodeSnippetsOnly = false;
@@ -277,15 +277,6 @@ export const registerChatHandlers = (
         let timeoutDurationMinutes = 5;
 
         const chanLower = chanKey.toLowerCase();
-        if (
-          chanLower === "general" ||
-          chanLower === "campus-lounge" ||
-          chanLower === "random" ||
-          chanLower.includes("lounge")
-        ) {
-          isStrict = false;
-        }
-
         try {
           const community = await Community.findById(communityId, { channels: 1 }).lean();
           if (community?.channels && community.channels.length > 0) {
@@ -293,7 +284,7 @@ export const registerChatHandlers = (
               (c: any) => c._id?.toString() === chanKey || c.name?.toLowerCase() === chanLower
             );
             if (ch) {
-              isStrict = ch.isStrictStudyMode ?? isStrict;
+              isStrict = ch.isStrictStudyMode === true;
               if (Array.isArray(ch.academicContextTags) && ch.academicContextTags.length > 0) {
                 academicTags = ch.academicContextTags;
               }
