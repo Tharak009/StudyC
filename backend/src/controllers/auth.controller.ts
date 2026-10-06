@@ -79,6 +79,27 @@ export class AuthController {
     response.json(new ApiResponse(200, null, "Signed out successfully"));
   }
 
+  async logoutAll(request: Request, response: Response) {
+    await authService.logoutAll(request.user!.id);
+    clearRefreshCookie(response);
+    response.json(new ApiResponse(200, null, "Signed out of all devices successfully"));
+  }
+
+  async listSessions(request: Request, response: Response) {
+    const rawToken = refreshTokenFrom(request);
+    const sessions = await authService.listActiveSessions(request.user!.id, rawToken);
+    response.json(new ApiResponse(200, sessions, "Active sessions retrieved"));
+  }
+
+  async revokeSession(request: Request, response: Response) {
+    const tokenId = (Array.isArray(request.params.tokenId) ? request.params.tokenId[0] : request.params.tokenId) || "";
+    if (!tokenId) {
+      throw new ApiError(400, "Token ID is required", [], "MISSING_TOKEN_ID");
+    }
+    await authService.revokeSession(request.user!.id, tokenId);
+    response.json(new ApiResponse(200, null, "Session revoked successfully"));
+  }
+
   async changePassword(request: Request, response: Response) {
     const { currentPassword, newPassword } = request.body as ChangePasswordInput;
     await authService.changePassword(request.user!.id, currentPassword, newPassword);

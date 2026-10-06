@@ -137,135 +137,23 @@ export const useDirectMessageStore = create<DirectMessageState>((set) => ({
     set((state) => ({
       messages: {
         ...state.messages,
-        [conversationId]: sortMessagesChronologically(messages)
+        [conversationId]: messages
       }
     })),
 
   addOptimisticMessage: (conversationId, message) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = sortMessagesChronologically([...current, message]);
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  reconcileMessage: (conversationId, clientMessageId, serverMessage) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const matchIndex = current.findIndex(
-        (m) =>
-          (clientMessageId && m.clientMessageId === clientMessageId) ||
-          m._id === serverMessage._id
-      );
-
-      let updatedList: DirectMessage[];
-      if (matchIndex !== -1) {
-        updatedList = [...current];
-        updatedList[matchIndex] = {
-          ...serverMessage,
-          status: serverMessage.read ? "READ" : serverMessage.delivered ? "DELIVERED" : "SENT"
-        };
-      } else {
-        updatedList = [
-          ...current,
-          {
-            ...serverMessage,
-            status: serverMessage.read ? "READ" : serverMessage.delivered ? "DELIVERED" : "SENT"
-          }
-        ];
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [conversationId]: [...(state.messages[conversationId] || []), message]
       }
+    })),
 
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: sortMessagesChronologically(updatedList)
-        }
-      };
-    }),
-
-  markMessageFailed: (conversationId, clientMessageId) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) =>
-        m.clientMessageId === clientMessageId || m._id === clientMessageId
-          ? { ...m, status: "FAILED" as const }
-          : m
-      );
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  retryMessage: (conversationId, clientMessageId) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) =>
-        m.clientMessageId === clientMessageId || m._id === clientMessageId
-          ? { ...m, status: "SENDING" as const }
-          : m
-      );
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  updateMessageDelivery: (conversationId, messageId, status) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) => {
-        if (m._id === messageId || m.clientMessageId === messageId) {
-          return {
-            ...m,
-            status,
-            delivered: status === "DELIVERED" || status === "READ",
-            read: status === "READ"
-          };
-        }
-        return m;
-      });
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  markConversationMessagesRead: (conversationId) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) => ({
-        ...m,
-        read: true,
-        delivered: true,
-        status: "READ" as const
-      }));
-
-      const updatedConvs = state.conversations.map((c) =>
-        c._id === conversationId ? { ...c, unreadCount: 0 } : c
-      );
-
-      const totalUnread = updatedConvs.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
-
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        },
-        conversations: updatedConvs,
-        unreadCount: totalUnread
-      };
-    }),
+  reconcileMessage: () => {},
+  markMessageFailed: () => {},
+  retryMessage: () => {},
+  updateMessageDelivery: () => {},
+  markConversationMessagesRead: () => {},
 
   updateConversationOrder: (conversationId, lastMessage, incrementUnread = false) =>
     set((state) => {
@@ -356,149 +244,13 @@ export const useDirectMessageStore = create<DirectMessageState>((set) => ({
       };
     }),
 
-  editMessageInStore: (conversationId, messageId, content, editedAt) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) =>
-        m._id === messageId || m.clientMessageId === messageId
-          ? { ...m, content, edited: true, editedAt: editedAt || new Date().toISOString() }
-          : m
-      );
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  toggleStarInStore: (conversationId, messageId, isStarred) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) =>
-        m._id === messageId || m.clientMessageId === messageId
-          ? { ...m, isStarred }
-          : m
-      );
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  togglePinInStore: (conversationId, messageId, isPinned, pinnedBy) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) =>
-        m._id === messageId || m.clientMessageId === messageId
-          ? {
-              ...m,
-              isPinned,
-              pinnedAt: isPinned ? new Date().toISOString() : undefined,
-              pinnedBy: isPinned ? pinnedBy : undefined
-            }
-          : m
-      );
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  updateReactionInStore: (conversationId, messageId, reactions) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) =>
-        m._id === messageId || m.clientMessageId === messageId
-          ? { ...m, reactions }
-          : m
-      );
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  deleteMessageForMeInStore: (conversationId, messageId) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.filter((m) => m._id !== messageId && m.clientMessageId !== messageId);
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  purgeMessageForEveryoneInStore: (conversationId, messageId, purgeData) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) =>
-        m._id === messageId || m.clientMessageId === messageId
-          ? {
-              ...m,
-              isDeletedForEveryone: true,
-              content: "",
-              attachments: [],
-              deletedBy: purgeData?.deletedBy || m.deletedBy,
-              deletedAt: purgeData?.deletedAt || new Date().toISOString()
-            }
-          : m
-      );
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  removeMessageFromStore: (conversationId, messageId) =>
-    set((state) => {
-      const current = state.messages[conversationId] || [];
-      const updated = current.filter((m) => m._id !== messageId && m.clientMessageId !== messageId);
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  bulkDeleteForMeInStore: (conversationId, messageIds) =>
-    set((state) => {
-      const idSet = new Set(messageIds);
-      const current = state.messages[conversationId] || [];
-      const updated = current.filter((m) => !idSet.has(m._id) && (!m.clientMessageId || !idSet.has(m.clientMessageId)));
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    }),
-
-  bulkStarInStore: (conversationId, messageIds, isStarred) =>
-    set((state) => {
-      const idSet = new Set(messageIds);
-      const current = state.messages[conversationId] || [];
-      const updated = current.map((m) =>
-        idSet.has(m._id) || (m.clientMessageId && idSet.has(m.clientMessageId))
-          ? { ...m, isStarred }
-          : m
-      );
-      return {
-        messages: {
-          ...state.messages,
-          [conversationId]: updated
-        }
-      };
-    })
+  editMessageInStore: () => {},
+  toggleStarInStore: () => {},
+  togglePinInStore: () => {},
+  updateReactionInStore: () => {},
+  deleteMessageForMeInStore: () => {},
+  purgeMessageForEveryoneInStore: () => {},
+  removeMessageFromStore: () => {},
+  bulkDeleteForMeInStore: () => {},
+  bulkStarInStore: () => {}
 }));

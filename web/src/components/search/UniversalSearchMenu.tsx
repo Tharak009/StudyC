@@ -275,7 +275,7 @@ export function UniversalSearchMenu() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 right-0 sm:-right-24 top-full mt-2 rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-[#0F1A30]/95 backdrop-blur-2xl shadow-2xl z-50 overflow-hidden text-slate-900 dark:text-slate-100"
+            className="absolute left-0 right-0 sm:-right-24 top-full mt-2 rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#0F1A30] shadow-2xl z-50 overflow-hidden text-slate-900 dark:text-slate-100"
           >
             {/* Filter Category Tabs Header */}
             {query.trim() && (

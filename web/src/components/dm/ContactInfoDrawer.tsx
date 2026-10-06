@@ -28,14 +28,21 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 import type { ActivePeer } from "./ConversationHeader";
-import type { DirectMessageItem } from "./DirectMessageStream";
 import { ImageViewerModal } from "../chat/media/ImageViewerModal";
+
+export interface ContactDrawerMessage {
+  id: string;
+  senderName: string;
+  time: string;
+  attachments?: any[];
+  codeSnippet?: any;
+}
 
 interface ContactInfoDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   peer: ActivePeer;
-  messages: DirectMessageItem[];
+  messages: ContactDrawerMessage[];
   onStartCall?: (type: "audio" | "video") => void;
   onSearchInChat?: () => void;
 }
@@ -109,7 +116,7 @@ export function ContactInfoDrawer({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-40 lg:hidden"
+            className="fixed inset-0 bg-slate-950/60 z-40 lg:hidden"
           />
 
           {/* Slide-in WhatsApp Style Contact Info Drawer */}

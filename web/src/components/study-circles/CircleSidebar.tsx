@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from "react";
 import {
   Hash,
-  Volume2,
   Bell,
   Shield,
   Coffee,
@@ -10,12 +9,9 @@ import {
   Users,
   Sparkles,
   ChevronDown,
-  ChevronRight,
-  Radio
+  ChevronRight
 } from "lucide-react";
 import type { Channel } from "../../types/chat";
-import { useChatStore } from "../../store/chat.store";
-import { socketService } from "../../services/socket.service";
 
 interface CircleSidebarProps {
   community: {
@@ -43,21 +39,18 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
   currentUserId,
   className = ""
 }) => {
-  const { activeVoiceStage, setActiveVoiceStage } = useChatStore();
-
   const [searchQuery, setSearchQuery] = useState("");
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({
     announcements: false,
     focus: false,
-    watercooler: false,
-    stages: false
+    watercooler: false
   });
 
   const toggleCategory = (cat: string) => {
     setCollapsedCategories((prev) => ({ ...prev, [cat]: !prev[cat] }));
   };
 
-  // 4-Tier Categorization
+  // 3-Tier Categorization
   const categorizedChannels = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     const filtered = channels.filter((c) =>
@@ -67,12 +60,9 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
     const announcements: Channel[] = [];
     const focus: Channel[] = [];
     const watercooler: Channel[] = [];
-    const stages: Channel[] = [];
 
     filtered.forEach((ch) => {
-      if (ch.type === "voice" || ch.category === "stages") {
-        stages.push(ch);
-      } else if (ch.type === "announcement" || ch.category === "announcements") {
+      if (ch.type === "announcement" || ch.category === "announcements") {
         announcements.push(ch);
       } else if (
         ch.category === "watercooler" ||
@@ -86,36 +76,8 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
       }
     });
 
-    return { announcements, focus, watercooler, stages };
+    return { announcements, focus, watercooler };
   }, [channels, searchQuery]);
-
-  const handleJoinVoiceStage = (channel: Channel) => {
-    const stageId = channel._id || channel.name;
-    const socket = socketService.get();
-
-    socket?.emit(
-      "voice:joinStage",
-      {
-        communityId: community._id,
-        stageId,
-        userName: "Scholar"
-      },
-      (res: any) => {
-        if (res?.success) {
-          setActiveVoiceStage({
-            stageId,
-            communityId: community._id,
-            channelName: channel.name,
-            isConnected: true,
-            isSpeaking: false,
-            isMuted: false,
-            isScreenSharing: false,
-            peers: res.peers || []
-          });
-        }
-      }
-    );
-  };
 
   return (
     <div
@@ -316,81 +278,6 @@ export const CircleSidebar: React.FC<CircleSidebarProps> = ({
           </div>
         )}
 
-        {/* Tier 4: Drop-in Study Stages (Audio / Screenshare) */}
-        <div>
-          <button
-            onClick={() => toggleCategory("stages")}
-            className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer"
-          >
-            <span className="flex items-center gap-1.5">
-              <Radio className="w-3 h-3 text-cyan-500" />
-              Drop-in Study Stages
-            </span>
-            {collapsedCategories.stages ? (
-              <ChevronRight className="w-3 h-3" />
-            ) : (
-              <ChevronDown className="w-3 h-3" />
-            )}
-          </button>
-
-          {!collapsedCategories.stages && (
-            <div className="mt-1 space-y-1">
-              {categorizedChannels.stages.length === 0 ? (
-                <div className="px-2 py-2 text-[11px] text-slate-400 dark:text-slate-500 italic">
-                  No active voice stages
-                </div>
-              ) : (
-                categorizedChannels.stages.map((ch) => {
-                  const stageId = ch._id || ch.name;
-                  const isStageActive = activeVoiceStage?.stageId === stageId;
-                  return (
-                    <div
-                      key={stageId}
-                      className={`p-2 rounded-xl border transition-all ${
-                        isStageActive
-                          ? "bg-cyan-500/10 border-cyan-500/40 shadow-sm"
-                          : "bg-white dark:bg-[#0F1A30]/60 border-slate-200 dark:border-slate-800 hover:border-cyan-500/30 shadow-xs"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`p-1.5 rounded-lg ${
-                              isStageActive
-                                ? "bg-cyan-500/20 text-cyan-500 dark:text-cyan-300"
-                                : "bg-slate-100 dark:bg-[#162544] text-slate-500 dark:text-slate-400"
-                            }`}
-                          >
-                            <Volume2 className="w-3.5 h-3.5" />
-                          </div>
-                          <div>
-                            <div className="text-xs font-semibold text-slate-900 dark:text-white truncate max-w-[120px]">
-                              {ch.name}
-                            </div>
-                            <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                              {ch.topic || "Drop-in Audio Stage"}
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => handleJoinVoiceStage(ch)}
-                          className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                            isStageActive
-                              ? "bg-cyan-500 text-white shadow-xs"
-                              : "bg-slate-100 dark:bg-[#162544] hover:bg-cyan-600 hover:text-white text-cyan-600 dark:text-cyan-300 border border-slate-200 dark:border-transparent"
-                          }`}
-                        >
-                          {isStageActive ? "Joined" : "Connect"}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* ── Circle Status Footer ── */}

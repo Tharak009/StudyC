@@ -49,7 +49,7 @@ export function DocumentPreviewModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 overflow-hidden">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -95,7 +95,7 @@ export function DocumentPreviewModal({
         <div className="flex-1 flex flex-col min-h-0 bg-slate-100 dark:bg-[#080D1A]/95 overflow-hidden">
           
           {/* Zoom & Page Controls Floating Bar */}
-          <div className="h-11 shrink-0 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-[#0F1A30]/70 backdrop-blur-md">
+          <div className="h-11 shrink-0 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-[#0F1A30]">
             <div className="flex items-center gap-2">
               <button
                 disabled={currentPage <= 1}
@@ -177,7 +177,7 @@ export function DocumentPreviewModal({
         </div>
 
         {/* ── Bottom Rating & Feedback Dock ───────────────────────────── */}
-        <div className="shrink-0 p-4 border-t border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-[#0F1A30]/90 backdrop-blur-xl">
+        <div className="shrink-0 p-4 border-t border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#0F1A30]">
           <form onSubmit={handleRatingSubmit} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200">

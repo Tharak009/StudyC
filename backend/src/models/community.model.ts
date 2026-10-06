@@ -1,5 +1,17 @@
 import { Schema, model, type HydratedDocument, type Model, type Types } from "mongoose";
-import { COMMUNITY_CATEGORIES, COMMUNITY_VISIBILITY, type CommunityCategory, type CommunityVisibility } from "../constants/community.js";
+import {
+  ALL_COMMUNITY_VISIBILITIES,
+  COMMUNITY_CATEGORIES,
+  COMMUNITY_JOIN_POLICY,
+  COMMUNITY_STATUS,
+  COMMUNITY_TYPES,
+  COMMUNITY_VISIBILITY,
+  type CommunityCategory,
+  type CommunityJoinPolicy,
+  type CommunityStatus,
+  type CommunityType,
+  type CommunityVisibility
+} from "../constants/community.js";
 
 export interface IChannel {
   _id?: Types.ObjectId | string;
@@ -43,13 +55,22 @@ export interface ICommunity {
   name: string;
   slug: string;
   description: string;
+  icon?: string;
+  banner?: string;
   bannerImage?: string;
   category: CommunityCategory;
+  type: CommunityType;
   tags: string[];
   visibility: CommunityVisibility;
+  joinPolicy: CommunityJoinPolicy;
+  status: CommunityStatus;
   owner: Types.ObjectId;
+  ownerId?: string;
+  collegeId?: Types.ObjectId;
   moderators: Types.ObjectId[];
   memberCount: number;
+  groupCount: number;
+  announcementGroupId?: Types.ObjectId | string;
   channels: IChannel[];
   sprintState?: ICommunitySprintState;
   extensionPoints: {
@@ -57,6 +78,11 @@ export interface ICommunity {
     resourcesEnabled: boolean;
     notificationsEnabled: boolean;
   };
+  isDeleted: boolean;
+  deletedAt?: Date;
+  deletedBy?: Types.ObjectId;
+  archivedAt?: Date;
+  archivedBy?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -105,8 +131,16 @@ const communitySchema = new Schema<ICommunity, CommunityModel>(
     name: { type: String, required: true, unique: true, trim: true, minlength: 3, maxlength: 50 },
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
     description: { type: String, trim: true, maxlength: 1000, default: "" },
+    icon: { type: String, trim: true, default: "" },
+    banner: { type: String, trim: true, default: "" },
     bannerImage: { type: String },
-    category: { type: String, enum: COMMUNITY_CATEGORIES, required: true, index: true },
+    category: { type: String, required: true, index: true },
+    type: {
+      type: String,
+      enum: Object.values(COMMUNITY_TYPES),
+      default: COMMUNITY_TYPES.ACADEMIC,
+      index: true
+    },
     tags: {
       type: [{ type: String, trim: true, lowercase: true, maxlength: 30 }],
       default: [],
@@ -114,13 +148,27 @@ const communitySchema = new Schema<ICommunity, CommunityModel>(
     },
     visibility: {
       type: String,
-      enum: Object.values(COMMUNITY_VISIBILITY),
+      enum: ALL_COMMUNITY_VISIBILITIES,
       default: COMMUNITY_VISIBILITY.PUBLIC,
       index: true
     },
+    joinPolicy: {
+      type: String,
+      enum: Object.values(COMMUNITY_JOIN_POLICY),
+      default: COMMUNITY_JOIN_POLICY.OPEN
+    },
+    status: {
+      type: String,
+      enum: Object.values(COMMUNITY_STATUS),
+      default: COMMUNITY_STATUS.ACTIVE,
+      index: true
+    },
     owner: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    collegeId: { type: Schema.Types.ObjectId, ref: "College", index: true },
     moderators: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     memberCount: { type: Number, default: 0, min: 0 },
+    groupCount: { type: Number, default: 0, min: 0 },
+    announcementGroupId: { type: Schema.Types.ObjectId, ref: "CommunityGroup" },
     channels: { type: [channelSchema], default: [] },
     sprintState: {
       isActive: { type: Boolean, default: false },
@@ -136,12 +184,29 @@ const communitySchema = new Schema<ICommunity, CommunityModel>(
       chatEnabled: { type: Boolean, default: false },
       resourcesEnabled: { type: Boolean, default: false },
       notificationsEnabled: { type: Boolean, default: false }
-    }
+    },
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    archivedAt: { type: Date },
+    archivedBy: { type: Schema.Types.ObjectId, ref: "User" }
   },
-  { timestamps: true, versionKey: false }
+  {
+    timestamps: true,
+    versionKey: false,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
+
+communitySchema.virtual("ownerId").get(function () {
+  if (!this.owner) return undefined;
+  return (this.owner as any)._id ? (this.owner as any)._id.toString() : this.owner.toString();
+});
 
 communitySchema.index({ name: "text", description: "text", tags: "text" });
 communitySchema.index({ category: 1, visibility: 1, createdAt: -1 });
+communitySchema.index({ isDeleted: 1, status: 1, createdAt: -1 });
+communitySchema.index({ collegeId: 1, isDeleted: 1 });
 
 export const Community = model<ICommunity, CommunityModel>("Community", communitySchema);

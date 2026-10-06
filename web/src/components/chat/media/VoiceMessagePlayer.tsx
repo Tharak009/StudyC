@@ -1,255 +1,222 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Play, Pause, Loader2, Download, AlertCircle, RotateCcw } from "lucide-react";
-import { audioCoordinator } from "../../../utils/audio-coordinator";
-import { getMediaUrl } from "../../../utils/media-url";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Play, Pause, Volume2, AlertCircle } from "lucide-react";
+import { useAudioPlaybackStore } from "../../../store/audio-playback.store";
 
 interface VoiceMessagePlayerProps {
-  id: string;
-  url: string;
-  duration?: number;
-  waveform?: number[];
-  isMe?: boolean;
+  attachment: {
+    asset_url?: string;
+    duration?: number | string;
+    title?: string;
+  };
+  messageId: string;
+  isSelectMode?: boolean;
+  isMine?: boolean;
 }
 
-const DEFAULT_WAVEFORM = [
-  35, 60, 40, 80, 55, 90, 70, 45, 100, 65, 30, 85, 45, 95, 60, 40, 75, 50, 85, 35, 65, 90, 55, 40
-];
+function formatDuration(seconds: number | string): string {
+  const num = typeof seconds === "string" ? parseFloat(seconds) : seconds;
+  if (isNaN(num) || num < 0) return "00:00";
+  const m = Math.floor(num / 60);
+  const s = Math.floor(num % 60);
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
 
-const SPEED_OPTIONS = [1, 1.5, 2] as const;
+export function VoiceMessagePlayer({
+  attachment,
+  messageId,
+  isSelectMode = false,
+  isMine = false
+}: VoiceMessagePlayerProps) {
+  const audioUrl =
+    attachment.asset_url || (attachment as any).url || (attachment as any).file_url;
+  const initialDuration =
+    typeof attachment.duration === "string"
+      ? parseFloat(attachment.duration) || 0
+      : attachment.duration || 0;
 
-export const VoiceMessagePlayer: React.FC<VoiceMessagePlayerProps> = ({
-  id,
-  url,
-  duration: initialDuration,
-  waveform = DEFAULT_WAVEFORM,
-  isMe = false
-}) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(initialDuration || 0);
-  const [speedIndex, setSpeedIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  const [duration, setDuration] = useState<number>(initialDuration);
   const [hasError, setHasError] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const bars = waveform && waveform.length >= 10 ? waveform : DEFAULT_WAVEFORM;
+  const progressBarRef = useRef<HTMLDivElement>(null);
 
-  const currentSpeed = SPEED_OPTIONS[speedIndex];
-  const authenticatedUrl = getMediaUrl(url);
+  const { activeAudioId, playAudio, stopAudio, playbackSpeed, setPlaybackSpeed } =
+    useAudioPlaybackStore();
 
-  // Setup audio event listeners
+  // Listen to global audio store: pause if another audio starts playing
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    if (activeAudioId !== messageId && isPlaying) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      setIsPlaying(false);
+    }
+  }, [activeAudioId, messageId, isPlaying]);
 
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onLoadedMetadata = () => {
+  // Sync playback speed
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
+
+  // Audio setup and event listeners
+  useEffect(() => {
+    if (!audioUrl) return;
+
+    const audio = new Audio(audioUrl);
+    audioRef.current = audio;
+    audio.playbackRate = playbackSpeed;
+
+    const handleLoadedMetadata = () => {
       if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
         setDuration(audio.duration);
       }
-      setIsLoading(false);
     };
-    const onEnded = () => {
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+    };
+
+    const handleEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
-      audioCoordinator.stop(id);
+      stopAudio(messageId);
     };
-    const onError = () => {
-      setHasError(true);
-      setIsLoading(false);
-      setIsPlaying(false);
-      audioCoordinator.stop(id);
-    };
-    const onWaiting = () => setIsLoading(true);
-    const onPlaying = () => setIsLoading(false);
 
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("loadedmetadata", onLoadedMetadata);
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("error", onError);
-    audio.addEventListener("waiting", onWaiting);
-    audio.addEventListener("playing", onPlaying);
+    const handleError = () => {
+      setHasError(true);
+      setIsPlaying(false);
+      stopAudio(messageId);
+    };
+
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("error", handleError);
 
     return () => {
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("error", onError);
-      audio.removeEventListener("waiting", onWaiting);
-      audio.removeEventListener("playing", onPlaying);
-      audioCoordinator.stop(id);
+      audio.pause();
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("error", handleError);
+      audioRef.current = null;
     };
-  }, [id]);
+  }, [audioUrl, messageId, stopAudio]);
 
-  const togglePlay = useCallback(async () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (hasError) {
-      setHasError(false);
-      audio.load();
-    }
+  const togglePlay = () => {
+    if (isSelectMode || !audioRef.current || hasError) return;
 
     if (isPlaying) {
-      audio.pause();
+      audioRef.current.pause();
       setIsPlaying(false);
-      audioCoordinator.stop(id);
+      stopAudio(messageId);
     } else {
-      audioCoordinator.play(id, () => {
-        if (audioRef.current) {
-          audioRef.current.pause();
-        }
-        setIsPlaying(false);
-      });
-
-      try {
-        await audio.play();
-        setIsPlaying(true);
-      } catch (err) {
-        console.warn("Audio playback failed:", err);
-        setIsPlaying(false);
-        setHasError(true);
-      }
+      playAudio(messageId);
+      audioRef.current
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch((err) => {
+          console.warn("Audio playback failed:", err);
+          setHasError(true);
+          stopAudio(messageId);
+        });
     }
-  }, [id, isPlaying, hasError]);
+  };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
-    if (!audio || duration <= 0) return;
+    if (isSelectMode || !audioRef.current || !progressBarRef.current || duration <= 0) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = progressBarRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    const progress = Math.max(0, Math.min(1, clickX / rect.width));
-    const targetTime = progress * duration;
+    const fraction = Math.max(0, Math.min(1, clickX / rect.width));
+    const newTime = fraction * duration;
 
-    audio.currentTime = targetTime;
-    setCurrentTime(targetTime);
+    audioRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
   };
 
-  const handleSpeedToggle = () => {
-    const nextIndex = (speedIndex + 1) % SPEED_OPTIONS.length;
-    setSpeedIndex(nextIndex);
-    const nextSpeed = SPEED_OPTIONS[nextIndex];
-    if (audioRef.current) {
-      audioRef.current.playbackRate = nextSpeed;
-    }
+  const cycleSpeed = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isSelectMode) return;
+    const nextSpeed = playbackSpeed === 1 ? 1.5 : playbackSpeed === 1.5 ? 2 : 1;
+    setPlaybackSpeed(nextSpeed);
   };
 
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return "0:00";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-  };
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  const progressFraction = duration > 0 ? currentTime / duration : 0;
+  if (hasError) {
+    return (
+      <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs">
+        <AlertCircle size={15} />
+        <span>Audio cannot be played</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex items-center gap-3 py-1.5 px-1 max-w-[300px] select-none">
-      <audio ref={audioRef} src={authenticatedUrl} preload="metadata" />
-
-      {/* Play / Pause / Retry Button */}
+    <div
+      className={`my-1 p-2.5 rounded-2xl flex items-center gap-3 w-64 sm:w-72 select-none transition-all ${
+        isMine
+          ? "bg-white/15 text-white shadow-2xs"
+          : "bg-slate-100 dark:bg-[#121B2D] text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/60 shadow-2xs"
+      }`}
+    >
+      {/* Play / Pause button */}
       <button
         type="button"
         onClick={togglePlay}
-        className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 shadow-sm transition-transform active:scale-95 cursor-pointer ${
-          isMe
-            ? "bg-white text-[#1E90FF] hover:bg-slate-100"
-            : "bg-[#1E90FF] text-white hover:bg-[#187bcd]"
+        disabled={isSelectMode}
+        className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-95 cursor-pointer shadow-xs ${
+          isMine
+            ? "bg-white text-[#1E90FF] hover:bg-white/90"
+            : "bg-[#005FFF] text-white hover:bg-[#0052db]"
         }`}
+        title={isPlaying ? "Pause" : "Play"}
         aria-label={isPlaying ? "Pause voice message" : "Play voice message"}
       >
-        {isLoading ? (
-          <Loader2 size={16} className="animate-spin" />
-        ) : hasError ? (
-          <RotateCcw size={16} />
-        ) : isPlaying ? (
-          <Pause size={16} />
-        ) : (
-          <Play size={16} className="ml-0.5" />
-        )}
+        {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
       </button>
 
-      {/* Waveform & Timing */}
-      <div className="flex-1 flex flex-col gap-1.5 min-w-0">
-        {/* Interactive Waveform Bars */}
+      {/* Progress and Scrubber */}
+      <div className="flex-1 flex flex-col gap-1 min-w-0">
         <div
+          ref={progressBarRef}
           onClick={handleSeek}
-          className="flex items-center gap-0.5 h-6 cursor-pointer py-1"
-          role="slider"
-          aria-label="Seek voice note"
-          aria-valuenow={currentTime}
-          aria-valuemin={0}
-          aria-valuemax={duration}
+          className="relative h-2 rounded-full bg-slate-300/60 dark:bg-slate-700/60 cursor-pointer overflow-hidden"
+          title="Click to seek"
         >
-          {bars.map((barVal, idx) => {
-            const barFraction = idx / bars.length;
-            const isPlayed = barFraction <= progressFraction;
-
-            return (
-              <div
-                key={idx}
-                className={`flex-1 rounded-full transition-all ${
-                  isPlayed
-                    ? isMe
-                      ? "bg-white"
-                      : "bg-[#1E90FF]"
-                    : isMe
-                    ? "bg-white/35"
-                    : "bg-slate-300 dark:bg-slate-600"
-                }`}
-                style={{
-                  height: `${Math.max(20, Math.min(100, barVal))}%`
-                }}
-              />
-            );
-          })}
+          <div
+            className={`absolute top-0 bottom-0 left-0 transition-all rounded-full ${
+              isMine ? "bg-white" : "bg-[#005FFF]"
+            }`}
+            style={{ width: `${progressPercent}%` }}
+          />
         </div>
 
-        {/* Status Bar */}
-        <div className="flex items-center justify-between text-[10px] tabular-nums opacity-85">
-          <span>{formatTime(isPlaying ? currentTime : duration || initialDuration || 0)}</span>
-
-          <div className="flex items-center gap-1.5">
-            {/* Speed Pill */}
-            <button
-              type="button"
-              onClick={handleSpeedToggle}
-              className={`px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer ${
-                isMe
-                  ? "bg-white/20 hover:bg-white/30 text-white"
-                  : "bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200"
-              }`}
-              title="Change playback speed"
-              aria-label={`Playback speed ${currentSpeed}x`}
-            >
-              {currentSpeed}×
-            </button>
-
-            {/* Download */}
-            <a
-              href={authenticatedUrl}
-              download="voice-message.webm"
-              target="_blank"
-              rel="noreferrer"
-              className={`p-0.5 rounded transition-colors ${
-                isMe ? "text-white/70 hover:text-white" : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-              }`}
-              title="Download voice note"
-              aria-label="Download voice note"
-            >
-              <Download size={11} />
-            </a>
-          </div>
+        {/* Timestamps */}
+        <div className="flex items-center justify-between text-[10px] font-mono tracking-tight opacity-75">
+          <span>{formatDuration(currentTime)}</span>
+          <span>{formatDuration(duration)}</span>
         </div>
-
-        {hasError && (
-          <div className="flex items-center gap-1 text-[9px] text-rose-300 font-medium">
-            <AlertCircle size={10} />
-            <span>Unable to play audio. Click to retry.</span>
-          </div>
-        )}
       </div>
+
+      {/* Playback speed toggle */}
+      <button
+        type="button"
+        onClick={cycleSpeed}
+        className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer shrink-0 ${
+          isMine
+            ? "bg-white/20 hover:bg-white/30 text-white"
+            : "bg-slate-200/80 dark:bg-slate-700/60 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+        }`}
+        title="Change playback speed"
+      >
+        {playbackSpeed}x
+      </button>
     </div>
   );
-};
+}

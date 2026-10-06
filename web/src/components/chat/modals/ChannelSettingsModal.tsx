@@ -156,12 +156,16 @@ export function ChannelSettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-y-auto">
+    <div
+      className="fixed inset-0 z-[60] flex justify-center items-start sm:items-center p-4 sm:p-6 bg-black/50 overflow-y-auto animate-in fade-in duration-150"
+      onClick={onClose}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="w-full max-w-xl rounded-3xl border border-slate-700/60 bg-[#0F1A30]/95 dark:bg-[#090E1A]/95 p-6 sm:p-7 shadow-2xl shadow-blue-950/40 text-slate-100"
+        className="relative w-full max-w-xl my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-4rem)] overflow-y-auto scrollbar-thin rounded-3xl border border-slate-700/60 bg-[#0F1A30]/95 dark:bg-[#090E1A]/95 p-6 sm:p-7 shadow-2xl shadow-blue-950/40 text-slate-100"
       >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">

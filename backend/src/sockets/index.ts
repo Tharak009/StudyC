@@ -4,8 +4,6 @@ import { isOriginAllowed } from "../config/cors.js";
 import { env } from "../config/env.js";
 import { USER_STATUS } from "../constants/user-status.js";
 import { userRepository } from "../repositories/user.repository.js";
-import { chatBus } from "../services/chat-bus.service.js";
-import { dmBus } from "../services/dm-bus.service.js";
 import { notificationBus } from "../services/notification-bus.service.js";
 import { notificationService } from "../services/notification.service.js";
 import { ApiError } from "../utils/api-error.js";
@@ -13,13 +11,11 @@ import { verifyAccessToken } from "../utils/tokens.js";
 import { notificationIdParamsSchema } from "../validators/notification.validator.js";
 import {
   type SocketRegistry,
-  type VoicePeer,
   registerPresenceHandlers
 } from "./presence.socket.js";
-import { registerChatHandlers } from "./chat.socket.js";
-import { registerDmHandlers } from "./dm.socket.js";
-import { registerVoiceHandlers } from "./voice.socket.js";
+import { registerCallHandlers } from "./call.socket.js";
 import { registerAdminBroadcastHandlers } from "./admin.socket.js";
+
 
 const RATE_LIMIT_WINDOW_MS = 1000;
 const RATE_LIMIT_MAX_EVENTS = 15;
@@ -61,11 +57,10 @@ export const futureSocketModules = [
 ] as const;
 
 /**
- * Global in-memory registry for online tabs and active WebRTC stages
+ * Global in-memory registry for online tabs
  */
 export const socketRegistry: SocketRegistry = {
-  onlineUsersMap: new Map<string, Set<string>>(),
-  activeVoiceRooms: new Map<string, Set<VoicePeer>>()
+  onlineUsersMap: new Map<string, Set<string>>()
 };
 
 const tokenFrom = (socket: Socket): string | undefined => {
@@ -187,11 +182,10 @@ export const initializeSockets = (server: HttpServer): Server => {
 
     // Register all modular controllers
     registerPresenceHandlers(io, socket, socketRegistry);
-    registerChatHandlers(io, socket, socketRegistry);
-    registerDmHandlers(io, socket, socketRegistry);
-    registerVoiceHandlers(io, socket, socketRegistry);
+    registerCallHandlers(io, socket, socketRegistry);
     registerAdminBroadcastHandlers(io, socket, socketRegistry);
     registerNotificationHandlers(io, socket);
+
 
     socket.on("disconnect", () => {
       socketRateLimits.delete(socket.id);
@@ -199,73 +193,6 @@ export const initializeSockets = (server: HttpServer): Server => {
   });
 
   // ── Global Event Bus Bridges ───────────────────────────────────────────────
-  chatBus.onCreated((communityId, message) => {
-    io.to(`community:${communityId}`).emit("messageCreated", message);
-    io.to(`room:${communityId}`).emit("messageCreated", message);
-    io.to(`room:${communityId}`).emit("newMessage", message);
-    io.to(`room:${communityId}`).emit("chat:messageReceived", message);
-    const channelId = (message as any)?.channelId;
-    if (channelId) {
-      io.to(`room:${communityId}:${channelId}`).emit("chat:messageReceived", message);
-      io.to(`room:${communityId}:${channelId}`).emit("newMessage", message);
-      io.to(`room:${communityId}:${channelId}`).emit("messageCreated", message);
-    }
-  });
-  chatBus.onUpdated((communityId, message) => {
-    io.to(`community:${communityId}`).emit("messageUpdated", message);
-    io.to(`room:${communityId}`).emit("messageUpdated", message);
-  });
-  chatBus.onDeleted((communityId, message) => {
-    io.to(`community:${communityId}`).emit("messageDeleted", message);
-    io.to(`room:${communityId}`).emit("messageDeleted", message);
-  });
-
-  dmBus.onCreated((conversationId, message) => {
-    io.to(`dm:${conversationId}`).emit("directMessageCreated", message);
-    io.to(`dm:${conversationId}`).emit("dm:messageReceived", message);
-    io.to(`dm:${conversationId}`).emit("directMessageReceived", message);
-
-    const receiverId = (message as any)?.receiverId;
-    if (receiverId) {
-      io.to(`user:${receiverId}`).emit("directMessageReceived", message);
-      io.to(`user:${receiverId}`).emit("directMessageCreated", message);
-      io.to(`user:${receiverId}`).emit("dm:messageReceived", message);
-    }
-  });
-  dmBus.onUpdated((conversationId, message) => {
-    io.to(`dm:${conversationId}`).emit("directMessageUpdated", message);
-    io.to(`dm:${conversationId}`).emit("dm:messageEdited", message);
-  });
-  dmBus.onDeleted((conversationId, message) => {
-    io.to(`dm:${conversationId}`).emit("directMessageDeleted", message);
-    io.to(`dm:${conversationId}`).emit("dm:messageDeleted", message);
-  });
-  dmBus.onRead((conversationId, message) => {
-    io.to(`dm:${conversationId}`).emit("messageRead", message as Record<string, unknown>);
-    io.to(`dm:${conversationId}`).emit("dm:messageRead", message as Record<string, unknown>);
-  });
-  dmBus.onPurged((conversationId, payload) => {
-    io.to(`dm:${conversationId}`).emit("dm:messagePurged", payload);
-    io.to(`dm:${conversationId}`).emit("directMessageDeleted", {
-      _id: payload.messageId,
-      conversationId,
-      isDeletedForEveryone: true
-    });
-  });
-  dmBus.onReaction((conversationId, payload) => {
-    io.to(`dm:${conversationId}`).emit("dm:reactionUpdated", payload);
-  });
-  dmBus.onPin((conversationId, payload) => {
-    io.to(`dm:${conversationId}`).emit("dm:pinUpdated", payload);
-    io.to(`dm:${conversationId}`).emit("dm:messagePinned", payload);
-  });
-  dmBus.onStar((userId, payload) => {
-    io.to(`user:${userId}`).emit("dm:starUpdated", payload);
-  });
-  dmBus.onDeletedForMe((userId, payload) => {
-    io.to(`user:${userId}`).emit("dm:messageDeletedForMe", payload);
-  });
-
   notificationBus.onCreated((userId, notification) => {
     io.to(`user:${userId}`).emit("notificationCreated", notification);
     io.to(`user:${userId}`).emit("unreadCountUpdate", { count: 1 });

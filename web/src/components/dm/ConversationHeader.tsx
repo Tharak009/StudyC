@@ -30,7 +30,8 @@ import {
   Clock,
   AlertTriangle,
   Check,
-  Star
+  Star,
+  Palette
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToastStore } from "../../store/toast.store";
@@ -72,6 +73,7 @@ export interface ConversationHeaderProps {
   onMute?: (duration: string) => void;
   onDisappearingMessages?: (timer: string) => void;
   onScheduleCall?: (details: { title: string; date: string; time: string; type: "audio" | "video" }) => void;
+  onOpenCustomization?: () => void;
 }
 
 export function ConversationHeader({
@@ -98,7 +100,8 @@ export function ConversationHeader({
   isMuted = false,
   onMute,
   onDisappearingMessages,
-  onScheduleCall
+  onScheduleCall,
+  onOpenCustomization
 }: ConversationHeaderProps) {
   const { addToast } = useToastStore();
 
@@ -428,6 +431,18 @@ export function ConversationHeader({
           >
             <Star size={18} />
           </button>
+
+          {/* Chat Customization (Wallpaper & Density) */}
+          {onOpenCustomization && (
+            <button
+              type="button"
+              onClick={onOpenCustomization}
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-300 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Chat Customization (Wallpaper & Density)"
+            >
+              <Palette size={18} />
+            </button>
+          )}
 
           {/* ── 17-Item Three-Dots Dropdown Trigger ───────────────────── */}
           <div className="relative" ref={menuRef}>
@@ -762,7 +777,7 @@ export function ConversationHeader({
       {/* 1. Disappearing Messages Modal */}
       <AnimatePresence>
         {isDisappearingModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -831,7 +846,7 @@ export function ConversationHeader({
       {/* 2. Schedule Call Modal */}
       <AnimatePresence>
         {isScheduleModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -950,7 +965,7 @@ export function ConversationHeader({
       {/* 3. Report Contact Modal */}
       <AnimatePresence>
         {isReportModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1032,7 +1047,7 @@ export function ConversationHeader({
       {/* 4. Block Confirmation Modal */}
       <AnimatePresence>
         {isBlockModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1072,7 +1087,7 @@ export function ConversationHeader({
       {/* 5. Clear Chat Confirmation Modal */}
       <AnimatePresence>
         {isClearModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1112,7 +1127,7 @@ export function ConversationHeader({
       {/* 6. Delete Chat Confirmation Modal */}
       <AnimatePresence>
         {isDeleteModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}

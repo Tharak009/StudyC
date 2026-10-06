@@ -176,7 +176,7 @@ export function GeminiSidebar({
         <div
           role="presentation"
           onClick={closeMobile}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 md:hidden"
+          className="fixed inset-0 z-40 bg-black/75 transition-opacity duration-300 md:hidden"
           aria-label="Close sidebar backdrop"
         />
       )}
@@ -458,14 +458,6 @@ export function GeminiSidebar({
               </span>
             )}
           </div>
-
-          {/* Location & Connectivity Indicator (Gemini subtle footer) */}
-          {!isCollapsed && (
-            <div className="pt-2 px-3 text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-1.5 select-none font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              <span className="truncate">From your verified IP • India</span>
-            </div>
-          )}
         </div>
       </aside>
     </>

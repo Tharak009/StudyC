@@ -2,18 +2,8 @@ import type { Server, Socket } from "socket.io";
 import mongoose from "mongoose";
 import { User } from "../models/user.model.js";
 
-export interface VoicePeer {
-  socketId: string;
-  userId: string;
-  name: string;
-  isSpeaking: boolean;
-  isMuted: boolean;
-  isScreenSharing?: boolean;
-}
-
 export interface SocketRegistry {
   onlineUsersMap: Map<string, Set<string>>;
-  activeVoiceRooms: Map<string, Set<VoicePeer>>;
 }
 
 /**
@@ -77,29 +67,6 @@ export const registerPresenceHandlers = (
         registry.onlineUsersMap.delete(userId);
         const lastSeen = new Date().toISOString();
         socket.broadcast.emit("friendOffline", { userId, lastSeen });
-      }
-    }
-
-    // Clean up any active voice stages the socket participated in
-    for (const [stageId, peers] of registry.activeVoiceRooms.entries()) {
-      let removedPeer: VoicePeer | null = null;
-      for (const peer of peers) {
-        if (peer.socketId === socket.id) {
-          removedPeer = peer;
-          peers.delete(peer);
-          break;
-        }
-      }
-
-      if (removedPeer) {
-        if (peers.size === 0) {
-          registry.activeVoiceRooms.delete(stageId);
-        }
-        socket.to(`voice:${stageId}`).emit("voice:peerLeft", {
-          stageId,
-          socketId: socket.id,
-          userId: socket.data.userId
-        });
       }
     }
   });

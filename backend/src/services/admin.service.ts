@@ -1,17 +1,15 @@
 import { AdminLog } from "../models/admin-log.model.js";
 import { Community } from "../models/community.model.js";
 import { CommunityMember } from "../models/community-member.model.js";
-import { Conversation } from "../models/conversation.model.js";
-import { Message } from "../models/message.model.js";
 import { Notification } from "../models/notification.model.js";
 import { RefreshToken } from "../models/refresh-token.model.js";
 import { Report, type IReport } from "../models/report.model.js";
 import { Resource } from "../models/resource.model.js";
 import { User } from "../models/user.model.js";
-import { DirectMessage } from "../models/direct-message.model.js";
 import { reportRepository } from "../repositories/report.repository.js";
 import { USER_STATUS } from "../constants/user-status.js";
 import { ApiError } from "../utils/api-error.js";
+import { streamService } from "./stream.service.js";
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -101,8 +99,6 @@ export class AdminService {
     await Promise.all([
       CommunityMember.deleteMany({ userId }).exec(),
       Notification.deleteMany({ userId }).exec(),
-      Message.updateMany({ senderId: userId }, { $set: { content: "[deleted user]", deleted: true, deletedAt: new Date() } }).exec(),
-      DirectMessage.updateMany({ senderId: userId }, { $set: { content: "[deleted user]", deleted: true, deletedAt: new Date() } }).exec(),
       Resource.deleteMany({ uploadedBy: userId }).exec(),
       Report.deleteMany({ reporterId: userId }).exec(),
       RefreshToken.deleteMany({ user: userId }).exec()
@@ -141,7 +137,6 @@ export class AdminService {
     const community = await Community.findById(communityId).exec();
     if (!community) throw new ApiError(404, "Community not found", [], "COMMUNITY_NOT_FOUND");
     await CommunityMember.deleteMany({ communityId }).exec();
-    await Message.deleteMany({ communityId }).exec();
     await Resource.deleteMany({ communityId }).exec();
     await Community.findByIdAndDelete(communityId).exec();
     await this.log(adminId, "DELETE_COMMUNITY", "Community", communityId, {
@@ -153,12 +148,11 @@ export class AdminService {
   async getCommunityStats(communityId: string) {
     const community = await Community.findById(communityId).exec();
     if (!community) throw new ApiError(404, "Community not found", [], "COMMUNITY_NOT_FOUND");
-    const [memberCount, messageCount, resourceCount] = await Promise.all([
+    const [memberCount, resourceCount] = await Promise.all([
       CommunityMember.countDocuments({ communityId }).exec(),
-      Message.countDocuments({ communityId }).exec(),
       Resource.countDocuments({ communityId }).exec()
     ]);
-    return { community, memberCount, messageCount, resourceCount };
+    return { community, memberCount, messageCount: 0, resourceCount };
   }
 
   // --- Resources ---
@@ -258,14 +252,24 @@ export class AdminService {
   }
 
   async deleteMessage(adminId: string, messageId: string) {
-    const message = await Message.findByIdAndDelete(messageId).exec();
-    if (!message) throw new ApiError(404, "Message not found", [], "MESSAGE_NOT_FOUND");
-    await this.log(adminId, "DELETE_MESSAGE", "Message", messageId, { communityId: message.communityId });
+    if (streamService.isConfigured()) {
+      try {
+        await streamService.getClient().deleteMessage(messageId, true);
+      } catch (err) {
+        console.warn(`Could not delete Stream message ${messageId}:`, err);
+      }
+    }
+    await this.log(adminId, "DELETE_MESSAGE", "Message", messageId, {});
   }
 
   async deleteDirectMessage(adminId: string, messageId: string) {
-    const message = await DirectMessage.findByIdAndDelete(messageId).exec();
-    if (!message) throw new ApiError(404, "Direct message not found", [], "DM_NOT_FOUND");
+    if (streamService.isConfigured()) {
+      try {
+        await streamService.getClient().deleteMessage(messageId, true);
+      } catch (err) {
+        console.warn(`Could not delete Stream direct message ${messageId}:`, err);
+      }
+    }
     await this.log(adminId, "DELETE_DIRECT_MESSAGE", "DirectMessage", messageId, {});
   }
 

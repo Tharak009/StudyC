@@ -1,5 +1,6 @@
 import type { FilterQuery, UpdateQuery } from "mongoose";
 import { Report, type IReport, type ReportDocument } from "../models/report.model.js";
+import { REPORT_STATUS } from "../constants/report.js";
 
 export interface CreateReportData {
   reporterId: string;
@@ -23,6 +24,15 @@ export class ReportRepository {
 
   findById(id: string): Promise<ReportDocument | null> {
     return Report.findById(id).exec();
+  }
+
+  async findPendingByReporterAndTarget(reporterId: string, targetType: string, targetId: string): Promise<ReportDocument | null> {
+    return Report.findOne({
+      reporterId,
+      targetType,
+      targetId,
+      status: REPORT_STATUS.PENDING
+    }).exec();
   }
 
   async list({ page, limit, status, targetType }: ReportListOptions) {

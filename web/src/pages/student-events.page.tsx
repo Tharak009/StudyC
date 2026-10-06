@@ -367,13 +367,13 @@ export function StudentEventsPage() {
 
       {/* EVENT DETAILS OVERLAY DRAWER */}
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/60 animate-fade-in">
           <div className="fixed inset-0" onClick={() => setSelectedEvent(null)} />
           
           <div className="relative w-full max-w-xl bg-white shadow-2xl dark:bg-ink-900 border-l border-slate-200 dark:border-white/5 h-full overflow-y-auto flex flex-col justify-between animate-slide-in">
             
             {/* Header */}
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200/80 bg-white/95 p-4 dark:border-white/5 dark:bg-ink-900/95 backdrop-blur-md">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200/80 bg-white p-4 dark:border-white/5 dark:bg-ink-900">
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setSelectedEvent(null)}

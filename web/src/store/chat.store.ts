@@ -1,16 +1,5 @@
 import { create } from "zustand";
-import type { Channel, ChatMessage, SprintSession, VoicePeer } from "../types/chat";
-
-export interface ActiveVoiceStageState {
-  stageId: string;
-  communityId?: string;
-  channelName: string;
-  isConnected: boolean;
-  isMuted: boolean;
-  isSpeaking: boolean;
-  isScreenSharing: boolean;
-  peers: VoicePeer[];
-}
+import type { Channel, ChatMessage, SprintSession } from "../types/chat";
 
 export interface ChatStoreState {
   selectedCommunityId: string | null;
@@ -23,7 +12,6 @@ export interface ChatStoreState {
   threadReplies: ChatMessage[];
   inspectorMode: "closed" | "thread" | "vault" | "roster";
   activeSprint: SprintSession | null;
-  activeVoiceStage: ActiveVoiceStageState | null;
   typingUsers: Array<{ userId: string; name: string }>;
   rejectionNotice: {
     reason: string;
@@ -52,12 +40,6 @@ export interface ChatStoreState {
   setInspectorMode: (mode: "closed" | "thread" | "vault" | "roster") => void;
   setActiveSprint: (sprint: SprintSession | null) => void;
   updateSprintParticipants: (participants: string[]) => void;
-  setActiveVoiceStage: (stage: ActiveVoiceStageState | null) => void;
-  updateVoicePeers: (peers: VoicePeer[]) => void;
-  setVoiceMuted: (isMuted: boolean) => void;
-  setVoiceSpeaking: (isSpeaking: boolean) => void;
-  setVoiceScreenSharing: (isSharing: boolean) => void;
-  leaveVoiceStage: () => void;
   setUserTyping: (user: { userId: string; name: string }, isTyping: boolean) => void;
   setRejectionNotice: (notice: ChatStoreState["rejectionNotice"]) => void;
   clearRejectionNotice: () => void;
@@ -85,7 +67,6 @@ export const useChatStore = create<ChatStoreState>((set) => ({
   threadReplies: [],
   inspectorMode: "closed",
   activeSprint: null,
-  activeVoiceStage: null,
   typingUsers: [],
   rejectionNotice: null,
 
@@ -113,140 +94,22 @@ export const useChatStore = create<ChatStoreState>((set) => ({
 
   setChannels: (channels) => set({ channels }),
 
-  setMessages: (messages) =>
-    set({
-      messages,
-      pinnedMessages: messages.filter((m) => m.isPinned)
-    }),
-
-  prependMessages: (olderMessages) =>
-    set((state) => ({
-      messages: [...olderMessages, ...state.messages]
-    })),
-
-  addMessage: (message) =>
-    set((state) => {
-      if (state.messages.some((m) => m._id === message._id)) return state;
-      const senderId = (message.senderId as any)?._id || message.senderId;
-      const optIdx = state.messages.findIndex(
-        (m) =>
-          m._id.startsWith("circle-opt-") &&
-          m.content === message.content &&
-          ((m.senderId as any)?._id === senderId || (m.senderId as any)?._id === "u-me")
-      );
-
-      let updatedMessages: ChatMessage[];
-      if (optIdx !== -1) {
-        updatedMessages = [...state.messages];
-        updatedMessages[optIdx] = message;
-      } else {
-        updatedMessages = [...state.messages, message];
-      }
-
-      const updatedPinned = message.isPinned
-        ? [...state.pinnedMessages.filter((m) => m._id !== message._id), message]
-        : state.pinnedMessages;
-      return {
-        messages: updatedMessages,
-        pinnedMessages: updatedPinned
-      };
-    }),
-
-  updateMessage: (updated) =>
-    set((state) => ({
-      messages: state.messages.map((m) => (m._id === updated._id ? { ...m, ...updated } : m)),
-      pinnedMessages: state.pinnedMessages.map((m) =>
-        m._id === updated._id ? { ...m, ...updated } : m
-      ),
-      threadParentMessage:
-        state.threadParentMessage?._id === updated._id
-          ? { ...state.threadParentMessage, ...updated }
-          : state.threadParentMessage
-    })),
-
-  removeMessage: (messageId) =>
-    set((state) => ({
-      messages: state.messages.filter((m) => m._id !== messageId),
-      pinnedMessages: state.pinnedMessages.filter((m) => m._id !== messageId),
-      threadParentMessage:
-        state.threadParentMessage?._id === messageId ? null : state.threadParentMessage
-    })),
-
+  setMessages: (messages) => set({ messages }),
+  prependMessages: (older) => set((s) => ({ messages: [...older, ...s.messages] })),
+  addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+  updateMessage: (m) => set((s) => ({ messages: s.messages.map((x) => (x._id === m._id ? m : x)) })),
+  removeMessage: (id) => set((s) => ({ messages: s.messages.filter((x) => x._id !== id) })),
   setPinnedMessages: (pinnedMessages) => set({ pinnedMessages }),
-
-  updateMessagePin: (messageId, isPinned) =>
-    set((state) => {
-      const messages = state.messages.map((m) =>
-        m._id === messageId ? { ...m, isPinned } : m
-      );
-      const pinnedMessages = isPinned
-        ? [
-            ...state.pinnedMessages.filter((m) => m._id !== messageId),
-            messages.find((m) => m._id === messageId)!
-          ].filter(Boolean)
-        : state.pinnedMessages.filter((m) => m._id !== messageId);
-      return { messages, pinnedMessages };
-    }),
-
-  markMessageAccepted: (messageId, karmaAwarded = 25) =>
-    set((state) => ({
-      messages: state.messages.map((m) =>
-        m._id === messageId ? { ...m, isAcceptedSolution: true, karmaAwarded } : m
-      ),
-      pinnedMessages: state.pinnedMessages.map((m) =>
-        m._id === messageId ? { ...m, isAcceptedSolution: true, karmaAwarded } : m
-      ),
-      threadParentMessage:
-        state.threadParentMessage?._id === messageId
-          ? { ...state.threadParentMessage, isAcceptedSolution: true, karmaAwarded }
-          : state.threadParentMessage
+  updateMessagePin: (id, isPinned) =>
+    set((s) => ({
+      messages: s.messages.map((m) => (m._id === id ? { ...m, isPinned } : m))
     })),
+  markMessageAccepted: () => {},
 
-  openThread: (parent) =>
-    set({
-      threadParentMessage: parent,
-      inspectorMode: "thread",
-      threadReplies: []
-    }),
-
-  closeThread: () =>
-    set((state) => ({
-      threadParentMessage: null,
-      threadReplies: [],
-      inspectorMode: state.inspectorMode === "thread" ? "closed" : state.inspectorMode
-    })),
-
-  setThreadReplies: (replies) => set({ threadReplies: replies }),
-
-  addThreadReply: (reply) =>
-    set((state) => {
-      if (state.threadReplies.some((r) => r._id === reply._id)) return state;
-      const updatedReplies = [...state.threadReplies, reply];
-      const updatedMessages = state.messages.map((m) => {
-        if (m._id === reply.replyTo?._id || m._id === (reply as any).parentMessageId) {
-          return {
-            ...m,
-            threadCount: (m.threadCount || 0) + 1,
-            threadLastReplyAt: reply.createdAt
-          };
-        }
-        return m;
-      });
-      return {
-        threadReplies: updatedReplies,
-        messages: updatedMessages,
-        threadParentMessage:
-          state.threadParentMessage &&
-          (state.threadParentMessage._id === reply.replyTo?._id ||
-            state.threadParentMessage._id === (reply as any).parentMessageId)
-            ? {
-                ...state.threadParentMessage,
-                threadCount: (state.threadParentMessage.threadCount || 0) + 1,
-                threadLastReplyAt: reply.createdAt
-              }
-            : state.threadParentMessage
-      };
-    }),
+  openThread: (parent) => set({ threadParentMessage: parent, inspectorMode: "thread" }),
+  closeThread: () => set({ threadParentMessage: null, inspectorMode: "closed" }),
+  setThreadReplies: (threadReplies) => set({ threadReplies }),
+  addThreadReply: (reply) => set((s) => ({ threadReplies: [...s.threadReplies, reply] })),
 
   setInspectorMode: (mode) => set({ inspectorMode: mode }),
 
@@ -258,38 +121,6 @@ export const useChatStore = create<ChatStoreState>((set) => ({
         ? { ...state.activeSprint, participants }
         : null
     })),
-
-  setActiveVoiceStage: (stage) => set({ activeVoiceStage: stage }),
-
-  updateVoicePeers: (peers) =>
-    set((state) => ({
-      activeVoiceStage: state.activeVoiceStage
-        ? { ...state.activeVoiceStage, peers }
-        : null
-    })),
-
-  setVoiceMuted: (isMuted) =>
-    set((state) => ({
-      activeVoiceStage: state.activeVoiceStage
-        ? { ...state.activeVoiceStage, isMuted }
-        : null
-    })),
-
-  setVoiceSpeaking: (isSpeaking) =>
-    set((state) => ({
-      activeVoiceStage: state.activeVoiceStage
-        ? { ...state.activeVoiceStage, isSpeaking }
-        : null
-    })),
-
-  setVoiceScreenSharing: (isScreenSharing) =>
-    set((state) => ({
-      activeVoiceStage: state.activeVoiceStage
-        ? { ...state.activeVoiceStage, isScreenSharing }
-        : null
-    })),
-
-  leaveVoiceStage: () => set({ activeVoiceStage: null }),
 
   setUserTyping: (user, isTyping) =>
     set((state) => {
@@ -314,101 +145,16 @@ export const useChatStore = create<ChatStoreState>((set) => ({
       threadReplies: [],
       inspectorMode: "closed",
       activeSprint: null,
-      activeVoiceStage: null,
       typingUsers: [],
       rejectionNotice: null
     }),
 
-  editMessageInStore: (messageId, content, editedAt) =>
-    set((state) => ({
-      messages: state.messages.map((m) =>
-        m._id === messageId ? { ...m, content, edited: true, editedAt: editedAt || new Date().toISOString() } : m
-      ),
-      pinnedMessages: state.pinnedMessages.map((m) =>
-        m._id === messageId ? { ...m, content, edited: true, editedAt: editedAt || new Date().toISOString() } : m
-      ),
-      threadParentMessage:
-        state.threadParentMessage?._id === messageId
-          ? { ...state.threadParentMessage, content, edited: true, editedAt: editedAt || new Date().toISOString() }
-          : state.threadParentMessage
-    })),
-
-  toggleStarInStore: (messageId, isStarred) =>
-    set((state) => ({
-      messages: state.messages.map((m) =>
-        m._id === messageId ? { ...m, isStarred } : m
-      ),
-      pinnedMessages: state.pinnedMessages.map((m) =>
-        m._id === messageId ? { ...m, isStarred } : m
-      )
-    })),
-
-  togglePinInStore: (messageId, isPinned) =>
-    set((state) => {
-      const messages = state.messages.map((m) =>
-        m._id === messageId ? { ...m, isPinned } : m
-      );
-      const pinnedMessages = isPinned
-        ? [
-            ...state.pinnedMessages.filter((m) => m._id !== messageId),
-            messages.find((m) => m._id === messageId)!
-          ].filter(Boolean)
-        : state.pinnedMessages.filter((m) => m._id !== messageId);
-      return { messages, pinnedMessages };
-    }),
-
-  updateReactionInStore: (messageId, reactions) =>
-    set((state) => ({
-      messages: state.messages.map((m) =>
-        m._id === messageId ? { ...m, reactions } : m
-      ),
-      pinnedMessages: state.pinnedMessages.map((m) =>
-        m._id === messageId ? { ...m, reactions } : m
-      ),
-      threadParentMessage:
-        state.threadParentMessage?._id === messageId
-          ? { ...state.threadParentMessage, reactions }
-          : state.threadParentMessage
-    })),
-
-  deleteMessageForMeInStore: (messageId) =>
-    set((state) => ({
-      messages: state.messages.filter((m) => m._id !== messageId),
-      pinnedMessages: state.pinnedMessages.filter((m) => m._id !== messageId)
-    })),
-
-  purgeMessageForEveryoneInStore: (messageId, purgeData) =>
-    set((state) => ({
-      messages: state.messages.map((m) =>
-        m._id === messageId
-          ? {
-              ...m,
-              isDeletedForEveryone: true,
-              content: "",
-              attachments: [],
-              deletedBy: purgeData?.deletedBy || m.deletedBy,
-              deletedAt: purgeData?.deletedAt || new Date().toISOString()
-            }
-          : m
-      ),
-      pinnedMessages: state.pinnedMessages.filter((m) => m._id !== messageId)
-    })),
-
-  bulkDeleteForMeInStore: (messageIds) =>
-    set((state) => {
-      const idSet = new Set(messageIds);
-      return {
-        messages: state.messages.filter((m) => !idSet.has(m._id)),
-        pinnedMessages: state.pinnedMessages.filter((m) => !idSet.has(m._id))
-      };
-    }),
-
-  bulkStarInStore: (messageIds, isStarred) =>
-    set((state) => {
-      const idSet = new Set(messageIds);
-      return {
-        messages: state.messages.map((m) => (idSet.has(m._id) ? { ...m, isStarred } : m)),
-        pinnedMessages: state.pinnedMessages.map((m) => (idSet.has(m._id) ? { ...m, isStarred } : m))
-      };
-    })
+  editMessageInStore: () => {},
+  toggleStarInStore: () => {},
+  togglePinInStore: () => {},
+  updateReactionInStore: () => {},
+  deleteMessageForMeInStore: () => {},
+  purgeMessageForEveryoneInStore: () => {},
+  bulkDeleteForMeInStore: () => {},
+  bulkStarInStore: () => {}
 }));

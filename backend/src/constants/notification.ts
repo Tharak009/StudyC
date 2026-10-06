@@ -9,6 +9,7 @@ export const NOTIFICATION_TYPES = {
   ADMIN_ALERT: "ADMIN_ALERT",
   FRIEND_REQUEST: "FRIEND_REQUEST",
   FRIEND_ACCEPT: "FRIEND_ACCEPT",
+  CALL_MISSED: "CALL_MISSED",
   SYSTEM: "SYSTEM"
 } as const;
 
@@ -19,7 +20,8 @@ export const ENTITY_TYPES = {
   COMMUNITY: "COMMUNITY",
   MESSAGE: "MESSAGE",
   RESOURCE: "RESOURCE",
-  REPORT: "REPORT"
+  REPORT: "REPORT",
+  CALL: "CALL"
 } as const;
 
 export type EntityType = (typeof ENTITY_TYPES)[keyof typeof ENTITY_TYPES];

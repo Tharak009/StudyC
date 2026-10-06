@@ -114,6 +114,40 @@ export class AuthService {
     }
   }
 
+  async logoutAll(userId: string): Promise<void> {
+    await this.refreshTokens.revokeAllForUser(userId);
+  }
+
+  async listActiveSessions(userId: string, currentRawToken?: string) {
+    let currentTokenId: string | undefined;
+    if (currentRawToken) {
+      try {
+        const payload = verifyRefreshToken(currentRawToken);
+        currentTokenId = payload.jti;
+      } catch {
+        // Ignore invalid token
+      }
+    }
+
+    const sessions = await this.refreshTokens.findActiveSessionsByUser(userId);
+    return sessions.map((s: any) => ({
+      id: s.tokenId,
+      tokenId: s.tokenId,
+      userAgent: s.userAgent || "Unknown Device",
+      ipAddress: s.ipAddress || "Unknown IP",
+      createdAt: s.createdAt,
+      expiresAt: s.expiresAt,
+      isCurrent: currentTokenId ? s.tokenId === currentTokenId : false
+    }));
+  }
+
+  async revokeSession(userId: string, tokenId: string): Promise<void> {
+    const revoked = await this.refreshTokens.revokeSession(userId, tokenId);
+    if (!revoked) {
+      throw new ApiError(404, "Session not found or already revoked", [], "SESSION_NOT_FOUND");
+    }
+  }
+
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
     const user = await this.users.findById(userId, true);
     if (!user || !(await user.comparePassword(currentPassword))) {

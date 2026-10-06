@@ -1,6 +1,7 @@
 import type { User } from "./auth";
+import type { MessagePayload, MessageType } from "./chat";
 
-export type MessageType = "TEXT" | "IMAGE" | "PDF" | "DOCUMENT" | "AUDIO";
+export type { MessageType, MessagePayload };
 
 export interface DirectMessageAttachment {
   key: string;
@@ -60,6 +61,7 @@ export interface DirectMessage {
   pinnedBy?: string | Pick<User, "_id" | "fullName">;
   isForwarded?: boolean;
   forwardedFrom?: any;
+  payload?: MessagePayload;
   createdAt: string;
   updatedAt: string;
 }

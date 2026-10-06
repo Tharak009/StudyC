@@ -9,6 +9,8 @@ import { getSocketServer } from "../sockets/index.js";
 import type {
   CreateCommunityInput,
   ListCommunitiesQuery,
+  ListJoinRequestsQuery,
+  ListMembersQuery,
   UpdateCommunityInput
 } from "../validators/community.validator.js";
 
@@ -40,13 +42,32 @@ export class CommunityController {
       param(request, "id"),
       request.body as UpdateCommunityInput,
       request.user!.id,
+      request.user?.role,
       request.file
     );
     response.json(new ApiResponse(200, community, "Community updated"));
   }
 
+  async archive(request: Request, response: Response) {
+    const community = await communityService.archive(
+      param(request, "id"),
+      request.user!.id,
+      request.user?.role
+    );
+    response.json(new ApiResponse(200, community, "Community archived"));
+  }
+
+  async restore(request: Request, response: Response) {
+    const community = await communityService.restore(
+      param(request, "id"),
+      request.user!.id,
+      request.user?.role
+    );
+    response.json(new ApiResponse(200, community, "Community restored"));
+  }
+
   async delete(request: Request, response: Response) {
-    await communityService.delete(param(request, "id"), request.user!.id);
+    await communityService.delete(param(request, "id"), request.user!.id, request.user?.role);
     response.json(new ApiResponse(200, null, "Community deleted"));
   }
 
@@ -55,13 +76,107 @@ export class CommunityController {
     response.json(new ApiResponse(200, community, "Joined community"));
   }
 
+  async requestJoin(request: Request, response: Response) {
+    const community = await communityService.requestJoin(
+      param(request, "id"),
+      request.user!.id,
+      request.body?.note
+    );
+    response.json(new ApiResponse(200, community, "Join request submitted"));
+  }
+
+  async cancelJoinRequest(request: Request, response: Response) {
+    const community = await communityService.cancelJoinRequest(
+      param(request, "id"),
+      request.user!.id
+    );
+    response.json(new ApiResponse(200, community, "Join request cancelled"));
+  }
+
+  async getMembership(request: Request, response: Response) {
+    const membership = await communityService.getMembership(
+      param(request, "id"),
+      request.user!.id
+    );
+    response.json(new ApiResponse(200, membership, "Membership retrieved"));
+  }
+
+  async listJoinRequests(request: Request, response: Response) {
+    const query = request.validated?.query as ListJoinRequestsQuery | undefined;
+    const requests = await communityService.listPendingRequests(
+      param(request, "id"),
+      request.user!.id,
+      request.user?.role,
+      query
+    );
+    response.json(new ApiResponse(200, requests, "Join requests retrieved"));
+  }
+
+  async approveJoinRequest(request: Request, response: Response) {
+    const result = await communityService.approveJoinRequest(
+      param(request, "id"),
+      param(request, "userId"),
+      request.user!.id,
+      request.user?.role
+    );
+    response.json(new ApiResponse(200, result, "Join request approved"));
+  }
+
+  async rejectJoinRequest(request: Request, response: Response) {
+    const result = await communityService.rejectJoinRequest(
+      param(request, "id"),
+      param(request, "userId"),
+      request.user!.id,
+      request.user?.role
+    );
+    response.json(new ApiResponse(200, result, "Join request rejected"));
+  }
+
   async leave(request: Request, response: Response) {
     await communityService.leave(param(request, "id"), request.user!.id);
     response.json(new ApiResponse(200, null, "Left community"));
   }
 
+  async banMember(request: Request, response: Response) {
+    const result = await communityService.banMember(
+      param(request, "id"),
+      param(request, "userId"),
+      request.user!.id,
+      request.user?.role,
+      request.body?.reason
+    );
+    response.json(new ApiResponse(200, result, "Member banned"));
+  }
+
+  async unbanMember(request: Request, response: Response) {
+    const result = await communityService.unbanMember(
+      param(request, "id"),
+      param(request, "userId"),
+      request.user!.id,
+      request.user?.role
+    );
+    response.json(new ApiResponse(200, result, "Member unbanned"));
+  }
+
+  async suspendMember(request: Request, response: Response) {
+    const result = await communityService.suspendMember(
+      param(request, "id"),
+      param(request, "userId"),
+      request.user!.id,
+      request.user?.role,
+      request.body.durationHours,
+      request.body?.reason
+    );
+    response.json(new ApiResponse(200, result, "Member suspended"));
+  }
+
   async members(request: Request, response: Response) {
-    const members = await communityService.membersList(param(request, "id"), request.user!.id);
+    const query = request.validated?.query as ListMembersQuery | undefined;
+    const members = await communityService.membersList(
+      param(request, "id"),
+      request.user!.id,
+      query
+    );
     response.json(new ApiResponse(200, members, "Community members retrieved"));
   }
 
@@ -69,7 +184,8 @@ export class CommunityController {
     const members = await communityService.addModerator(
       param(request, "id"),
       request.body.userId,
-      request.user!.id
+      request.user!.id,
+      request.user?.role
     );
     response.json(new ApiResponse(200, members, "Moderator added"));
   }
@@ -78,7 +194,8 @@ export class CommunityController {
     const members = await communityService.removeModerator(
       param(request, "id"),
       param(request, "userId"),
-      request.user!.id
+      request.user!.id,
+      request.user?.role
     );
     response.json(new ApiResponse(200, members, "Moderator removed"));
   }

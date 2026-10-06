@@ -4,7 +4,6 @@ import { authenticateToken } from "../middlewares/auth.middleware.js";
 import { requireAdmin, requireModeratorOrAdmin } from "../middlewares/admin-guard.middleware.js";
 import { enforceAdminProtection, studentPrivacyGuard } from "../middlewares/admin-self-protect.middleware.js";
 import { auditLogger } from "../middlewares/audit.middleware.js";
-import { apiLimiter } from "../middlewares/rate-limit.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import {
@@ -23,9 +22,7 @@ export const adminRouter = Router();
 
 // Base administrative middleware pipeline:
 // 1. JWT authentication verification & active account status check
-// 2. Rate limiting protection
 adminRouter.use(authenticateToken);
-adminRouter.use(apiLimiter);
 
 // ── Dashboard Overview (Admin & Moderator Clearance) ─────────────────────────
 adminRouter.get(

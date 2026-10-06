@@ -97,7 +97,7 @@ export function ReportDetailsDrawer({
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-[2px]" />
+      <div className="fixed inset-0 z-40 bg-slate-950/60" />
 
       {/* Drawer */}
       <div

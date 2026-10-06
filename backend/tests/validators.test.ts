@@ -1,6 +1,5 @@
 import { registerSchema } from "../src/validators/auth.validator.js";
 import { updateProfileSchema } from "../src/validators/user.validator.js";
-
 describe("request validation", () => {
   it("requires a strong registration password", () => {
     const parsed = registerSchema.safeParse({

@@ -13,9 +13,6 @@ import { User } from "../models/user.model.js";
 import { Community } from "../models/community.model.js";
 import { CommunityMember } from "../models/community-member.model.js";
 import { Resource } from "../models/resource.model.js";
-import { Conversation } from "../models/conversation.model.js";
-import { DirectMessage } from "../models/direct-message.model.js";
-import { Message } from "../models/message.model.js";
 import { Report } from "../models/report.model.js";
 import { Notification } from "../models/notification.model.js";
 import { ROLES } from "../constants/roles.js";
@@ -24,7 +21,6 @@ import { COMMUNITY_VISIBILITY } from "../constants/community.js";
 import { RESOURCE_CATEGORIES, RESOURCE_VISIBILITY } from "../constants/resource.js";
 import { REPORT_TARGET_TYPES, REPORT_STATUS } from "../constants/report.js";
 import { NOTIFICATION_TYPES } from "../constants/notification.js";
-import { MESSAGE_TYPES } from "../constants/message-types.js";
 
 const MONGODB_URI =
   process.env.MONGODB_URI ||
@@ -47,9 +43,6 @@ export async function runSeed(): Promise<void> {
       Community.deleteMany({}),
       CommunityMember.deleteMany({}),
       Resource.deleteMany({}),
-      Conversation.deleteMany({}),
-      DirectMessage.deleteMany({}),
-      Message.deleteMany({}),
       Report.deleteMany({}),
       Notification.deleteMany({})
     ]);
@@ -279,160 +272,7 @@ export async function runSeed(): Promise<void> {
     console.log(`✓ Seeded Vault Resource: "${res3.title}" (215 downloads)`);
     console.log(`✓ Seeded Vault Resource: "${res4.title}" (98 downloads)\n`);
 
-    // ── 5. Seed Community Messages ───────────────────────────────────────────
-    console.log("💬 Seeding Community Discussion Messages...");
-    await Message.create([
-      {
-        communityId: cseCommunity._id,
-        senderId: facultyUser._id,
-        content: "Welcome everyone to the CSE 2026 Batch Hub! Midsem exam schedules and algorithms lab assignments will be posted in this space. Please check the Vault for reference materials.",
-        messageType: MESSAGE_TYPES.TEXT,
-        attachments: []
-      },
-      {
-        communityId: cseCommunity._id,
-        senderId: studentAarav._id,
-        content: "Shared the Distributed Systems and Consensus notes in the Vault. Let me know if anyone wants to do a mock review in Drop-in Study Stage 1 tonight.",
-        messageType: MESSAGE_TYPES.TEXT,
-        attachments: []
-      },
-      {
-        communityId: cseCommunity._id,
-        senderId: studentMeera._id,
-        content: "Added the Graph Theory and DP proof packet as well. Good luck with the lab submissions everyone! Reach out if you need help on Ford-Fulkerson.",
-        messageType: MESSAGE_TYPES.TEXT,
-        attachments: []
-      },
-      {
-        communityId: aiCommunity._id,
-        senderId: facultyUser._id,
-        content: "Welcome to the AI & Robotics Circle! Please review the ROS2 Cartographer guidelines before this Friday's physical drone lab.",
-        messageType: MESSAGE_TYPES.TEXT,
-        attachments: []
-      },
-      {
-        communityId: aiCommunity._id,
-        senderId: studentRohan._id,
-        content: "Uploaded the PyTorch Transformer self-attention Jupyter Notebook in the Vault. Feel free to clone the weights and test local inference.",
-        messageType: MESSAGE_TYPES.TEXT,
-        attachments: []
-      },
-      {
-        communityId: aiCommunity._id,
-        senderId: studentAnanya._id,
-        content: "Sensor calibration for the LiDAR scanner is documented on page 14 of the new lab manual in Vault. Testing completed with zero drift!",
-        messageType: MESSAGE_TYPES.TEXT,
-        attachments: []
-      }
-    ]);
-    console.log("✓ Seeded interactive study room message threads in both communities.\n");
-
-    // ── 6. Seed Direct Messaging (1-on-1 Conversations) ──────────────────────
-    console.log("✉️  Seeding 1-on-1 Direct Messaging Conversations...");
-
-    // Conversation 1: Aarav <-> Meera
-    const conv1 = await Conversation.create({
-      participants: [studentAarav._id, studentMeera._id],
-      lastMessage: {
-        content: "Thanks! Let me know if you want to hop on the voice stage later to solve problem D together.",
-        senderId: studentMeera._id,
-        createdAt: new Date()
-      },
-      lastMessageAt: new Date()
-    });
-
-    await DirectMessage.create([
-      {
-        conversationId: conv1._id,
-        senderId: studentAarav._id,
-        content: "Hey Meera! Are you attending the ICPC mock contest this Saturday?",
-        messageType: MESSAGE_TYPES.TEXT,
-        read: true,
-        readAt: new Date(Date.now() - 3600000),
-        createdAt: new Date(Date.now() - 3600000)
-      },
-      {
-        conversationId: conv1._id,
-        senderId: studentMeera._id,
-        content: "Hey Aarav! Yes definitely, our team has been practicing segment trees and max flow.",
-        messageType: MESSAGE_TYPES.TEXT,
-        read: true,
-        readAt: new Date(Date.now() - 2700000),
-        createdAt: new Date(Date.now() - 2700000)
-      },
-      {
-        conversationId: conv1._id,
-        senderId: studentAarav._id,
-        content: "Awesome! Did you review the graph algorithms notes you uploaded? They are super clear.",
-        messageType: MESSAGE_TYPES.TEXT,
-        read: true,
-        readAt: new Date(Date.now() - 1800000),
-        createdAt: new Date(Date.now() - 1800000)
-      },
-      {
-        conversationId: conv1._id,
-        senderId: studentMeera._id,
-        content: "Thanks! Let me know if you want to hop on the voice stage later to solve problem D together.",
-        messageType: MESSAGE_TYPES.TEXT,
-        read: false,
-        createdAt: new Date(Date.now() - 900000)
-      }
-    ]);
-
-    // Conversation 2: Rohan <-> Ananya
-    const conv2 = await Conversation.create({
-      participants: [studentRohan._id, studentAnanya._id],
-      lastMessage: {
-        content: "Yes, exact time-sync is locked at 30fps. Check the code snippet in the robotics vault manual!",
-        senderId: studentAnanya._id,
-        createdAt: new Date()
-      },
-      lastMessageAt: new Date()
-    });
-
-    await DirectMessage.create([
-      {
-        conversationId: conv2._id,
-        senderId: studentRohan._id,
-        content: "Hi Ananya, did you finish running the SLAM mapping node on the rover robot?",
-        messageType: MESSAGE_TYPES.TEXT,
-        read: true,
-        readAt: new Date(Date.now() - 7200000),
-        createdAt: new Date(Date.now() - 7200000)
-      },
-      {
-        conversationId: conv2._id,
-        senderId: studentAnanya._id,
-        content: "Hey Rohan! Yes, cartographer completed the 2D occupancy grid with zero drift.",
-        messageType: MESSAGE_TYPES.TEXT,
-        read: true,
-        readAt: new Date(Date.now() - 5400000),
-        createdAt: new Date(Date.now() - 5400000)
-      },
-      {
-        conversationId: conv2._id,
-        senderId: studentRohan._id,
-        content: "Great work! Is the camera frame synced with the LiDAR timestamp topic?",
-        messageType: MESSAGE_TYPES.TEXT,
-        read: true,
-        readAt: new Date(Date.now() - 3600000),
-        createdAt: new Date(Date.now() - 3600000)
-      },
-      {
-        conversationId: conv2._id,
-        senderId: studentAnanya._id,
-        content: "Yes, exact time-sync is locked at 30fps. Check the code snippet in the robotics vault manual!",
-        messageType: MESSAGE_TYPES.TEXT,
-        read: true,
-        readAt: new Date(Date.now() - 1800000),
-        createdAt: new Date(Date.now() - 1800000)
-      }
-    ]);
-
-    console.log(`✓ Seeded Conversation 1: Aarav <-> Meera (${conv1._id})`);
-    console.log(`✓ Seeded Conversation 2: Rohan <-> Ananya (${conv2._id})\n`);
-
-    // ── 7. Seed Active Campus Events & Countdowns ─────────────────────────────
+    // ── 5. Seed Active Campus Events & Countdowns ─────────────────────────────
     console.log("⏰ Seeding Active Campus Events & Notification Countdowns...");
 
     const eventNotifications = [

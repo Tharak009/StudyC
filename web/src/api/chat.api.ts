@@ -1,5 +1,3 @@
-import { apiClient } from "./client";
-import type { ApiResponse } from "../types/auth";
 import type { ChatMessage, PaginatedMessages } from "../types/chat";
 
 export interface MessageListParams {
@@ -16,128 +14,68 @@ export interface CreateMessagePayload {
   attachments?: File[];
   duration?: number;
   waveform?: number[];
+  messageType?: string;
+  payload?: any;
   onUploadProgress?: (progressEvent: { loaded: number; total?: number }) => void;
   signal?: AbortSignal;
 }
 
+/**
+ * Stream Chat is now the primary chat infrastructure for StudyConnect.
+ * Legacy message persistence endpoints are deprecated/removed.
+ * These stubs preserve backward compatibility with remaining UI components.
+ */
 export const chatApi = {
-  history: async (communityId: string, params: MessageListParams) =>
-    (
-      await apiClient.get<ApiResponse<PaginatedMessages>>(
-        `/api/communities/${communityId}/messages`,
-        { params }
-      )
-    ).data.data,
-  create: async (communityId: string, payload: CreateMessagePayload) => {
-    const form = new FormData();
-    form.append("content", payload.content);
-    if (payload.channelId) form.append("channelId", payload.channelId);
-    if (payload.replyTo) form.append("replyTo", payload.replyTo);
-    if (payload.duration !== undefined) form.append("duration", String(payload.duration));
-    if (payload.waveform) form.append("waveform", JSON.stringify(payload.waveform));
-    payload.attachments?.forEach((file) => form.append("attachments", file));
-    return (
-      await apiClient.post<ApiResponse<ChatMessage>>(
-        `/api/communities/${communityId}/messages`,
-        form,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-          onUploadProgress: payload.onUploadProgress,
-          signal: payload.signal
-        }
-      )
-    ).data.data;
+  history: async (_communityId: string, _params?: MessageListParams): Promise<PaginatedMessages> => ({
+    items: [],
+    total: 0,
+    page: 1,
+    pages: 0,
+    limit: 30,
+    order: "latest"
+  }),
+  create: async (_communityId: string, _payload: CreateMessagePayload): Promise<ChatMessage> => {
+    throw new Error("Custom message creation deprecated. Use Stream Chat SDK.");
   },
-
-  editMessage: async (communityId: string, messageId: string, content: string) =>
-    (
-      await apiClient.put<ApiResponse<ChatMessage>>(
-        `/api/communities/${communityId}/messages/${messageId}`,
-        { content }
-      )
-    ).data.data,
-
-  deleteMessage: async (communityId: string, messageId: string) =>
-    (
-      await apiClient.delete<ApiResponse<ChatMessage>>(
-        `/api/communities/${communityId}/messages/${messageId}`
-      )
-    ).data.data,
-
-  deleteForMe: async (communityId: string, messageId: string) =>
-    (
-      await apiClient.post<ApiResponse<{ success: boolean; messageId: string }>>(
-        `/api/communities/${communityId}/messages/${messageId}/delete-for-me`
-      )
-    ).data.data,
-
-  toggleReaction: async (communityId: string, messageId: string, emoji: string) =>
-    (
-      await apiClient.post<ApiResponse<{ reactions: ChatMessage["reactions"] }>>(
-        `/api/communities/${communityId}/messages/${messageId}/reaction`,
-        { emoji }
-      )
-    ).data.data,
-
-  toggleStar: async (communityId: string, messageId: string) =>
-    (
-      await apiClient.post<ApiResponse<{ isStarred: boolean }>>(
-        `/api/communities/${communityId}/messages/${messageId}/star`
-      )
-    ).data.data,
-
-  togglePin: async (communityId: string, messageId: string) =>
-    (
-      await apiClient.post<ApiResponse<{ isPinned: boolean }>>(
-        `/api/communities/${communityId}/messages/${messageId}/pin`
-      )
-    ).data.data,
-
-  listStarred: async (communityId: string, channelId?: string) =>
-    (
-      await apiClient.get<ApiResponse<ChatMessage[]>>(
-        `/api/communities/${communityId}/starred`,
-        { params: { channelId } }
-      )
-    ).data.data,
-
-  listPinned: async (communityId: string, channelId?: string) =>
-    (
-      await apiClient.get<ApiResponse<ChatMessage[]>>(
-        `/api/communities/${communityId}/pinned`,
-        { params: { channelId } }
-      )
-    ).data.data,
-
-  forward: async (communityId: string, payload: { messageIds: string[]; targetCommunityId: string; targetChannelId?: string }) =>
-    (
-      await apiClient.post<ApiResponse<ChatMessage[]>>(
-        `/api/communities/${communityId}/messages/forward`,
-        payload
-      )
-    ).data.data,
-
-  bulkDeleteForMe: async (communityId: string, messageIds: string[]) =>
-    (
-      await apiClient.post<ApiResponse<{ count: number }>>(
-        `/api/communities/${communityId}/messages/bulk-delete-for-me`,
-        { messageIds }
-      )
-    ).data.data,
-
-  bulkDeleteForEveryone: async (communityId: string, messageIds: string[]) =>
-    (
-      await apiClient.post<ApiResponse<{ deletedIds: string[] }>>(
-        `/api/communities/${communityId}/messages/bulk-delete-for-everyone`,
-        { messageIds }
-      )
-    ).data.data,
-
-  bulkStar: async (communityId: string, messageIds: string[], star = true) =>
-    (
-      await apiClient.post<ApiResponse<{ count: number }>>(
-        `/api/communities/${communityId}/messages/bulk-star`,
-        { messageIds, star }
-      )
-    ).data.data
+  editMessage: async (_communityId: string, _messageId: string, _content: string): Promise<ChatMessage> => {
+    throw new Error("Custom message edit deprecated. Use Stream Chat SDK.");
+  },
+  deleteMessage: async (_communityId: string, _messageId: string): Promise<ChatMessage> => {
+    throw new Error("Custom message deletion deprecated. Use Stream Chat SDK.");
+  },
+  deleteForMe: async (_communityId: string, messageId: string) => ({
+    success: true,
+    messageId
+  }),
+  toggleReaction: async (_communityId: string, _messageId: string, _emoji: string) => ({
+    reactions: []
+  }),
+  toggleStar: async (_communityId: string, _messageId: string) => ({
+    isStarred: false
+  }),
+  togglePin: async (_communityId: string, _messageId: string) => ({
+    isPinned: false
+  }),
+  listStarred: async (_communityId: string, _channelId?: string): Promise<ChatMessage[]> => [],
+  listPinned: async (_communityId: string, _channelId?: string): Promise<ChatMessage[]> => [],
+  forward: async (_communityId: string, _payload: any): Promise<ChatMessage[]> => [],
+  bulkDeleteForMe: async (_communityId: string, messageIds: string[]) => ({ count: messageIds.length }),
+  bulkDeleteForEveryone: async (_communityId: string, messageIds: string[]) => ({ deletedIds: messageIds }),
+  bulkStar: async (_communityId: string, messageIds: string[], _star = true) => ({ count: messageIds.length }),
+  search: async (_params: any): Promise<PaginatedMessages> => ({
+    items: [],
+    total: 0,
+    page: 1,
+    pages: 0,
+    limit: 30,
+    order: "latest"
+  }),
+  lockChannel: async (_communityId: string, channelId: string, _reason?: string) => ({
+    locked: true,
+    channelId
+  }),
+  unlockChannel: async (_communityId: string, channelId: string) => ({
+    locked: false,
+    channelId
+  })
 };

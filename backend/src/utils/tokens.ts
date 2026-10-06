@@ -19,21 +19,21 @@ export const createAccessToken = (userId: string, role: Role): string =>
   jwt.sign(
     { sub: userId, role, type: "access" },
     env.JWT_ACCESS_SECRET,
-    { expiresIn: env.ACCESS_TOKEN_TTL } as SignOptions
+    { expiresIn: env.ACCESS_TOKEN_TTL, algorithm: "HS256" } as SignOptions
   );
 
 export const createRefreshToken = (userId: string, tokenId: string): string =>
   jwt.sign(
     { sub: userId, jti: tokenId, type: "refresh" },
     env.JWT_REFRESH_SECRET,
-    { expiresIn: `${env.REFRESH_TOKEN_TTL_DAYS}d` } as SignOptions
+    { expiresIn: `${env.REFRESH_TOKEN_TTL_DAYS}d`, algorithm: "HS256" } as SignOptions
   );
 
 export const verifyAccessToken = (token: string): AccessTokenPayload =>
-  jwt.verify(token, env.JWT_ACCESS_SECRET) as AccessTokenPayload;
+  jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ["HS256"] }) as AccessTokenPayload;
 
 export const verifyRefreshToken = (token: string): RefreshTokenPayload =>
-  jwt.verify(token, env.JWT_REFRESH_SECRET) as RefreshTokenPayload;
+  jwt.verify(token, env.JWT_REFRESH_SECRET, { algorithms: ["HS256"] }) as RefreshTokenPayload;
 
 export const hashToken = (token: string): string =>
   crypto.createHash("sha256").update(token).digest("hex");

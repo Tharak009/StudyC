@@ -28,7 +28,13 @@ const schema = z.object({
     .transform((value) => value === "true"),
   MAX_FILE_SIZE_MB: z.coerce.number().positive().max(10).default(5),
   UPLOAD_DIR: z.string().default("uploads"),
-  LOG_LEVEL: z.enum(["combined", "common", "dev", "short", "tiny"]).default("dev")
+  LOG_LEVEL: z.enum(["combined", "common", "dev", "short", "tiny"]).default("dev"),
+  STREAM_API_KEY: z.string().optional().default(""),
+  STREAM_API_SECRET: z.string().optional().default(""),
+  STUN_SERVER: z.string().optional().default("stun:stun.l.google.com:19302"),
+  TURN_SERVER: z.string().optional().default(""),
+  TURN_USERNAME: z.string().optional().default(""),
+  TURN_CREDENTIAL: z.string().optional().default("")
 });
 
 const parsed = schema.safeParse(rawEnv);

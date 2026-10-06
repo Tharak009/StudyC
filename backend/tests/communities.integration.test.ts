@@ -4,6 +4,7 @@ import { app } from "../src/app.js";
 import { connectDatabase, disconnectDatabase } from "../src/config/database.js";
 import { Community } from "../src/models/community.model.js";
 import { CommunityMember } from "../src/models/community-member.model.js";
+import { CommunityGroup } from "../src/models/community-group.model.js";
 import { User } from "../src/models/user.model.js";
 
 let mongo: MongoMemoryServer;
@@ -34,7 +35,12 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await Promise.all([Community.deleteMany({}), CommunityMember.deleteMany({}), User.deleteMany({})]);
+  await Promise.all([
+    Community.deleteMany({}),
+    CommunityMember.deleteMany({}),
+    CommunityGroup.deleteMany({}),
+    User.deleteMany({})
+  ]);
 });
 
 afterAll(async () => {
@@ -132,5 +138,75 @@ describe("communities API", () => {
       .expect(200);
 
     expect(promoted.body.data.some((item: { role: string }) => item.role === "MODERATOR")).toBe(true);
+  });
+
+  it("auto-provisions Announcements group on community creation and allows owner to create groups", async () => {
+    const ownerToken = await register(owner);
+    const memberToken = await register(member);
+    const community = await createCommunity(ownerToken);
+
+    // 1. Check auto-provisioned announcements group
+    const initialGroupsRes = await request(app)
+      .get(`/api/communities/${community._id}/groups`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+
+    const initialGroups = initialGroupsRes.body.data;
+    expect(initialGroups).toHaveLength(1);
+    expect(initialGroups[0].type).toBe("ANNOUNCEMENT");
+    expect(initialGroups[0].isAnnouncement).toBe(true);
+    expect(initialGroups[0].name).toBe("Announcements");
+    expect(initialGroups[0].streamChannelId).toBe(`comm_${community._id}_announcements`);
+
+    // 2. Student joins community
+    await request(app)
+      .post(`/api/communities/${community._id}/join`)
+      .set("Authorization", `Bearer ${memberToken}`)
+      .expect(200);
+
+    // 3. Regular member CANNOT create a group (RBAC check -> 403)
+    await request(app)
+      .post(`/api/communities/${community._id}/groups`)
+      .set("Authorization", `Bearer ${memberToken}`)
+      .send({
+        name: "Hacker Project Team",
+        description: "Building our final semester project",
+        type: "PROJECT"
+      })
+      .expect(403);
+
+    // 4. Community Owner CAN create a new group
+    const createGroupRes = await request(app)
+      .post(`/api/communities/${community._id}/groups`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({
+        name: "Data Structures & Algorithms",
+        description: "Discussing LeetCode problems and assignments",
+        type: "STUDY"
+      })
+      .expect(201);
+
+    const createdGroup = createGroupRes.body.data;
+    expect(createdGroup.name).toBe("Data Structures & Algorithms");
+    expect(createdGroup.type).toBe("STUDY");
+    expect(createdGroup.isAnnouncement).toBe(false);
+    expect(createdGroup.streamChannelId).toBe(`comm_${community._id}_grp_${createdGroup._id}`);
+
+    // 5. Member can list all community groups
+    const memberGroupsRes = await request(app)
+      .get(`/api/communities/${community._id}/groups`)
+      .set("Authorization", `Bearer ${memberToken}`)
+      .expect(200);
+
+    expect(memberGroupsRes.body.data).toHaveLength(2);
+
+    // 6. Member can get specific group details
+    const groupDetailsRes = await request(app)
+      .get(`/api/communities/${community._id}/groups/${createdGroup._id}`)
+      .set("Authorization", `Bearer ${memberToken}`)
+      .expect(200);
+
+    expect(groupDetailsRes.body.data._id).toBe(createdGroup._id);
+    expect(groupDetailsRes.body.data.name).toBe("Data Structures & Algorithms");
   });
 });

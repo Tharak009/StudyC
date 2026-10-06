@@ -13,12 +13,13 @@ import {
   Download,
   ExternalLink,
   Sparkles,
-  Search
+  Search,
+  Image as ImageIcon,
+  Link as LinkIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ChatMessage, CodeSnippet } from "../../types/chat";
 import { useChatStore } from "../../store/chat.store";
-import { MessageItem } from "./MessageItem";
 import { socketService } from "../../services/socket.service";
 
 interface ChatInspectorDrawerProps {
@@ -94,9 +95,25 @@ export const ChatInspectorDrawer: React.FC<ChatInspectorDrawerProps> = ({
     });
   };
 
-  // Collect vault items (pinned messages, code snippets, attachments)
+  // Collect vault items (pinned messages, code snippets, attachments, links)
   const vaultSnippets = messages.filter((m) => m.codeSnippet);
   const vaultAttachments = messages.flatMap((m) => m.attachments || []);
+  const vaultMedia = vaultAttachments.filter(
+    (att) => att.mimeType?.startsWith("image/") || att.mimeType?.startsWith("video/")
+  );
+  const vaultDocs = vaultAttachments.filter(
+    (att) => !att.mimeType?.startsWith("image/") && !att.mimeType?.startsWith("video/")
+  );
+
+  const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+  const vaultLinks = messages.flatMap((m) => {
+    const urls = m.content?.match(URL_REGEX) || [];
+    return urls.map((url) => ({
+      url,
+      senderName: m.senderName || (m.senderId as any)?.fullName || "Scholar",
+      createdAt: m.createdAt
+    }));
+  });
 
   const filteredMembers = members.filter((m) =>
     memberSearch
@@ -323,20 +340,52 @@ export const ChatInspectorDrawer: React.FC<ChatInspectorDrawerProps> = ({
               )}
             </div>
 
+            {/* Shared Media & Photos */}
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-rose-500 dark:text-rose-400 mb-2">
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>Media & Photos ({vaultMedia.length})</span>
+              </div>
+
+              {vaultMedia.length === 0 ? (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500 italic text-center">
+                  No photos or videos shared yet
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {vaultMedia.map((f, idx) => (
+                    <a
+                      key={idx}
+                      href={f.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 group relative block bg-slate-100 dark:bg-slate-900 shadow-xs"
+                    >
+                      <img
+                        src={f.thumbnailUrl || f.url}
+                        alt={f.originalName}
+                        className="h-full w-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Shared Files & PDFs */}
             <div>
               <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#1E90FF] mb-2">
                 <FileText className="w-3.5 h-3.5" />
-                <span>Shared Files ({vaultAttachments.length})</span>
+                <span>Shared Files ({vaultDocs.length})</span>
               </div>
 
-              {vaultAttachments.length === 0 ? (
+              {vaultDocs.length === 0 ? (
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500 italic text-center">
-                  No attachments shared in this channel
+                  No documents shared in this channel
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  {vaultAttachments.map((f, idx) => (
+                  {vaultDocs.map((f, idx) => (
                     <a
                       key={idx}
                       href={f.url}
@@ -351,6 +400,39 @@ export const ChatInspectorDrawer: React.FC<ChatInspectorDrawerProps> = ({
                         </span>
                       </div>
                       <Download className="w-3 h-3 text-slate-400 group-hover:text-[#1E90FF]" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Shared Links */}
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 mb-2">
+                <LinkIcon className="w-3.5 h-3.5" />
+                <span>Shared Links ({vaultLinks.length})</span>
+              </div>
+
+              {vaultLinks.length === 0 ? (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500 italic text-center">
+                  No external links shared yet
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {vaultLinks.slice(0, 20).map((l, idx) => (
+                    <a
+                      key={idx}
+                      href={l.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-[#080D1A] border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs transition-colors group shadow-xs"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <ExternalLink className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <span className="truncate text-slate-700 dark:text-slate-300 group-hover:text-emerald-500 font-mono text-[11px]">
+                          {l.url}
+                        </span>
+                      </div>
                     </a>
                   ))}
                 </div>

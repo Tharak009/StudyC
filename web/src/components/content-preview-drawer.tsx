@@ -67,7 +67,7 @@ export function ContentPreviewDrawer({
   return (
     <>
       {/* Backdrop overlay */}
-      <div className="fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-[2px] transition-opacity duration-300" />
+      <div className="fixed inset-0 z-40 bg-black/60 transition-opacity duration-300" />
 
       {/* Drawer Container */}
       <div

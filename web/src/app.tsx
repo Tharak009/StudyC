@@ -22,6 +22,11 @@ import { AdminProfilePage } from "./pages/admin-profile.page";
 import { ProfilePage } from "./pages/profile.page";
 import { DirectMessagesPage } from "./pages/direct-messages.page";
 import { NotificationsPage } from "./pages/notifications.page";
+import { CommunitiesListPage } from "./pages/communities-list.page";
+import { CommunityDetailsPage } from "./pages/community-details.page";
+import { CommunityFormPage } from "./pages/community-form.page";
+import { CommunityMembersPage } from "./pages/community-members.page";
+import { CommunityGroupChatPage } from "./pages/community-group-chat.page";
 import { DashboardSidebar } from "./components/dashboard-sidebar";
 import { Routes, Route, Navigate, useNavigate } from "react-router";
 import { ProtectedRoute } from "./routes/guards/ProtectedRoute";
@@ -33,6 +38,8 @@ import { useAuthStore } from "./store/auth.store";
 import { useToastStore } from "./store/toast.store";
 import { ToastContainer } from "./components/toast-container";
 import { GlobalBroadcastBanner } from "./components/layout/GlobalBroadcastBanner";
+import { StreamChatProvider } from "./providers/StreamChatProvider";
+import { CallOverlay } from "./components/chat/calls/CallOverlay";
 
 type Page = "home" | "login" | "register" | "dashboard" | "chat" | "admin" | "profile" | "direct-messages";
 
@@ -1121,48 +1128,60 @@ export function App() {
   const p = { go, dark, tog };
 
   return (
-    <div style={{ fontFamily: "var(--font-sans)" }} className="min-h-screen bg-background text-foreground">
-      <GlobalBroadcastBanner />
-      <Routes>
-        {/* Public Guest Routes */}
-        <Route element={<PublicRoute />}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
-        </Route>
-        <Route path="/home" element={<Navigate to="/" replace />} />
-
-        {/* Fallback 403 Forbidden Route */}
-        <Route path="/403" element={<Forbidden403Page />} />
-
-        {/* Protected Routes */}
-        <Route element={<ProtectedRoute />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/chat" element={<ChatPage />} />
-          <Route path="/profile" element={<ProfilePage {...p} />} />
-          <Route path="/direct-messages" element={<DirectMessagesPage />} />
-          <Route path="/direct-messages/:conversationId" element={<DirectMessagesPage />} />
-          <Route path="/resources" element={<ConnectionsResourcesPage />} />
-          <Route path="/events" element={<EventsPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/settings" element={<StudentSettingsPage />} />
-          <Route path="/help" element={<HelpFaqPage />} />
-          <Route path="/faq" element={<Navigate to="/help" replace />} />
-
-          {/* Governance Protected Routes (Admin & Moderator Only) */}
-          <Route element={<AdminRoute />}>
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/admin/profile" element={<AdminProfilePage />} />
-            <Route path="/admin/*" element={<AdminPage />} />
+    <StreamChatProvider>
+      <div style={{ fontFamily: "var(--font-sans)" }} className="min-h-screen bg-background text-foreground">
+        <GlobalBroadcastBanner />
+        <Routes>
+          {/* Public Guest Routes */}
+          <Route element={<PublicRoute />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
           </Route>
-        </Route>
+          <Route path="/home" element={<Navigate to="/" replace />} />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-      <ToastContainer />
-    </div>
+          {/* Fallback 403 Forbidden Route */}
+          <Route path="/403" element={<Forbidden403Page />} />
+
+          {/* Protected Routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/stream-chat" element={<Navigate to="/chat" replace />} />
+            <Route path="/profile" element={<ProfilePage {...p} />} />
+            <Route path="/direct-messages" element={<DirectMessagesPage />} />
+            <Route path="/direct-messages/:conversationId" element={<DirectMessagesPage />} />
+            <Route path="/resources" element={<ConnectionsResourcesPage />} />
+            <Route path="/events" element={<EventsPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/settings" element={<StudentSettingsPage />} />
+            <Route path="/help" element={<HelpFaqPage />} />
+            <Route path="/faq" element={<Navigate to="/help" replace />} />
+
+            {/* Dedicated Communities Section */}
+            <Route path="/communities" element={<CommunitiesListPage />} />
+            <Route path="/communities/new" element={<CommunityFormPage mode="create" />} />
+            <Route path="/communities/:id" element={<CommunityDetailsPage />} />
+            <Route path="/communities/:id/edit" element={<CommunityFormPage mode="edit" />} />
+            <Route path="/communities/:id/members" element={<CommunityMembersPage />} />
+            <Route path="/communities/:communityId/groups/:groupId" element={<CommunityGroupChatPage />} />
+
+            {/* Governance Protected Routes (Admin & Moderator Only) */}
+            <Route element={<AdminRoute />}>
+              <Route path="/admin" element={<AdminPage />} />
+              <Route path="/admin/profile" element={<AdminProfilePage />} />
+              <Route path="/admin/*" element={<AdminPage />} />
+            </Route>
+          </Route>
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+        <ToastContainer />
+        <CallOverlay />
+      </div>
+    </StreamChatProvider>
   );
 }
 

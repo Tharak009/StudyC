@@ -1,5 +1,5 @@
 import React from "react";
-import { Pin, FileText, X, ArrowUpRight, Check } from "lucide-react";
+import { Pin, FileText, MessageSquare, X, ArrowUpRight, Check } from "lucide-react";
 
 export interface PinnedMessageData {
   id: string;
@@ -46,7 +46,11 @@ export function PinnedMessageBanner({
 
         {/* Icon & Document Title */}
         <div className="flex items-center gap-2 overflow-hidden min-w-0">
-          <FileText size={15} className="text-[#1E90FF] shrink-0" />
+          {pinnedMessage.type === "document" ? (
+            <FileText size={15} className="text-[#1E90FF] shrink-0" />
+          ) : (
+            <MessageSquare size={15} className="text-[#1E90FF] shrink-0" />
+          )}
           <span className="text-xs sm:text-[13px] font-medium truncate text-slate-900 dark:text-slate-100">
             {pinnedMessage.title}
           </span>

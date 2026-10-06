@@ -1,6 +1,115 @@
 import type { User } from "./auth";
 
-export type MessageType = "TEXT" | "IMAGE" | "PDF" | "DOCUMENT" | "AUDIO";
+export type MessageType =
+  | "TEXT"
+  | "IMAGE"
+  | "PDF"
+  | "DOCUMENT"
+  | "AUDIO"
+  | "POLL"
+  | "CONTACT"
+  | "LOCATION"
+  | "RESOURCE";
+
+export interface PollOption {
+  id: string;
+  text: string;
+  voteCount: number;
+  percentage?: number;
+}
+
+export interface PollPayload {
+  pollId: string;
+  question: string;
+  description?: string;
+  options: PollOption[];
+  allowMultiple?: boolean;
+  allowChange?: boolean;
+  isAnonymous?: boolean;
+  expiresAt?: string;
+  isClosed?: boolean;
+  totalVotes: number;
+  userVotedOptionIds?: string[];
+  voters?: Array<{
+    userId: string;
+    optionIds: string[];
+    votedAt: string;
+  }>;
+}
+
+export interface ContactPayload {
+  userId: string;
+  fullName: string;
+  rollNumber?: string;
+  avatarUrl?: string;
+  major?: string;
+  year?: string;
+  mutualCirclesCount?: number;
+}
+
+export interface LocationPayload {
+  name: string;
+  building?: string;
+  room?: string;
+  category?: "LIBRARY" | "LAB" | "CAFETERIA" | "SEMINAR_HALL" | "HOSTEL" | "SPORTS" | "OTHER";
+  latitude?: number;
+  longitude?: number;
+  details?: string;
+}
+
+export interface ResourcePayload {
+  resourceId: string;
+  title: string;
+  subject?: string;
+  fileType: string;
+  fileSize?: number;
+  downloadUrl: string;
+  thumbnailUrl?: string;
+  uploadedByName?: string;
+}
+
+export interface LinkPreviewPayload {
+  url: string;
+  domain: string;
+  title?: string;
+  description?: string;
+  imageUrl?: string;
+  siteName?: string;
+}
+
+export interface MessagePayload {
+  poll?: PollPayload;
+  contact?: ContactPayload;
+  location?: LocationPayload;
+  resource?: ResourcePayload;
+  linkPreview?: LinkPreviewPayload;
+  [key: string]: any;
+}
+
+export interface ScheduledMessage {
+  _id: string;
+  targetType: "COMMUNITY" | "DIRECT_MESSAGE";
+  targetId: string;
+  channelId?: string;
+  content: string;
+  messageType?: MessageType;
+  payload?: MessagePayload;
+  scheduledFor: string;
+  status: "PENDING" | "PROCESSING" | "SENT" | "CANCELLED" | "FAILED";
+  error?: string;
+  createdAt: string;
+}
+
+export interface MessageReminder {
+  _id: string;
+  sourceType: "COMMUNITY" | "DIRECT_MESSAGE";
+  sourceId: string;
+  messageId: string;
+  channelId?: string;
+  remindAt: string;
+  status: "PENDING" | "TRIGGERED" | "CANCELLED";
+  createdAt: string;
+}
 
 export interface MessageAttachment {
   key: string;
@@ -72,6 +181,7 @@ export interface ChatMessage {
   edited: boolean;
   editedAt?: string;
   deleted: boolean;
+  payload?: MessagePayload;
   createdAt: string;
   updatedAt: string;
 }
@@ -93,6 +203,7 @@ export interface Channel {
   lockedBy?: string | { _id: string; fullName: string };
   lockedReason?: string;
   lockedAt?: string;
+  unreadCount?: number;
 }
 
 export interface SprintSession {
@@ -108,14 +219,6 @@ export interface SprintSession {
   participants: string[];
 }
 
-export interface VoicePeer {
-  socketId: string;
-  userId: string;
-  name: string;
-  isSpeaking: boolean;
-  isMuted: boolean;
-  isScreenSharing?: boolean;
-}
 
 export interface PaginatedMessages {
   items: ChatMessage[];

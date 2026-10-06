@@ -1,106 +1,237 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldPlus } from "lucide-react";
-import { useState } from "react";
-import { Link, useParams } from "react-router";
+import React, { useState } from "react";
+import { useParams, useNavigate, Link } from "react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, AlertCircle, Loader2 } from "lucide-react";
 import { communitiesApi } from "../api/communities.api";
-import { CommunityMembersList } from "../components/community-members-list";
-import { FormField } from "../components/form-field";
-import { LoadingScreen } from "../components/loading-screen";
-import { getErrorMessage } from "../utils/errors";
+import { communityGroupsApi } from "../api/community-groups.api";
+import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
+import { CommunitySidebar } from "../components/community/community-sidebar";
+import { CommunityMembersView } from "../components/community/community-members-view";
+import { CreateGroupModal } from "../components/community/create-group-modal";
+import { AttachGroupModal } from "../components/community/attach-group-modal";
+import { useAuthStore } from "../store/auth.store";
+import { useToastStore } from "../store/toast.store";
 
 export function CommunityMembersPage() {
-  const { id } = useParams();
-  const [moderatorId, setModeratorId] = useState("");
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const community = useQuery({
+  const currentUser = useAuthStore((state) => state.user);
+  const { addToast } = useToastStore();
+
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [isAttachGroupOpen, setIsAttachGroupOpen] = useState(false);
+
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // 1. Fetch Community Details
+  const communityQuery = useQuery({
     queryKey: ["community", id],
     queryFn: () => communitiesApi.details(id!),
     enabled: Boolean(id)
   });
-  const members = useQuery({
-    queryKey: ["community-members", id],
-    queryFn: () => communitiesApi.members(id!),
+
+  // 2. Fetch All Community Groups (for sidebar)
+  const groupsQuery = useQuery({
+    queryKey: ["community-groups", id],
+    queryFn: () => communityGroupsApi.list(id!),
     enabled: Boolean(id)
   });
 
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["community-members", id] });
-    queryClient.invalidateQueries({ queryKey: ["community", id] });
-    queryClient.invalidateQueries({ queryKey: ["communities"] });
-  };
+  const community = communityQuery.data;
+  const groups = groupsQuery.data || [];
 
-  const addModerator = useMutation({
-    mutationFn: () => communitiesApi.addModerator(id!, moderatorId),
-    onSuccess: () => {
-      setModeratorId("");
-      refresh();
+  // Lifecycle mutations
+  const archiveMutation = useMutation({
+    mutationFn: () => communitiesApi.archive(id!),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["community", id], updated);
+      queryClient.invalidateQueries({ queryKey: ["communities"] });
+      addToast("Community archived", "success");
     }
   });
-  const removeModerator = useMutation({
-    mutationFn: (userId: string) => communitiesApi.removeModerator(id!, userId),
-    onSuccess: refresh
-  });
-  const removeMember = useMutation({
-    mutationFn: (userId: string) => communitiesApi.removeMember(id!, userId),
-    onSuccess: refresh
+
+  const restoreMutation = useMutation({
+    mutationFn: () => communitiesApi.restore(id!),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["community", id], updated);
+      queryClient.invalidateQueries({ queryKey: ["communities"] });
+      addToast("Community restored", "success");
+    }
   });
 
-  if (community.isLoading || members.isLoading) return <LoadingScreen />;
-  if (community.isError || members.isError || !community.data || !members.data) {
-    return <p className="text-sm text-red-500">Members could not be loaded.</p>;
+  const deleteMutation = useMutation({
+    mutationFn: () => communitiesApi.delete(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["communities"] });
+      addToast("Community deleted", "info");
+      navigate("/communities");
+    }
+  });
+
+  const leaveMutation = useMutation({
+    mutationFn: () => communitiesApi.leave(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["communities"] });
+      addToast("You have left the community", "info");
+      navigate("/communities");
+    }
+  });
+
+  if (communityQuery.isLoading) {
+    return (
+      <div className="flex h-screen w-full bg-slate-100 dark:bg-[#080D1A] overflow-hidden font-sans text-slate-900 dark:text-slate-100">
+        <DashboardSidebar currentNav="/communities" />
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          <Loader2 size={36} className="animate-spin text-[#1E90FF] mb-3" />
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Loading community members...
+          </p>
+        </div>
+      </div>
+    );
   }
 
-  const isOwner = community.data.membershipRole === "OWNER";
+  if (communityQuery.isError || !community) {
+    return (
+      <div className="flex h-screen w-full bg-slate-100 dark:bg-[#080D1A] overflow-hidden font-sans text-slate-900 dark:text-slate-100">
+        <DashboardSidebar currentNav="/communities" />
+        <div className="flex-1 flex flex-col p-8 overflow-y-auto">
+          <Link
+            to={`/communities/${id}`}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors mb-6"
+          >
+            <ChevronLeft size={14} />
+            <span>Back to Community</span>
+          </Link>
+          <div className="p-6 rounded-2xl border border-red-200 bg-red-50/50 dark:border-red-500/20 dark:bg-red-950/20 max-w-lg">
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-400 font-semibold mb-2">
+              <AlertCircle size={18} />
+              <span>Community Not Found</span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              The community you requested does not exist or has been deleted.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-4xl animate-fade-up">
-      <header className="border-b border-slate-200 pb-7 dark:border-white/10">
-        <Link to={`/communities/${id}`} className="text-sm font-semibold text-signal-600 dark:text-signal-300">
-          Back to community
-        </Link>
-        <h1 className="mt-3 text-4xl font-semibold tracking-[-0.05em]">Members</h1>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          View members and manage moderation roles for {community.data.name}.
-        </p>
-      </header>
+    <div className="flex h-screen w-full bg-slate-100 dark:bg-[#080D1A] overflow-hidden font-sans text-slate-900 dark:text-slate-100">
+      {/* 1. Global Navigation Sidebar */}
+      <DashboardSidebar currentNav="/communities" />
 
-      {isOwner && (
-        <form
-          className="mt-7 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.04] sm:flex-row sm:items-end"
-          onSubmit={(event) => {
-            event.preventDefault();
-            addModerator.mutate();
+      {/* 2. Dedicated Community Navigation Sidebar (Desktop) */}
+      <div className="hidden lg:flex h-full">
+        <CommunitySidebar
+          community={community}
+          groups={groups}
+          activeItemId="members"
+          isLoadingGroups={groupsQuery.isLoading}
+          onOpenCreateGroup={() => setIsCreateGroupOpen(true)}
+          onOpenAttachGroup={() => setIsAttachGroupOpen(true)}
+          onArchive={() => {
+            if (window.confirm("Archive this community? It will become read-only.")) {
+              archiveMutation.mutate();
+            }
           }}
-        >
-          <div className="flex-1">
-            <FormField
-              label="User ID"
-              value={moderatorId}
-              onChange={(event) => setModeratorId(event.target.value)}
-              placeholder="Paste a member user id"
+          onRestore={() => {
+            if (window.confirm("Restore this community to active status?")) {
+              restoreMutation.mutate();
+            }
+          }}
+          onDelete={() => {
+            if (window.confirm("Are you sure you want to delete this community?")) {
+              deleteMutation.mutate();
+            }
+          }}
+          onLeave={() => {
+            if (window.confirm("Are you sure you want to leave this community?")) {
+              leaveMutation.mutate();
+            }
+          }}
+        />
+      </div>
+
+      {/* 2B. Mobile Community Drawer */}
+      {isMobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden flex">
+          <div
+            className="fixed inset-0 bg-black/75"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+          <div className="relative z-50 h-full w-72 max-w-[85vw] shadow-2xl">
+            <CommunitySidebar
+              community={community}
+              groups={groups}
+              activeItemId="members"
+              isLoadingGroups={groupsQuery.isLoading}
+              onOpenCreateGroup={() => {
+                setIsMobileSidebarOpen(false);
+                setIsCreateGroupOpen(true);
+              }}
+              onOpenAttachGroup={() => {
+                setIsMobileSidebarOpen(false);
+                setIsAttachGroupOpen(true);
+              }}
+              onArchive={() => {
+                setIsMobileSidebarOpen(false);
+                if (window.confirm("Archive this community?")) {
+                  archiveMutation.mutate();
+                }
+              }}
+              onRestore={() => {
+                setIsMobileSidebarOpen(false);
+                if (window.confirm("Restore this community?")) {
+                  restoreMutation.mutate();
+                }
+              }}
+              onDelete={() => {
+                setIsMobileSidebarOpen(false);
+                if (window.confirm("Delete this community?")) {
+                  deleteMutation.mutate();
+                }
+              }}
+              onLeave={() => {
+                setIsMobileSidebarOpen(false);
+                if (window.confirm("Leave this community?")) {
+                  leaveMutation.mutate();
+                }
+              }}
             />
           </div>
-          <button className="primary-button" type="submit" disabled={!moderatorId || addModerator.isPending}>
-            <ShieldPlus size={17} />
-            Add moderator
-          </button>
-        </form>
+        </div>
       )}
 
-      {(addModerator.isError || removeModerator.isError || removeMember.isError) && (
-        <p role="alert" className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">
-          {getErrorMessage(addModerator.error ?? removeModerator.error ?? removeMember.error)}
-        </p>
-      )}
+      {/* 3. Main Workspace: Modern Members View */}
+      <CommunityMembersView
+        community={community}
+        onBackToOverview={() => navigate(`/communities/${id}`)}
+      />
 
-      <section className="mt-7 rounded-2xl border border-slate-200 bg-white px-5 dark:border-white/10 dark:bg-white/[0.04]">
-        <CommunityMembersList
-          members={members.data}
-          viewerRole={community.data.membershipRole}
-          onRemoveMember={(userId) => removeMember.mutate(userId)}
-          onRemoveModerator={(userId) => removeModerator.mutate(userId)}
-        />
-      </section>
+      {/* Modals */}
+      <CreateGroupModal
+        communityId={community._id}
+        isOpen={isCreateGroupOpen}
+        onClose={() => setIsCreateGroupOpen(false)}
+        onSuccess={() => {
+          setIsCreateGroupOpen(false);
+          queryClient.invalidateQueries({ queryKey: ["community-groups", id] });
+        }}
+      />
+
+      <AttachGroupModal
+        communityId={community._id}
+        existingGroups={groups}
+        isOpen={isAttachGroupOpen}
+        onClose={() => setIsAttachGroupOpen(false)}
+        onSuccess={() => {
+          setIsAttachGroupOpen(false);
+          queryClient.invalidateQueries({ queryKey: ["community-groups", id] });
+        }}
+      />
     </div>
   );
 }

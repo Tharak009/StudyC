@@ -39,6 +39,42 @@ export class RefreshTokenRepository {
       { revokedAt: new Date() }
     ).exec();
   }
+
+  findActiveSessionsByUser(userId: string) {
+    return RefreshToken.find(
+      {
+        user: userId,
+        revokedAt: { $exists: false },
+        expiresAt: { $gt: new Date() }
+      },
+      {
+        _id: 1,
+        tokenId: 1,
+        userAgent: 1,
+        ipAddress: 1,
+        createdAt: 1,
+        expiresAt: 1
+      }
+    )
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+  }
+
+  revokeSession(userId: string, tokenId: string) {
+    return RefreshToken.findOneAndUpdate(
+      { user: userId, tokenId, revokedAt: { $exists: false } },
+      { revokedAt: new Date() },
+      { new: true }
+    ).exec();
+  }
+
+  revokeAllExcept(userId: string, currentTokenId: string) {
+    return RefreshToken.updateMany(
+      { user: userId, tokenId: { $ne: currentTokenId }, revokedAt: { $exists: false } },
+      { revokedAt: new Date() }
+    ).exec();
+  }
 }
 
 export const refreshTokenRepository = new RefreshTokenRepository();

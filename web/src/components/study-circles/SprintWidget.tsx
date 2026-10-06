@@ -329,7 +329,7 @@ export const SprintWidget: React.FC<SprintWidgetProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.96 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-2xl z-50 backdrop-blur-xl text-slate-900 dark:text-slate-100"
+            className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-[#0B1324] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-2xl z-50 text-slate-900 dark:text-slate-100"
           >
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">

@@ -16,7 +16,7 @@ export interface IUserRepository {
   findByEmail(email: string, includePassword?: boolean): Promise<UserDocument | null>;
   findByRollNumber(rollNumber: string): Promise<UserDocument | null>;
   updateById(id: string, update: UpdateQuery<IUser>): Promise<UserDocument | null>;
-  search(query: string, excludeUserId?: string, limit?: number): Promise<UserDocument[]>;
+  search(query: string, excludeUserIds?: string | string[], limit?: number): Promise<UserDocument[]>;
 }
 
 export class UserRepository implements IUserRepository {
@@ -51,15 +51,18 @@ export class UserRepository implements IUserRepository {
     return User.findOne(filter).exec();
   }
 
-  search(query: string, excludeUserId?: string, limit = 20): Promise<UserDocument[]> {
+  search(query: string, excludeUserIds?: string | string[], limit = 20): Promise<UserDocument[]> {
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const filter: FilterQuery<IUser> = {
       $or: [
-        { fullName: { $regex: query, $options: "i" } },
-        { rollNumber: { $regex: query, $options: "i" } },
-        { email: { $regex: query, $options: "i" } }
+        { fullName: { $regex: escaped, $options: "i" } },
+        { rollNumber: { $regex: escaped, $options: "i" } }
       ]
     };
-    if (excludeUserId) filter._id = { $ne: excludeUserId };
+    if (excludeUserIds) {
+      const ids = Array.isArray(excludeUserIds) ? excludeUserIds : [excludeUserIds];
+      if (ids.length > 0) filter._id = { $nin: ids };
+    }
     return User.find(filter).limit(limit).exec();
   }
 }

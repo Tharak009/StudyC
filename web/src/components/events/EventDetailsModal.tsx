@@ -108,7 +108,7 @@ export function EventDetailsModal({ event, onClose, onToggleRsvp }: EventDetails
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-md flex justify-center p-0 sm:p-4 md:p-6 animate-fade-in">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/75 flex justify-center p-0 sm:p-4 md:p-6 animate-fade-in">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -116,7 +116,7 @@ export function EventDetailsModal({ event, onClose, onToggleRsvp }: EventDetails
         className="relative w-full max-w-2xl bg-white dark:bg-[#0F1A30] sm:rounded-3xl shadow-2xl border-0 sm:border border-slate-200/80 dark:border-slate-800/80 flex flex-col min-h-screen sm:min-h-0 max-h-none sm:max-h-[90vh] overflow-hidden"
       >
         {/* ── Top Header Navigation Bar ──────────────────────────────── */}
-        <div className="sticky top-0 z-10 flex items-center gap-3 bg-white/95 dark:bg-[#0F1A30]/95 backdrop-blur-md px-4 sm:px-6 py-4 border-b border-slate-200/60 dark:border-slate-800/60 shrink-0">
+        <div className="sticky top-0 z-10 flex items-center gap-3 bg-white dark:bg-[#0F1A30] px-4 sm:px-6 py-4 border-b border-slate-200/60 dark:border-slate-800/60 shrink-0">
           <button
             onClick={onClose}
             className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"

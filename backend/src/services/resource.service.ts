@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { COMMUNITY_ROLES } from "../constants/community-roles.js";
+import { isActiveMember, isRestrictedMember } from "../constants/community-membership.js";
 import { communityMemberRepository, type CommunityMemberRepository } from "../repositories/community-member.repository.js";
 import { resourceRepository, type ResourceRepository } from "../repositories/resource.repository.js";
 import { ApiError } from "../utils/api-error.js";
@@ -123,7 +124,12 @@ export class ResourceService {
 
   private async requireMembership(communityId: string, userId: string) {
     const membership = await this.members.findMembership(communityId, userId);
-    if (!membership) throw new ApiError(403, "Community membership is required", [], "RESOURCE_MEMBERSHIP_REQUIRED");
+    if (!membership || !isActiveMember(membership.status)) {
+      if (membership && isRestrictedMember(membership.status)) {
+        throw new ApiError(403, `Access restricted (${membership.status})`, [], "MEMBERSHIP_RESTRICTED");
+      }
+      throw new ApiError(403, "Active community membership is required", [], "RESOURCE_MEMBERSHIP_REQUIRED");
+    }
     return membership;
   }
 }

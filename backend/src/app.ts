@@ -15,10 +15,6 @@ import {
 } from "./middlewares/error.middleware.js";
 import { apiLimiter } from "./middlewares/rate-limit.middleware.js";
 import { sanitizeInput } from "./middlewares/sanitize.middleware.js";
-import {
-  protectedChatAttachment,
-  protectedDirectMessageAttachment
-} from "./middlewares/attachment-auth.middleware.js";
 import { apiRouter } from "./routes/index.js";
 
 export const createApp = () => {
@@ -50,10 +46,6 @@ export const createApp = () => {
   app.get("/health", healthHandler);
   app.get("/api/health", healthHandler);
 
-  // Protected attachment routes (authenticated & permission-checked)
-  app.get("/uploads/direct-messages/:filename", protectedDirectMessageAttachment);
-  app.get("/uploads/chat/:filename", protectedChatAttachment);
-
   app.use("/uploads", express.static(path.resolve(process.cwd(), env.UPLOAD_DIR), {
     maxAge: env.NODE_ENV === "production" ? "1d" : 0,
     immutable: env.NODE_ENV === "production"
@@ -61,11 +53,27 @@ export const createApp = () => {
 
   // Stream uploads from MongoDB GridFS if missing from local disk, with graceful fallback
   app.get("/uploads/:namespace/:filename", async (req, res, next) => {
-    const { namespace, filename } = req.params;
+    const rawNamespace = req.params.namespace;
+    const rawFilename = req.params.filename;
+    const namespace = Array.isArray(rawNamespace) ? rawNamespace[0] : rawNamespace;
+    const filename = Array.isArray(rawFilename) ? rawFilename[0] : rawFilename;
+
+    if (!namespace || !/^[a-zA-Z0-9_-]+$/.test(namespace)) {
+      return res.status(400).json({ success: false, message: "Invalid upload namespace", code: "INVALID_PATH" });
+    }
+    if (!filename || filename.includes("..") || filename.includes("/") || filename.includes("\\") || !/^[a-zA-Z0-9_.-]+$/.test(filename)) {
+      return res.status(400).json({ success: false, message: "Invalid file name", code: "INVALID_PATH" });
+    }
+
+    const uploadsRoot = path.resolve(process.cwd(), env.UPLOAD_DIR);
+    const localPath = path.resolve(uploadsRoot, namespace, filename);
+    if (!localPath.startsWith(uploadsRoot)) {
+      return res.status(403).json({ success: false, message: "Access forbidden", code: "PATH_TRAVERSAL_DETECTED" });
+    }
+
     const key = `${namespace}/${filename}`;
 
     // 1. Check if file is already on local disk
-    const localPath = path.resolve(process.cwd(), env.UPLOAD_DIR, namespace, filename);
     if (fs.existsSync(localPath)) {
       return res.sendFile(localPath);
     }

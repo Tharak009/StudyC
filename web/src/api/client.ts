@@ -44,16 +44,23 @@ const refreshAccessToken = (): Promise<string> => {
   return refreshRequest;
 };
 
+let lastRateLimitToastTime = 0;
+const RATE_LIMIT_TOAST_DEBOUNCE_MS = 8000;
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<{ message?: string }>) => {
     const original = error.config as RetryConfig | undefined;
     const isAuthRoute = original?.url?.includes("/api/auth/");
 
-    // Rate limiting handler (429)
+    // Rate limiting handler (429) - throttle to avoid toast storm on parallel requests
     if (error.response?.status === 429) {
-      const msg = error.response.data?.message || "Rate limit reached. Please slow down and try again in a moment.";
-      useToastStore.getState().addToast(msg, "warning");
+      const now = Date.now();
+      if (now - lastRateLimitToastTime > RATE_LIMIT_TOAST_DEBOUNCE_MS) {
+        lastRateLimitToastTime = now;
+        const msg = error.response.data?.message || "Rate limit reached. Please slow down and try again in a moment.";
+        useToastStore.getState().addToast(msg, "warning");
+      }
     }
 
     // Auto-refresh token handler (401)

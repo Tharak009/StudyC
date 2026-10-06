@@ -4,7 +4,7 @@ import { REPORT_TARGET_TYPES, REPORT_STATUS, type ReportTargetType, type ReportS
 export interface IReport {
   reporterId: Types.ObjectId;
   targetType: ReportTargetType;
-  targetId: Types.ObjectId;
+  targetId: string;
   reason: string;
   description: string;
   status: ReportStatus;
@@ -21,7 +21,7 @@ const reportSchema = new Schema<IReport, ReportModel>(
   {
     reporterId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     targetType: { type: String, enum: Object.values(REPORT_TARGET_TYPES), required: true, index: true },
-    targetId: { type: Schema.Types.ObjectId, required: true, index: true },
+    targetId: { type: String, required: true, index: true },
     reason: { type: String, required: true, trim: true, maxlength: 100 },
     description: { type: String, trim: true, maxlength: 1000, default: "" },
     status: { type: String, enum: Object.values(REPORT_STATUS), default: REPORT_STATUS.PENDING, index: true },

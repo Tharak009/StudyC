@@ -26,5 +26,13 @@ export const usersApi = {
   search: async (query: string) =>
     (await apiClient.get<ApiResponse<User[]>>("/api/users/search", { params: { q: query } })).data.data,
   dashboard: async () =>
-    (await apiClient.get<ApiResponse<StudentDashboard>>("/api/users/dashboard")).data.data
+    (await apiClient.get<ApiResponse<StudentDashboard>>("/api/users/dashboard")).data.data,
+  blockUser: async (userId: string) =>
+    (await apiClient.post<ApiResponse<any>>(`/api/users/${userId}/block`)).data.data,
+  unblockUser: async (userId: string) =>
+    (await apiClient.delete<ApiResponse<any>>(`/api/users/${userId}/block`)).data.data,
+  listBlocked: async () =>
+    (await apiClient.get<ApiResponse<any[]>>("/api/users/blocked")).data.data,
+  getPublicProfile: async (userId: string) =>
+    (await apiClient.get<ApiResponse<User>>(`/api/users/${userId}`)).data.data
 };

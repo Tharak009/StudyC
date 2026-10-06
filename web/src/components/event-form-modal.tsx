@@ -163,7 +163,7 @@ export function EventFormModal({ event, onClose, onSave }: EventFormModalProps) 
     <div className="fixed inset-0 z-50 flex justify-center items-start overflow-y-auto p-4 animate-fade-in">
       {/* Background Overlay */}
       <div
-        className="fixed inset-0 bg-slate-950/20 backdrop-blur-[2px] transition-opacity duration-300"
+        className="fixed inset-0 bg-slate-950/60 transition-opacity duration-300"
         onClick={onClose}
       />
 

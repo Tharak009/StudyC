@@ -1,5 +1,3 @@
-import { apiClient } from "./client";
-import type { ApiResponse } from "../types/auth";
 import type { Conversation, DirectMessage, PaginatedConversations, PaginatedDirectMessages } from "../types/direct-message";
 
 export interface MessageListParams {
@@ -22,179 +20,87 @@ export interface CreateMessagePayload {
   attachments?: File[];
   duration?: number;
   waveform?: number[];
+  messageType?: string;
+  payload?: any;
   onUploadProgress?: (progressEvent: { loaded: number; total?: number }) => void;
   signal?: AbortSignal;
 }
 
+/**
+ * Stream Chat is now the primary direct messaging infrastructure for StudyConnect.
+ * Legacy message persistence endpoints are deprecated/removed.
+ * These stubs preserve backward compatibility with remaining UI components.
+ */
 export const directMessagesApi = {
-  startConversation: async (receiverId: string) =>
-    (
-      await apiClient.post<ApiResponse<Conversation>>("/api/direct-messages/conversations", { receiverId })
-    ).data.data,
-
-  listConversations: async (params: ConversationListParams) =>
-    (
-      await apiClient.get<ApiResponse<PaginatedConversations>>("/api/direct-messages/conversations", { params })
-    ).data.data,
-
-  getConversation: async (conversationId: string) =>
-    (
-      await apiClient.get<ApiResponse<Conversation>>(`/api/direct-messages/conversations/${conversationId}`)
-    ).data.data,
-
-  getMessages: async (conversationId: string, params: MessageListParams) =>
-    (
-      await apiClient.get<ApiResponse<PaginatedDirectMessages>>(
-        `/api/direct-messages/conversations/${conversationId}/messages`,
-        { params }
-      )
-    ).data.data,
-
-  sendMessage: async (conversationId: string, payload: CreateMessagePayload) => {
-    const form = new FormData();
-    form.append("content", payload.content);
-    if (payload.replyTo) form.append("replyTo", payload.replyTo);
-    if (payload.clientMessageId) form.append("clientMessageId", payload.clientMessageId);
-    if (payload.duration !== undefined) form.append("duration", String(payload.duration));
-    if (payload.waveform) form.append("waveform", JSON.stringify(payload.waveform));
-    payload.attachments?.forEach((file) => form.append("attachments", file));
-    return (
-      await apiClient.post<ApiResponse<DirectMessage>>(
-        `/api/direct-messages/conversations/${conversationId}/messages`,
-        form,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-          onUploadProgress: payload.onUploadProgress,
-          signal: payload.signal
-        }
-      )
-    ).data.data;
+  startConversation: async (_receiverId: string): Promise<Conversation> => {
+    throw new Error("Direct message creation deprecated. Use streamApi.getOrCreateDm.");
   },
-
-  editMessage: async (messageId: string, content: string) =>
-    (
-      await apiClient.put<ApiResponse<DirectMessage>>(`/api/direct-messages/messages/${messageId}`, { content })
-    ).data.data,
-
-  deleteMessage: async (messageId: string) =>
-    (
-      await apiClient.delete<ApiResponse<DirectMessage>>(`/api/direct-messages/messages/${messageId}`)
-    ).data.data,
-
-  markAsRead: async (conversationId: string) =>
-    (
-      await apiClient.post<ApiResponse<null>>("/api/direct-messages/messages/read", { conversationId })
-    ).data.data,
-
-  markAsUnread: async (conversationId: string) =>
-    (
-      await apiClient.post<ApiResponse<null>>(`/api/direct-messages/conversations/${conversationId}/unread`)
-    ).data.data,
-
-  markAsDelivered: async (conversationId: string) =>
-    (
-      await apiClient.post<ApiResponse<null>>(`/api/direct-messages/conversations/${conversationId}/delivered`)
-    ).data.data,
-
-  togglePin: async (conversationId: string) =>
-    (
-      await apiClient.patch<ApiResponse<{ isPinned: boolean }>>(`/api/direct-messages/conversations/${conversationId}/pin`)
-    ).data.data,
-
-  toggleMute: async (conversationId: string) =>
-    (
-      await apiClient.patch<ApiResponse<{ isMuted: boolean }>>(`/api/direct-messages/conversations/${conversationId}/mute`)
-    ).data.data,
-
-  toggleArchive: async (conversationId: string) =>
-    (
-      await apiClient.patch<ApiResponse<{ isArchived: boolean }>>(`/api/direct-messages/conversations/${conversationId}/archive`)
-    ).data.data,
-
-  unreadCount: async () =>
-    (
-      await apiClient.get<ApiResponse<{ count: number }>>("/api/direct-messages/conversations/unread")
-    ).data.data,
-
-  deleteForMe: async (messageId: string) =>
-    (
-      await apiClient.post<ApiResponse<{ success: boolean; messageId: string }>>(
-        `/api/direct-messages/messages/${messageId}/delete-for-me`
-      )
-    ).data.data,
-
-  deleteForEveryone: async (messageId: string) =>
-    (
-      await apiClient.post<ApiResponse<DirectMessage>>(
-        `/api/direct-messages/messages/${messageId}/delete-for-everyone`
-      )
-    ).data.data,
-
-  toggleReaction: async (messageId: string, emoji: string, category: "STANDARD" | "CAMPUS_CUSTOM" = "STANDARD") =>
-    (
-      await apiClient.post<ApiResponse<{ reactions: DirectMessage["reactions"] }>>(
-        `/api/direct-messages/messages/${messageId}/reaction`,
-        { emoji, category }
-      )
-    ).data.data,
-
-  toggleStar: async (messageId: string) =>
-    (
-      await apiClient.post<ApiResponse<{ isStarred: boolean }>>(
-        `/api/direct-messages/messages/${messageId}/star`
-      )
-    ).data.data,
-
-  togglePinMessage: async (messageId: string) =>
-    (
-      await apiClient.post<ApiResponse<{ isPinned: boolean }>>(
-        `/api/direct-messages/messages/${messageId}/pin`
-      )
-    ).data.data,
-
-  getStarredMessages: async (conversationId: string) =>
-    (
-      await apiClient.get<ApiResponse<DirectMessage[]>>(
-        `/api/direct-messages/conversations/${conversationId}/starred`
-      )
-    ).data.data,
-
-  getPinnedMessages: async (conversationId: string) =>
-    (
-      await apiClient.get<ApiResponse<DirectMessage[]>>(
-        `/api/direct-messages/conversations/${conversationId}/pinned`
-      )
-    ).data.data,
-
-  forwardMessages: async (conversationId: string, messageIds: string[], targetConversationIds: string[]) =>
-    (
-      await apiClient.post<ApiResponse<DirectMessage[]>>(
-        `/api/direct-messages/conversations/${conversationId}/messages/forward`,
-        { messageIds, targetConversationIds }
-      )
-    ).data.data,
-
-  bulkDeleteForMe: async (conversationId: string, messageIds: string[]) =>
-    (
-      await apiClient.post<ApiResponse<{ count: number }>>(
-        `/api/direct-messages/conversations/${conversationId}/messages/bulk-delete-for-me`,
-        { messageIds }
-      )
-    ).data.data,
-
-  bulkDeleteForEveryone: async (conversationId: string, messageIds: string[]) =>
-    (
-      await apiClient.post<ApiResponse<{ deletedIds: string[] }>>(
-        `/api/direct-messages/conversations/${conversationId}/messages/bulk-delete-for-everyone`,
-        { messageIds }
-      )
-    ).data.data,
-
-  bulkStar: async (conversationId: string, messageIds: string[], star = true) =>
-    (
-      await apiClient.post<ApiResponse<{ count: number }>>(
-        `/api/direct-messages/conversations/${conversationId}/messages/bulk-star`,
-        { messageIds, star }
-      )
-    ).data.data
+  listConversations: async (_params?: ConversationListParams): Promise<PaginatedConversations> => ({
+    items: [],
+    total: 0,
+    page: 1,
+    pages: 0,
+    limit: 30
+  }),
+  getConversation: async (_conversationId: string): Promise<Conversation> => {
+    throw new Error("Conversation fetch deprecated. Use Stream Chat channel.");
+  },
+  getMessages: async (_conversationId: string, _params?: MessageListParams): Promise<PaginatedDirectMessages> => ({
+    items: [],
+    total: 0,
+    page: 1,
+    pages: 0,
+    limit: 30,
+    order: "latest"
+  }),
+  sendMessage: async (_conversationId: string, _payload: CreateMessagePayload): Promise<DirectMessage> => {
+    throw new Error("Direct message send deprecated. Use Stream Chat SDK.");
+  },
+  editMessage: async (_messageId: string, _content: string): Promise<DirectMessage> => {
+    throw new Error("Direct message edit deprecated. Use Stream Chat SDK.");
+  },
+  deleteMessage: async (_messageId: string): Promise<DirectMessage> => {
+    throw new Error("Direct message delete deprecated. Use Stream Chat SDK.");
+  },
+  markAsRead: async (_conversationId: string) => null,
+  markAsUnread: async (_conversationId: string) => null,
+  markAsDelivered: async (_conversationId: string) => null,
+  togglePin: async (_conversationId: string) => ({ isPinned: false }),
+  toggleMute: async (_conversationId: string) => ({ isMuted: false }),
+  toggleArchive: async (_conversationId: string) => ({ isArchived: false }),
+  unreadCount: async () => ({ count: 0 }),
+  deleteForMe: async (messageId: string) => ({ success: true, messageId }),
+  deleteForEveryone: async (_messageId: string): Promise<DirectMessage> => {
+    throw new Error("Delete for everyone deprecated. Use Stream Chat SDK.");
+  },
+  toggleReaction: async (_messageId: string, _emoji: string, _category: "STANDARD" | "CAMPUS_CUSTOM" = "STANDARD") => ({
+    reactions: []
+  }),
+  toggleStar: async (_messageId: string) => ({ isStarred: false }),
+  togglePinMessage: async (_messageId: string) => ({ isPinned: false }),
+  getStarredMessages: async (_conversationId: string): Promise<DirectMessage[]> => [],
+  getPinnedMessages: async (_conversationId: string): Promise<DirectMessage[]> => [],
+  forwardMessages: async (_conversationId: string, _messageIds: string[], _targetConversationIds: string[]): Promise<DirectMessage[]> => [],
+  bulkDeleteForMe: async (_conversationId: string, messageIds: string[]) => ({ count: messageIds.length }),
+  bulkDeleteForEveryone: async (_conversationId: string, messageIds: string[]) => ({ deletedIds: messageIds }),
+  bulkStar: async (_conversationId: string, messageIds: string[], _star = true) => ({ count: messageIds.length }),
+  clearChat: async (_conversationId: string) => ({ success: true, clearedCount: 0 }),
+  deleteConversation: async (_conversationId: string) => ({ success: true }),
+  search: async (_params: any): Promise<PaginatedDirectMessages> => ({
+    items: [],
+    total: 0,
+    page: 1,
+    pages: 0,
+    limit: 30,
+    order: "latest"
+  }),
+  lockConversation: async (_conversationId: string, _reason?: string): Promise<Conversation> => {
+    throw new Error("Lock conversation deprecated.");
+  },
+  unlockConversation: async (_conversationId: string): Promise<Conversation> => {
+    throw new Error("Unlock conversation deprecated.");
+  },
+  setDisappearing: async (_conversationId: string, _duration: string): Promise<Conversation> => {
+    throw new Error("Set disappearing deprecated.");
+  }
 };

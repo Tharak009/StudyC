@@ -7,6 +7,7 @@ export type NotificationType =
   | "RESOURCE_UPLOAD"
   | "MENTION"
   | "ADMIN_ALERT"
+  | "CALL_MISSED"
   | "SYSTEM";
 
 export interface Notification {

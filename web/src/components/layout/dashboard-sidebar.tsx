@@ -19,7 +19,6 @@ import {
   Pencil,
   Trash2,
   X,
-  Radio,
   Users,
   Compass,
   Check,
@@ -27,6 +26,8 @@ import {
   Bell
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+import { communitiesApi } from "../../api/communities.api";
 import { useAuthStore } from "../../store/auth.store";
 import { useToastStore } from "../../store/toast.store";
 import { useNotificationStore } from "../../store/notification.store";
@@ -122,6 +123,7 @@ export function DashboardSidebar({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitleValue, setEditTitleValue] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  const [menuOpenUpward, setMenuOpenUpward] = useState(false);
 
   // Close context kebab menu when clicking outside
   useEffect(() => {
@@ -200,9 +202,37 @@ export function DashboardSidebar({
       .toUpperCase();
   };
 
+  const communitiesBadgeQuery = useQuery({
+    queryKey: ["communities-badge-count"],
+    queryFn: () => communitiesApi.list({ limit: 50 }),
+    staleTime: 60_000
+  });
+
+  const joinedCommunitiesCount = React.useMemo(() => {
+    if (!communitiesBadgeQuery.data?.items) return undefined;
+    const count = communitiesBadgeQuery.data.items.filter((c) => {
+      if (c.status === "ARCHIVED") return false;
+      return Boolean(
+        c.isMember ||
+          c.membershipRole === "OWNER" ||
+          c.membershipRole === "MODERATOR" ||
+          c.membershipRole === "MEMBER" ||
+          (user?._id && c.ownerId === user._id) ||
+          (user?._id && c.owner?._id === user._id)
+      );
+    }).length;
+    return count > 0 ? String(count) : undefined;
+  }, [communitiesBadgeQuery.data, user?._id]);
+
   const primaryNavItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Chats", href: "/chat", icon: MessageSquare },
+    {
+      label: "Communities",
+      href: "/communities",
+      icon: Users,
+      badge: joinedCommunitiesCount
+    },
     { label: "Resource Vault", href: "/resources", icon: BookOpen },
     { label: "Campus Events", href: "/events", icon: Calendar },
     {
@@ -227,7 +257,7 @@ export function DashboardSidebar({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setIsMobileOpen(false)}
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden cursor-pointer"
+            className="fixed inset-0 z-40 bg-black/75 lg:hidden cursor-pointer"
             aria-label="Close sidebar overlay"
           />
         )}
@@ -263,21 +293,16 @@ export function DashboardSidebar({
             {/* Brand Logo & Name */}
             <Link
               to="/dashboard"
-              className={`flex items-center gap-2 overflow-hidden transition-all duration-200 whitespace-nowrap ${
+              className={`flex items-center gap-2.5 overflow-hidden transition-all duration-200 whitespace-nowrap ${
                 isCollapsed ? "opacity-0 w-0 pointer-events-none hidden" : "opacity-100 min-w-0"
               }`}
             >
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-[#1E90FF] text-white shadow-sm shadow-[#1E90FF]/30">
                 <Sparkles size={14} />
               </div>
-              <div className="flex flex-col whitespace-nowrap">
-                <span className="font-extrabold text-xs text-slate-900 dark:text-slate-100 tracking-tight">
-                  StudyConnect
-                </span>
-                <span className="text-[9px] font-bold tracking-wider text-[#1E90FF] uppercase -mt-0.5">
-                  Gemini Campus OS
-                </span>
-              </div>
+              <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 tracking-tight">
+                StudyConnect
+              </span>
             </Link>
           </div>
 
@@ -320,9 +345,7 @@ export function DashboardSidebar({
 
         {/* ── Scrollable Body: Workspace Nav & Recents ────────────────── */}
         <div
-          className={`flex-1 px-2 py-1 space-y-4 select-none no-scrollbar scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
-            isCollapsed ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden"
-          }`}
+          className="flex-1 px-2 py-1 space-y-4 select-none overflow-y-auto overflow-x-hidden no-scrollbar scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
           {/* Primary Navigation Items */}
           <div className="space-y-1">
@@ -450,9 +473,20 @@ export function DashboardSidebar({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              const btn = e.currentTarget;
+                              const rect = btn.getBoundingClientRect();
+                              const spaceBelow = window.innerHeight - rect.bottom;
+                              const scrollParent = btn.closest(".overflow-y-auto, [class*='overflow']");
+                              if (scrollParent) {
+                                const parentRect = scrollParent.getBoundingClientRect();
+                                const spaceBelowInParent = parentRect.bottom - rect.bottom;
+                                setMenuOpenUpward(spaceBelow < 120 || spaceBelowInParent < 120);
+                              } else {
+                                setMenuOpenUpward(spaceBelow < 120);
+                              }
                               setMenuOpenId(isMenuOpen ? null : session.id);
                             }}
-                            className={`p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-slate-300/50 dark:hover:bg-white/10 transition-opacity ${
+                            className={`p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-slate-300/50 dark:hover:bg-white/10 transition-opacity cursor-pointer ${
                               isMenuOpen ? "!opacity-100" : ""
                             }`}
                           >
@@ -463,7 +497,9 @@ export function DashboardSidebar({
                           {isMenuOpen && (
                             <div
                               ref={menuRef}
-                              className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-50 text-xs"
+                              className={`absolute right-0 ${
+                                menuOpenUpward ? "bottom-full mb-1" : "top-full mt-1"
+                              } w-32 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-50 text-xs`}
                             >
                               <button
                                 onClick={(e) => {
@@ -472,7 +508,7 @@ export function DashboardSidebar({
                                   setEditTitleValue(session.title);
                                   setMenuOpenId(null);
                                 }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 text-left transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 text-left transition-colors cursor-pointer"
                               >
                                 <Pencil size={12} />
                                 <span>Rename</span>
@@ -480,7 +516,7 @@ export function DashboardSidebar({
 
                               <button
                                 onClick={(e) => handleDeleteSession(session.id, e)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-left transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-left transition-colors cursor-pointer"
                               >
                                 <Trash2 size={12} />
                                 <span>Delete</span>
@@ -606,16 +642,6 @@ export function DashboardSidebar({
                 <LogOut size={13} />
               </button>
             </div>
-          </div>
-
-          {/* Gemini Subtle Location/Network Footer Tag */}
-          <div
-            className={`pt-1 px-2 text-[9px] text-slate-400 dark:text-slate-500 flex items-center gap-1.5 select-none font-medium transition-all duration-200 overflow-hidden whitespace-nowrap ${
-              isCollapsed ? "opacity-0 max-h-0 hidden" : "opacity-100 max-h-6"
-            }`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-            <span className="truncate">From your verified IP • Campus Network</span>
           </div>
         </div>
       </aside>

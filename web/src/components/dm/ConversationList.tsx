@@ -22,7 +22,9 @@ import {
   Mail,
   MailCheck,
   MoreVertical,
-  Clock
+  Clock,
+  Trash2,
+  Eraser
 } from "lucide-react";
 import type { User as AuthUser } from "../../types/auth";
 import { usersApi } from "../../api/users.api";
@@ -79,6 +81,8 @@ interface ConversationListProps {
   onToggleArchive?: (conversationId: string) => void;
   onMarkAsRead?: (conversationId: string) => void;
   onMarkAsUnread?: (conversationId: string) => void;
+  onClearChat?: (conversationId: string) => void;
+  onDeleteConversation?: (conversationId: string) => void;
   drafts?: Record<string, string>;
   typingMap?: Record<string, boolean>;
 }
@@ -97,12 +101,16 @@ export function ConversationList({
   onToggleArchive,
   onMarkAsRead,
   onMarkAsUnread,
+  onClearChat,
+  onDeleteConversation,
   drafts = {},
   typingMap = {}
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
+  const [confirmClearId, setConfirmClearId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [peerSearch, setPeerSearch] = useState("");
   const [realUsers, setRealUsers] = useState<AuthUser[]>([]);
   const [isSearchingRealUsers, setIsSearchingRealUsers] = useState(false);
@@ -532,6 +540,32 @@ export function ConversationList({
                           <Archive size={12} />
                           <span>{c.isArchived ? "Unarchive" : "Archive"}</span>
                         </button>
+
+                        <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmClearId(c.id);
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-600 dark:text-amber-400 transition-colors"
+                        >
+                          <Eraser size={12} />
+                          <span>Clear chat</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDeleteId(c.id);
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 transition-colors"
+                        >
+                          <Trash2 size={12} />
+                          <span>Delete conversation</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -542,6 +576,78 @@ export function ConversationList({
         </div>
 
       </div>
+
+      {/* ── Clear Chat Confirmation Modal ── */}
+      {confirmClearId && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-[#0F1A30] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-2xl text-slate-900 dark:text-slate-100">
+            <h4 className="text-sm font-bold mb-1.5 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <Eraser size={16} />
+              <span>Clear Chat?</span>
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+              This will clear all messages in this conversation for you. Messages will remain visible for the other participant.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmClearId(null)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmClearId) {
+                    onClearChat?.(confirmClearId);
+                    setConfirmClearId(null);
+                  }
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                Clear Chat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Conversation Confirmation Modal ── */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-[#0F1A30] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-2xl text-slate-900 dark:text-slate-100">
+            <h4 className="text-sm font-bold mb-1.5 flex items-center gap-2 text-rose-600 dark:text-rose-400">
+              <Trash2 size={16} />
+              <span>Delete Conversation?</span>
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+              This will remove the conversation from your chats list and clear your message history.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteId(null)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmDeleteId) {
+                    onDeleteConversation?.(confirmDeleteId);
+                    setConfirmDeleteId(null);
+                  }
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 5. Start New Peer Chat Modal (Portaled to document.body for true viewport centering) ── */}
       {typeof document !== "undefined" &&

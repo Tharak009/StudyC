@@ -18,6 +18,9 @@ export const authRouter = Router();
 authRouter.post("/register", authLimiter, validate(registerSchema), asyncHandler(authController.register));
 authRouter.post("/login", authLimiter, validate(loginSchema), asyncHandler(authController.login));
 authRouter.post("/logout", validate(refreshTokenSchema), asyncHandler(authController.logout));
+authRouter.post("/logout-all", authenticate, asyncHandler(authController.logoutAll));
+authRouter.get("/sessions", authenticate, asyncHandler(authController.listSessions));
+authRouter.delete("/sessions/:tokenId", authenticate, asyncHandler(authController.revokeSession));
 authRouter.post("/refresh-token", validate(refreshTokenSchema), asyncHandler(authController.refresh));
 authRouter.post(
   "/change-password",

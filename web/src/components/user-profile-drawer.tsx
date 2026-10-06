@@ -50,7 +50,7 @@ export function UserProfileDrawer({ user, onClose }: UserProfileDrawerProps) {
   return (
     <div className="fixed inset-0 z-40 overflow-hidden">
       <div
-        className="fixed inset-0 bg-slate-950/20 backdrop-blur-[2px] transition-opacity duration-300 animate-fade-in"
+        className="fixed inset-0 bg-slate-950/60 transition-opacity duration-300 animate-fade-in"
         onClick={onClose}
       />
 

@@ -1,6 +1,10 @@
+@import "stream-chat-react/dist/css/index.css";
 @import "tw-animate-css";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/inter/wght.css";
+@import "katex/dist/katex.min.css";
+@import "prismjs/themes/prism-tomorrow.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -170,4 +174,66 @@
     -ms-overflow-style: none !important;
     scrollbar-width: none !important;
   }
+
+  /* ── Stream Chat React SDK Theme Overrides (Cobalt Mist) ─────────────────── */
+  .str-chat {
+    --str-chat__primary-color: #1E90FF;
+    --str-chat__active-primary-color: #005FFF;
+    --str-chat__font-family: var(--font-sans);
+    background-color: transparent !important;
+    color: inherit !important;
+    height: 100%;
+    width: 100%;
+  }
+
+  .str-chat__theme-light {
+    --str-chat__background-color: #FFFFFF;
+    --str-chat__secondary-background-color: #F1F5F9;
+    --str-chat__message-bubble-background: #F1F5F9;
+    --str-chat__message-bubble-color: #0F172A;
+    --str-chat__own-message-bubble-background: #1E90FF;
+    --str-chat__own-message-bubble-color: #FFFFFF;
+  }
+
+  .dark .str-chat,
+  .str-chat__theme-dark {
+    --str-chat__background-color: #080D1A;
+    --str-chat__secondary-background-color: #0F1A30;
+    --str-chat__message-bubble-background: #0F1A30;
+    --str-chat__message-bubble-color: #F8FAFC;
+    --str-chat__own-message-bubble-background: #1E90FF;
+    --str-chat__own-message-bubble-color: #FFFFFF;
+  }
+
+  .str-chat__channel {
+    background-color: transparent !important;
+    height: 100%;
+  }
+
+  .str-chat__main-panel {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .str-chat__list {
+    background-color: transparent !important;
+    height: 100%;
+    flex: 1;
+  }
+
+  .str-chat__message-list-scroll-container {
+    height: 100%;
+  }
+
+  .str-chat__ul {
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .str-chat__li {
+    list-style: none !important;
+  }
 }
+

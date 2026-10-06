@@ -1,257 +1,322 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, X, Check, Users, MessageSquare, ArrowRight, CornerDownRight } from "lucide-react";
-import { useDirectMessageStore } from "../../../store/direct-message.store";
-import { useChatStore } from "../../../store/chat.store";
-import type { DirectMessage } from "../../../types/direct-message";
-import type { ChatMessage } from "../../../types/chat";
+import {
+  Share2,
+  X,
+  Search,
+  MessageSquare,
+  Hash,
+  Check,
+  Loader2,
+  Send,
+  Users
+} from "lucide-react";
+import type { LocalMessage, StreamChat, Channel as StreamChannel } from "stream-chat";
+import { useToastStore } from "../../../store/toast.store";
 
 export interface ForwardMessageModalProps {
   isOpen: boolean;
   onClose: () => void;
-  messagesToForward: (DirectMessage | ChatMessage)[];
-  onForwardDMs: (targetConversationIds: string[]) => Promise<void>;
-  onForwardCircles: (targetCommunityId: string, channelId?: string) => Promise<void>;
+  messages: LocalMessage[];
+  client: StreamChat;
+  onForwardComplete?: () => void;
 }
 
-export const ForwardMessageModal: React.FC<ForwardMessageModalProps> = ({
+interface DestinationItem {
+  id: string;
+  cid: string;
+  name: string;
+  avatar?: string;
+  type: "dm" | "community";
+  subtitle?: string;
+  channel: StreamChannel;
+}
+
+export function ForwardMessageModal({
   isOpen,
   onClose,
-  messagesToForward,
-  onForwardDMs,
-  onForwardCircles
-}) => {
-  const { conversations } = useDirectMessageStore();
-  const { channels, selectedCommunityId } = useChatStore();
-
+  messages,
+  client,
+  onForwardComplete
+}: ForwardMessageModalProps) {
   const [search, setSearch] = useState("");
-  const [selectedDmIds, setSelectedDmIds] = useState<string[]>([]);
+  const [destinations, setDestinations] = useState<DestinationItem[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const { addToast } = useToastStore();
 
-  // Filtered direct message conversations
-  const filteredConversations = useMemo(() => {
-    if (!search.trim()) return conversations;
-    const q = search.toLowerCase();
-    return conversations.filter((c) =>
-      c.participants.some((p) => p.fullName?.toLowerCase().includes(q) || p.rollNumber?.toLowerCase().includes(q))
-    );
-  }, [conversations, search]);
+  // Load available DM and Community channels
+  useEffect(() => {
+    if (!isOpen || !client.userID) return;
+    let isMounted = true;
+    setLoading(true);
 
-  // Filtered text channels in current circle
-  const textChannels = useMemo(() => {
-    const list = channels.filter((c) => c.type !== "voice");
-    if (!search.trim()) return list;
-    const q = search.toLowerCase();
-    return list.filter((c) => c.name.toLowerCase().includes(q));
-  }, [channels, search]);
+    async function loadDestinations() {
+      try {
+        const channels = await client.queryChannels(
+          {
+            members: { $in: [client.userID as string] }
+          },
+          { last_message_at: -1 },
+          { limit: 30, state: true }
+        );
 
-  const toggleDmSelection = (convId: string) => {
-    setSelectedDmIds((prev) =>
-      prev.includes(convId) ? prev.filter((id) => id !== convId) : [...prev, convId]
-    );
-  };
+        if (!isMounted) return;
 
-  const handleForward = async () => {
-    if (selectedDmIds.length === 0 && !selectedChannelId) return;
-    setIsSubmitting(true);
-    try {
-      if (selectedDmIds.length > 0) {
-        await onForwardDMs(selectedDmIds);
+        const items: DestinationItem[] = channels.map((chan) => {
+          const isDM = chan.type === "messaging";
+          let name = (chan.data as any)?.name as string;
+          let avatar: string | undefined = undefined;
+          let subtitle = "";
+
+          if (isDM) {
+            const members = Object.values(chan.state.members || {});
+            const peer = members.find((m) => m.user_id !== client.userID) || members[0];
+            name = (peer?.user?.name as string) || "Classmate";
+            avatar = peer?.user?.image as string;
+            subtitle = ((peer?.user as any)?.department as string) || "Direct Message";
+          } else {
+            name = name || chan.id;
+            subtitle = ((chan.data as any)?.communityName as string) || "Community Channel";
+          }
+
+          return {
+            id: chan.id,
+            cid: chan.cid,
+            name,
+            avatar,
+            type: isDM ? "dm" : "community",
+            subtitle,
+            channel: chan
+          };
+        });
+
+        setDestinations(items);
+      } catch (err) {
+        console.error("Failed to load forward destinations:", err);
+      } finally {
+        if (isMounted) setLoading(false);
       }
-      if (selectedChannelId && selectedCommunityId) {
-        await onForwardCircles(selectedCommunityId, selectedChannelId);
-      }
-      onClose();
-    } catch (err) {
-      console.error("Failed to forward messages:", err);
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+
+    loadDestinations();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, client]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return destinations;
+    const q = search.toLowerCase();
+    return destinations.filter(
+      (d) =>
+        d.name.toLowerCase().includes(q) ||
+        (d.subtitle && d.subtitle.toLowerCase().includes(q))
+    );
+  }, [destinations, search]);
 
   if (!isOpen) return null;
 
-  const totalSelected = selectedDmIds.length + (selectedChannelId ? 1 : 0);
+  const handleSendForward = async () => {
+    if (!selectedChannelId || messages.length === 0) return;
+    const target = destinations.find((d) => d.id === selectedChannelId);
+    if (!target) return;
+
+    setSending(true);
+    try {
+      for (const msg of messages) {
+        const originalSenderName = msg.user?.name || "Classmate";
+        const originalSenderAvatar = msg.user?.image;
+        const originalSenderId = msg.user?.id || "";
+
+        await target.channel.sendMessage({
+          text: msg.text || "",
+          attachments: msg.attachments || [],
+          forwarded: true,
+          forwarded_from: {
+            id: originalSenderId,
+            name: originalSenderName,
+            avatar: originalSenderAvatar
+          }
+        } as any);
+      }
+
+      addToast(
+        messages.length === 1
+          ? `Message forwarded to ${target.name}`
+          : `${messages.length} messages forwarded to ${target.name}`,
+        "success"
+      );
+
+      onForwardComplete?.();
+      onClose();
+    } catch (err: any) {
+      addToast(err?.message || "Failed to forward message", "error");
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div
+        className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/50 select-none animate-in fade-in duration-150"
+        onClick={onClose}
+      >
         <motion.div
+          onClick={(e) => e.stopPropagation()}
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="w-full max-w-md bg-[#0F172A] border border-slate-700/60 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] text-slate-200"
+          transition={{ duration: 0.16 }}
+          className="relative w-full max-w-md rounded-3xl bg-white dark:bg-[#0D1524] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col text-slate-800 dark:text-slate-100 max-h-[85vh]"
         >
           {/* Header */}
-          <div className="p-4 border-b border-slate-700/60 flex items-center justify-between bg-slate-900/50">
-            <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <span>Forward {messagesToForward.length > 1 ? `${messagesToForward.length} Messages` : "Message"}</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">Select destinations to forward to</p>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-[#090F1A] shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-[#1E90FF]">
+                <Share2 size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Forward {messages.length > 1 ? `${messages.length} Messages` : "Message"}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Choose a peer or study channel destination
+                </p>
+              </div>
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           </div>
 
-          {/* Snippet Preview */}
-          {messagesToForward.length > 0 && (
-            <div className="px-4 py-2.5 bg-[#162544]/40 border-b border-slate-700/40 text-xs text-slate-300 flex items-start gap-2">
-              <CornerDownRight size={14} className="text-[#1E90FF] shrink-0 mt-0.5" />
-              <div className="line-clamp-2 italic text-slate-400">
-                "{messagesToForward[0]?.content || (messagesToForward[0]?.attachments?.length ? "Attachment" : "Message")}"
-                {messagesToForward.length > 1 && ` and ${messagesToForward.length - 1} more`}
-              </div>
+          {/* Snippet Preview of Forwarded Content */}
+          <div className="px-6 py-3 bg-slate-50/80 dark:bg-[#111929] border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+              Forwarding content:
+            </p>
+            <div className="p-2.5 rounded-xl bg-white dark:bg-[#0D1524] border border-slate-200/80 dark:border-slate-700/60 text-xs text-slate-700 dark:text-slate-200 line-clamp-2 italic">
+              {messages.length === 1
+                ? messages[0].text || (messages[0].attachments?.length ? "[Attachment]" : "")
+                : `${messages.length} messages selected (${messages.map((m) => m.user?.name || "Classmate").slice(0, 3).join(", ")})`}
             </div>
-          )}
+          </div>
 
-          {/* Search bar */}
-          <div className="p-3 border-b border-slate-800/80 bg-slate-900/30">
+          {/* Search Input */}
+          <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-[#0D1524] shrink-0">
             <div className="relative flex items-center">
-              <Search size={15} className="absolute left-3 text-slate-400 pointer-events-none" />
+              <Search size={14} className="absolute left-3 text-slate-400 pointer-events-none" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search chats, study circles..."
-                className="w-full pl-9 pr-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-[#1E90FF] transition-colors"
-                autoFocus
+                placeholder="Search classmates or channels..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-100 dark:bg-slate-800/60 border border-transparent focus:border-[#1E90FF] rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none transition-colors"
               />
             </div>
           </div>
 
           {/* Destination List */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-4 scrollbar-thin scrollbar-thumb-slate-700">
-            {/* Direct Messages Section */}
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400 px-1 mb-2 block">
-                Direct Messages
-              </span>
-              {filteredConversations.length === 0 ? (
-                <div className="text-xs text-slate-500 px-2 py-1 italic">No chats found</div>
-              ) : (
-                <div className="space-y-1">
-                  {filteredConversations.map((conv) => {
-                    const peer = conv.participants.find((p) => p.fullName) || conv.participants[0];
-                    const isSelected = selectedDmIds.includes(conv._id);
-                    return (
-                      <button
-                        key={conv._id}
-                        type="button"
-                        onClick={() => toggleDmSelection(conv._id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer ${
-                          isSelected
-                            ? "bg-[#1E90FF]/15 border-[#1E90FF]/60 text-white"
-                            : "bg-slate-800/30 border-slate-700/40 hover:bg-slate-800/60 text-slate-200"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shrink-0">
-                            {peer?.profilePicture ? (
-                              <img src={peer.profilePicture} alt="" className="w-full h-full rounded-full object-cover" />
-                            ) : (
-                              peer?.fullName?.charAt(0) || "U"
-                            )}
-                          </div>
-                          <div className="flex flex-col text-left">
-                            <span className="text-xs font-semibold text-slate-100">{peer?.fullName || "Student"}</span>
-                            <span className="text-[10px] text-slate-400">{peer?.department || peer?.rollNumber || "Direct Message"}</span>
-                          </div>
-                        </div>
-                        <div
-                          className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors ${
-                            isSelected
-                              ? "bg-[#1E90FF] border-[#1E90FF] text-white"
-                              : "border-slate-600 bg-slate-800/80 text-transparent"
-                          }`}
-                        >
-                          <Check size={12} strokeWidth={3} />
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Study Circle Channels Section */}
-            {textChannels.length > 0 && (
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 px-1 mb-2 block">
-                  Study Circle Channels
-                </span>
-                <div className="space-y-1">
-                  {textChannels.map((chan) => {
-                    const id = chan._id || chan.name;
-                    const isSelected = selectedChannelId === id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setSelectedChannelId(isSelected ? null : id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer ${
-                          isSelected
-                            ? "bg-emerald-500/15 border-emerald-500/60 text-white"
-                            : "bg-slate-800/30 border-slate-700/40 hover:bg-slate-800/60 text-slate-200"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-                            <Users size={15} />
-                          </div>
-                          <div className="flex flex-col text-left">
-                            <span className="text-xs font-semibold text-slate-100">#{chan.name}</span>
-                            <span className="text-[10px] text-slate-400">{chan.topic || "Channel"}</span>
-                          </div>
-                        </div>
-                        <div
-                          className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors ${
-                            isSelected
-                              ? "bg-emerald-500 border-emerald-500 text-white"
-                              : "border-slate-600 bg-slate-800/80 text-transparent"
-                          }`}
-                        >
-                          <Check size={12} strokeWidth={3} />
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5 scrollbar-thin">
+            {loading ? (
+              <div className="py-12 flex flex-col items-center justify-center text-slate-400 text-xs gap-2">
+                <Loader2 size={24} className="animate-spin text-[#1E90FF]" />
+                <span>Loading conversations...</span>
               </div>
+            ) : filtered.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 text-xs">
+                No matching classmates or channels found.
+              </div>
+            ) : (
+              filtered.map((item) => {
+                const isSelected = selectedChannelId === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSelectedChannelId(item.id)}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                      isSelected
+                        ? "bg-sky-50 dark:bg-sky-950/40 border-[#1E90FF] ring-1 ring-[#1E90FF]/30"
+                        : "bg-slate-50/60 dark:bg-[#121B2D] border-slate-200/80 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/80"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative shrink-0">
+                        {item.avatar ? (
+                          <img
+                            src={item.avatar}
+                            alt={item.name}
+                            className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700"
+                          />
+                        ) : item.type === "dm" ? (
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-sky-500 to-blue-600 text-white font-bold text-xs flex items-center justify-center">
+                            {item.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-500 flex items-center justify-center">
+                            <Hash size={16} />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                          {item.name}
+                        </p>
+                        <p className="text-[10px] text-slate-400 truncate">{item.subtitle}</p>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center border transition-colors shrink-0 ${
+                        isSelected
+                          ? "border-[#1E90FF] bg-[#1E90FF] text-white"
+                          : "border-slate-300 dark:border-slate-700"
+                      }`}
+                    >
+                      {isSelected && <Check size={12} strokeWidth={3} />}
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
 
-          {/* Footer Submit */}
-          <div className="p-4 border-t border-slate-700/60 bg-slate-900/60 flex items-center justify-between">
-            <span className="text-xs text-slate-400">
-              {totalSelected === 0 ? "Select at least 1 destination" : `${totalSelected} selected`}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onClose}
-                className="px-3.5 py-2 rounded-xl text-xs font-medium text-slate-300 hover:bg-slate-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={totalSelected === 0 || isSubmitting}
-                onClick={handleForward}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-[#1E90FF] hover:bg-[#1C86EE] text-white disabled:opacity-40 disabled:pointer-events-none transition-all shadow-md shadow-[#1E90FF]/30"
-              >
-                <span>{isSubmitting ? "Forwarding..." : `Forward (${totalSelected})`}</span>
-                <ArrowRight size={14} />
-              </button>
-            </div>
+          {/* Footer Actions */}
+          <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2 shrink-0 bg-slate-50/30 dark:bg-[#0A1120]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!selectedChannelId || sending}
+              onClick={handleSendForward}
+              className="px-4 py-2 rounded-xl bg-[#1E90FF] hover:bg-sky-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold shadow-md shadow-sky-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              {sending ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Forwarding...</span>
+                </>
+              ) : (
+                <>
+                  <Send size={14} />
+                  <span>Send</span>
+                </>
+              )}
+            </button>
           </div>
         </motion.div>
       </div>
     </AnimatePresence>
   );
-};
-
-export default ForwardMessageModal;
+}

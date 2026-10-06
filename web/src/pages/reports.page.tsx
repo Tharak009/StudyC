@@ -1039,7 +1039,7 @@ export function ReportsPage() {
 
       {/* Secondary Warning Modal overlay for inputting Warning Reason */}
       {confirmDialog && confirmDialog.type === "WARN" && (
-        <div className="fixed inset-0 z-50 flex justify-center items-start overflow-y-auto p-4 bg-slate-950/20 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-50 flex justify-center items-start overflow-y-auto p-4 bg-slate-950/60">
           <div className="relative my-8 w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-white/5 dark:bg-ink-900 animate-scale-up">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-650 dark:bg-amber-500/10 dark:text-amber-455">
@@ -1079,7 +1079,7 @@ export function ReportsPage() {
 
       {/* Secondary Warning Modal overlay for inputting Suspension Reason */}
       {confirmDialog && confirmDialog.type === "SUSPEND" && (
-        <div className="fixed inset-0 z-50 flex justify-center items-start overflow-y-auto p-4 bg-slate-950/20 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-50 flex justify-center items-start overflow-y-auto p-4 bg-slate-950/60">
           <div className="relative my-8 w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-white/5 dark:bg-ink-900 animate-scale-up">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex size-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-455">

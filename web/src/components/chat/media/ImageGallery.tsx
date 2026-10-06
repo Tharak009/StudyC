@@ -1,148 +1,193 @@
 import React, { useState } from "react";
-import { ImageOff, RotateCcw } from "lucide-react";
-import { getMediaUrl } from "../../../utils/media-url";
-
-export interface GalleryItem {
-  url: string;
-  originalName: string;
-  caption?: string;
-  mimeType?: string;
-}
+import { ImageOff, Loader2 } from "lucide-react";
+import type { LightboxImage } from "./MediaLightbox";
 
 interface ImageGalleryProps {
-  images: GalleryItem[];
-  onImageClick: (index: number) => void;
-  isMe?: boolean;
+  images: LightboxImage[];
+  onOpenLightbox?: (index: number) => void;
+  isSelectMode?: boolean;
 }
 
-export const ImageGallery: React.FC<ImageGalleryProps> = ({
+function GalleryImageItem({
+  image,
+  index,
+  className = "",
+  onOpenLightbox,
+  isSelectMode = false,
+  overlayText
+}: {
+  image: LightboxImage;
+  index: number;
+  className?: string;
+  onOpenLightbox?: (index: number) => void;
+  isSelectMode?: boolean;
+  overlayText?: string;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+
+  return (
+    <div
+      onClick={() => {
+        if (!isSelectMode && onOpenLightbox && !error) {
+          onOpenLightbox(index);
+        }
+      }}
+      className={`relative overflow-hidden bg-slate-200/70 dark:bg-slate-800/80 transition-all ${
+        !isSelectMode && !error ? "cursor-pointer hover:opacity-95" : ""
+      } ${className}`}
+    >
+      {/* Skeleton / Loading Indicator */}
+      {!loaded && !error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-200/50 dark:bg-slate-800/50 animate-pulse">
+          <Loader2 size={20} className="text-slate-400 animate-spin opacity-50" />
+        </div>
+      )}
+
+      {/* Error Fallback */}
+      {error ? (
+        <div className="flex flex-col items-center justify-center w-full h-full min-h-[100px] p-4 text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/50">
+          <ImageOff size={24} className="mb-1 opacity-60" />
+          <span className="text-[10px]">Failed to load</span>
+        </div>
+      ) : (
+        <img
+          src={image.url}
+          alt={image.title || image.fallback || `Attachment ${index + 1}`}
+          loading="lazy"
+          onLoad={() => setLoaded(true)}
+          onError={() => {
+            setError(true);
+            setLoaded(true);
+          }}
+          className={`w-full h-full object-cover transition-opacity duration-200 ${
+            loaded ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      )}
+
+      {/* Overlay text for +N additional photos */}
+      {overlayText && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-xs text-white text-xl font-bold">
+          {overlayText}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ImageGallery({
   images,
-  onImageClick,
-  isMe = false
-}) => {
-  const [loadedMap, setLoadedMap] = useState<Record<number, boolean>>({});
-  const [errorMap, setErrorMap] = useState<Record<number, boolean>>({});
-  const [retryKeys, setRetryKeys] = useState<Record<number, number>>({});
-
-  const handleRetry = (e: React.MouseEvent, index: number) => {
-    e.stopPropagation();
-    setErrorMap((prev) => ({ ...prev, [index]: false }));
-    setRetryKeys((prev) => ({ ...prev, [index]: (prev[index] || 0) + 1 }));
-  };
-
+  onOpenLightbox,
+  isSelectMode = false
+}: ImageGalleryProps) {
   if (!images || images.length === 0) return null;
 
   const count = images.length;
 
-  const renderImage = (img: GalleryItem, index: number, className: string) => {
-    const isLoaded = loadedMap[index];
-    const isError = errorMap[index];
-    const retryCount = retryKeys[index] || 0;
-    const mediaUrl = getMediaUrl(img.url);
-    const srcWithRetry = retryCount > 0 ? `${mediaUrl}${mediaUrl.includes("?") ? "&" : "?"}_r=${retryCount}` : mediaUrl;
-
-    return (
-      <div
-        key={index}
-        onClick={() => onImageClick(index)}
-        className={`relative overflow-hidden cursor-pointer group bg-slate-100 dark:bg-slate-900/60 ${className}`}
-      >
-        {/* Loading Skeleton */}
-        {!isLoaded && !isError && (
-          <div className="absolute inset-0 bg-slate-200/70 dark:bg-slate-800/70 animate-pulse flex items-center justify-center">
-            <span className="text-[10px] text-slate-400 font-medium">Loading...</span>
-          </div>
-        )}
-
-        {/* Error Fallback */}
-        {isError ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-3 bg-slate-100 dark:bg-slate-900 text-slate-400">
-            <ImageOff size={20} className="mb-1 text-slate-400" />
-            <span className="text-[10px] text-center font-medium">Image unavailable</span>
-            <button
-              type="button"
-              onClick={(e) => handleRetry(e, index)}
-              className="mt-1.5 flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:text-[#1E90FF] transition-colors"
-            >
-              <RotateCcw size={10} />
-              <span>Retry</span>
-            </button>
-          </div>
-        ) : (
-          <img
-            src={srcWithRetry}
-            alt={img.originalName || `Image ${index + 1}`}
-            loading="lazy"
-            onLoad={() => setLoadedMap((prev) => ({ ...prev, [index]: true }))}
-            onError={() => setErrorMap((prev) => ({ ...prev, [index]: true }))}
-            className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
-              isLoaded ? "opacity-100" : "opacity-0"
-            }`}
-          />
-        )}
-      </div>
-    );
-  };
-
-  // 1 Image: Large hero presentation
+  // Single Image Layout
   if (count === 1) {
     return (
-      <div className="rounded-xl overflow-hidden my-1 max-w-[320px] max-h-[300px]">
-        {renderImage(images[0], 0, "h-56 sm:h-64 rounded-xl")}
+      <div className="max-w-sm sm:max-w-md rounded-2xl overflow-hidden my-1 shadow-2xs border border-slate-200/60 dark:border-slate-700/50">
+        <GalleryImageItem
+          image={images[0]}
+          index={0}
+          className="max-h-80 w-full"
+          onOpenLightbox={onOpenLightbox}
+          isSelectMode={isSelectMode}
+        />
       </div>
     );
   }
 
-  // 2 Images: 2-column side-by-side
+  // 2 Images Layout: 2 equal columns
   if (count === 2) {
     return (
-      <div className="grid grid-cols-2 gap-1.5 rounded-xl overflow-hidden my-1 max-w-[340px]">
-        {images.map((img, i) => renderImage(img, i, "h-36 sm:h-44 rounded-lg"))}
+      <div className="grid grid-cols-2 gap-1.5 max-w-sm sm:max-w-md rounded-2xl overflow-hidden my-1 shadow-2xs">
+        <GalleryImageItem
+          image={images[0]}
+          index={0}
+          className="h-44 w-full rounded-l-xl"
+          onOpenLightbox={onOpenLightbox}
+          isSelectMode={isSelectMode}
+        />
+        <GalleryImageItem
+          image={images[1]}
+          index={1}
+          className="h-44 w-full rounded-r-xl"
+          onOpenLightbox={onOpenLightbox}
+          isSelectMode={isSelectMode}
+        />
       </div>
     );
   }
 
-  // 3 Images: 1 top hero, 2 bottom side-by-side
+  // 3 Images Layout: 1 large left, 2 stacked right
   if (count === 3) {
     return (
-      <div className="flex flex-col gap-1.5 rounded-xl overflow-hidden my-1 max-w-[340px]">
-        {renderImage(images[0], 0, "h-40 sm:h-48 rounded-lg")}
-        <div className="grid grid-cols-2 gap-1.5">
-          {renderImage(images[1], 1, "h-28 sm:h-32 rounded-lg")}
-          {renderImage(images[2], 2, "h-28 sm:h-32 rounded-lg")}
+      <div className="grid grid-cols-3 gap-1.5 max-w-sm sm:max-w-md rounded-2xl overflow-hidden my-1 shadow-2xs">
+        <GalleryImageItem
+          image={images[0]}
+          index={0}
+          className="col-span-2 h-52 w-full rounded-l-xl"
+          onOpenLightbox={onOpenLightbox}
+          isSelectMode={isSelectMode}
+        />
+        <div className="flex flex-col gap-1.5 col-span-1 h-52">
+          <GalleryImageItem
+            image={images[1]}
+            index={1}
+            className="h-full w-full rounded-tr-xl"
+            onOpenLightbox={onOpenLightbox}
+            isSelectMode={isSelectMode}
+          />
+          <GalleryImageItem
+            image={images[2]}
+            index={2}
+            className="h-full w-full rounded-br-xl"
+            onOpenLightbox={onOpenLightbox}
+            isSelectMode={isSelectMode}
+          />
         </div>
       </div>
     );
   }
 
-  // 4+ Images: 2x2 grid with +N badge on 4th image
+  // 4 Images Layout: 2x2 grid
+  if (count === 4) {
+    return (
+      <div className="grid grid-cols-2 gap-1.5 max-w-sm sm:max-w-md rounded-2xl overflow-hidden my-1 shadow-2xs">
+        {images.slice(0, 4).map((img, idx) => (
+          <GalleryImageItem
+            key={img.url || idx}
+            image={img}
+            index={idx}
+            className="h-36 w-full rounded-xl"
+            onOpenLightbox={onOpenLightbox}
+            isSelectMode={isSelectMode}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // 5+ Images Layout: 2x2 grid with +N on the 4th item
   const displayImages = images.slice(0, 4);
-  const remaining = count - 4;
+  const remainingCount = count - 3;
 
   return (
-    <div className="grid grid-cols-2 gap-1.5 rounded-xl overflow-hidden my-1 max-w-[340px]">
-      {displayImages.map((img, i) => {
-        if (i === 3 && remaining > 0) {
-          return (
-            <div
-              key={i}
-              onClick={() => onImageClick(3)}
-              className="relative overflow-hidden cursor-pointer group h-28 sm:h-32 rounded-lg bg-slate-100 dark:bg-slate-900/60"
-            >
-              <img
-                src={getMediaUrl(img.url)}
-                alt={img.originalName}
-                loading="lazy"
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center text-white font-bold text-lg">
-                +{remaining}
-              </div>
-            </div>
-          );
-        }
-        return renderImage(img, i, "h-28 sm:h-32 rounded-lg");
-      })}
+    <div className="grid grid-cols-2 gap-1.5 max-w-sm sm:max-w-md rounded-2xl overflow-hidden my-1 shadow-2xs">
+      {displayImages.map((img, idx) => (
+        <GalleryImageItem
+          key={img.url || idx}
+          image={img}
+          index={idx}
+          className="h-36 w-full rounded-xl"
+          onOpenLightbox={onOpenLightbox}
+          isSelectMode={isSelectMode}
+          overlayText={idx === 3 ? `+${remainingCount}` : undefined}
+        />
+      ))}
     </div>
   );
-};
+}
