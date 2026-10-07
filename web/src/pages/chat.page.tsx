@@ -41,7 +41,7 @@ export function ChatPage() {
   const { addToast } = useToastStore();
 
   // Connection and client from Stream provider
-  const { client, connectionStatus, reconnect } = useStreamChat();
+  const { client, connectionStatus, error, reconnect } = useStreamChat();
 
   // Navigation mode: "circle" or "dms"
   const urlConvId = searchParams.get("conv");
@@ -283,6 +283,12 @@ export function ChatPage() {
 
   // 2. Connection Error State
   if (connectionStatus === "error" && !client?.userID) {
+    const isConfigError = Boolean(
+      error?.includes("VITE_STREAM_API_KEY") ||
+      error?.includes("credentials are not configured") ||
+      error?.includes("STREAM_NOT_CONFIGURED")
+    );
+
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-[#080D1A] font-sans p-4">
         <div className="text-center space-y-4 p-8 max-w-md bg-white dark:bg-[#0D1524] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl">
@@ -290,14 +296,25 @@ export function ChatPage() {
             <AlertCircle size={24} />
           </div>
           <h2 className="text-base font-bold text-slate-800 dark:text-slate-200">
-            Chat Service Unavailable
+            {isConfigError ? "Stream Chat Configuration Required" : "Chat Service Unavailable"}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Unable to connect to the Stream Chat realtime network. Please verify your internet connection or try reconnecting.
+            {error || "Unable to connect to the Stream Chat realtime network. Please verify your internet connection or try reconnecting."}
           </p>
+          {isConfigError && (
+            <div className="text-left bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800/80 text-[11px] text-slate-600 dark:text-slate-300 space-y-2">
+              <p className="font-semibold text-slate-800 dark:text-slate-200">
+                Missing Environment Configuration:
+              </p>
+              <ul className="list-disc pl-4 space-y-1 font-mono text-[10.5px]">
+                <li><code className="text-[#1E90FF]">web/.env</code>: <span className="text-slate-500">VITE_STREAM_API_KEY</span></li>
+                <li><code className="text-[#1E90FF]">backend/.env</code>: <span className="text-slate-500">STREAM_API_KEY & STREAM_API_SECRET</span></li>
+              </ul>
+            </div>
+          )}
           <button
             onClick={() => reconnect()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1E90FF] hover:bg-sky-600 text-white text-xs font-semibold shadow-xs transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1E90FF] hover:bg-sky-600 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
           >
             <RefreshCw size={14} />
             <span>Retry Connection</span>

@@ -56,7 +56,7 @@ export function CommunityGroupChatView({
   onToggleChannels
 }: CommunityGroupChatViewProps) {
   const currentUser = useAuthStore((state) => state.user);
-  const { client, connectionStatus } = useStreamChat();
+  const { client, connectionStatus, error: streamError, reconnect } = useStreamChat();
 
   const [channel, setChannel] = useState<StreamChannel | null>(null);
   const [isChannelLoading, setIsChannelLoading] = useState(true);
@@ -195,7 +195,27 @@ export function CommunityGroupChatView({
 
       {/* 2. Main Chat Area + Sliding Info Drawer */}
       <div className="flex-1 flex min-w-0 overflow-hidden relative">
-        {isChannelLoading ? (
+        {connectionStatus === "error" ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            <div className="max-w-md p-6 rounded-2xl border border-red-200 bg-red-50/50 dark:border-red-500/20 dark:bg-red-950/20 space-y-3">
+              <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+              <h3 className="text-sm font-bold text-red-700 dark:text-red-400">
+                Chat Service Unavailable
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                {streamError || "Unable to connect to the Stream Chat service. Check network or server configuration."}
+              </p>
+              <button
+                type="button"
+                onClick={() => reconnect()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 transition-colors cursor-pointer"
+              >
+                <RefreshCw size={12} />
+                <span>Retry Connection</span>
+              </button>
+            </div>
+          </div>
+        ) : isChannelLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3">
             <Loader2 size={32} className="animate-spin text-[#1E90FF]" />
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
