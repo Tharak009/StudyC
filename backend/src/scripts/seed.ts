@@ -56,6 +56,7 @@ export async function runSeed(): Promise<void> {
 
     // Root Administrator
     const adminUser = await User.create({
+      _id: new mongoose.Types.ObjectId("6aa4081d0e3763a915e15237"),
       fullName: "Dean Rajesh Sharma",
       rollNumber: "ADMIN-2026-001",
       department: "CSE",
@@ -141,9 +142,24 @@ export async function runSeed(): Promise<void> {
       lastLogin: new Date()
     });
 
+    const studentBothilak = await User.create({
+      _id: new mongoose.Types.ObjectId("6aa431e98657a12710f40010"),
+      fullName: "Bothilak",
+      rollNumber: "IT102-12",
+      department: "Computer Science & Engineering",
+      academicYear: 3,
+      email: "bothilak@campus.edu",
+      password: studentPassword,
+      role: ROLES.STUDENT,
+      status: USER_STATUS.ACTIVE,
+      bio: "Full-Stack Developer & StudyConnect Collaborator | 7-day streak 🔥",
+      interests: ["full-stack", "web-development", "react", "node"],
+      lastLogin: new Date()
+    });
+
     console.log(`✓ Seeded 1 Root Admin: ${adminUser.email} (Password: Admin@2026!)`);
     console.log(`✓ Seeded 1 Faculty Moderator: ${facultyUser.email} (Password: Faculty@2026!)`);
-    console.log(`✓ Seeded 4 Verified Students: aarav.patel, meera.nair, rohan.gupta, ananya.singh (Password: Student@2026!)\n`);
+    console.log(`✓ Seeded Verified Students: aarav.patel, meera.nair, rohan.gupta, ananya.singh, bothilak (Password: Student@2026!)\n`);
 
     // ── 3. Seed Official Campus Communities ──────────────────────────────────
     console.log("🏛️  Seeding Official Campus Communities & Study Stages...");
@@ -193,6 +209,7 @@ export async function runSeed(): Promise<void> {
       CommunityMember.create({ communityId: cseCommunity._id, userId: studentMeera._id, role: "MEMBER" }),
       CommunityMember.create({ communityId: cseCommunity._id, userId: studentRohan._id, role: "MEMBER" }),
       CommunityMember.create({ communityId: cseCommunity._id, userId: studentAnanya._id, role: "MEMBER" }),
+      CommunityMember.create({ communityId: cseCommunity._id, userId: studentBothilak._id, role: "MEMBER" }),
 
       // AI & Robotics Circle Memberships
       CommunityMember.create({ communityId: aiCommunity._id, userId: facultyUser._id, role: "OWNER" }),
