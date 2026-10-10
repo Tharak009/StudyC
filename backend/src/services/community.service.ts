@@ -218,6 +218,27 @@ export class CommunityService {
       throw new ApiError(400, "Cannot join an archived community", [], "COMMUNITY_ARCHIVED");
     }
 
+    const existing = await this.members.findMembership(id, userId);
+    if (existing?.status === MEMBERSHIP_STATUS.BANNED) {
+      throw new ApiError(403, "You have been banned from this community", [], "MEMBER_BANNED");
+    }
+    if (existing?.status === MEMBERSHIP_STATUS.SUSPENDED) {
+      if (existing.suspendedUntil && new Date() <= new Date(existing.suspendedUntil)) {
+        throw new ApiError(
+          403,
+          `Your membership is suspended until ${new Date(existing.suspendedUntil).toLocaleString()}`,
+          [],
+          "MEMBER_SUSPENDED"
+        );
+      }
+    }
+    // Existing active members can safely retry synchronization even in private
+    // communities, where new direct joins remain disallowed below.
+    if (existing && isActiveMember(existing.status)) {
+      await this.syncMemberToStreamChannels(id, userId, existing.role);
+      return this.withViewerState(community, userId, existing.role, existing.status);
+    }
+
     // Access policy enforcement
     if (community.visibility === COMMUNITY_VISIBILITY.INVITE_ONLY) {
       throw new ApiError(400, "This community is invite-only and cannot be joined directly", [], "INVITE_ONLY_COMMUNITY");
@@ -236,27 +257,7 @@ export class CommunityService {
       await this.assertCollegeEligible(userId, community);
     }
 
-    const existing = await this.members.findMembership(id, userId);
     if (existing) {
-      if (existing.status === MEMBERSHIP_STATUS.BANNED) {
-        throw new ApiError(403, "You have been banned from this community", [], "MEMBER_BANNED");
-      }
-
-      if (existing.status === MEMBERSHIP_STATUS.SUSPENDED) {
-        if (existing.suspendedUntil && new Date() <= new Date(existing.suspendedUntil)) {
-          throw new ApiError(
-            403,
-            `Your membership is suspended until ${new Date(existing.suspendedUntil).toLocaleString()}`,
-            [],
-            "MEMBER_SUSPENDED"
-          );
-        }
-      }
-
-      if (isActiveMember(existing.status)) {
-        return this.withViewerState(community, userId, existing.role, existing.status);
-      }
-
       if (existing.status === MEMBERSHIP_STATUS.PENDING) {
         return this.withViewerState(community, userId, existing.role, existing.status);
       }
@@ -272,10 +273,12 @@ export class CommunityService {
       });
       const updated = await this.communities.incrementMemberCount(id, 1);
 
-      // Synchronize new member into Stream community channels
-      streamService.addMemberToCommunityChannels(id, userId, existing.role || COMMUNITY_ROLES.MEMBER).catch(() => {});
+      const role = existing.role === COMMUNITY_ROLES.OWNER
+        ? COMMUNITY_ROLES.OWNER
+        : COMMUNITY_ROLES.MEMBER;
+      await this.syncMemberToStreamChannels(id, userId, role);
 
-      return this.withViewerState(updated ?? community, userId, existing.role || COMMUNITY_ROLES.MEMBER, MEMBERSHIP_STATUS.ACTIVE);
+      return this.withViewerState(updated ?? community, userId, role, MEMBERSHIP_STATUS.ACTIVE);
     }
 
     // New membership
@@ -288,8 +291,7 @@ export class CommunityService {
     });
     const updated = await this.communities.incrementMemberCount(id, 1);
 
-    // Synchronize member into Stream community channels
-    streamService.addMemberToCommunityChannels(id, userId, COMMUNITY_ROLES.MEMBER).catch(() => {});
+    await this.syncMemberToStreamChannels(id, userId, COMMUNITY_ROLES.MEMBER);
 
     return this.withViewerState(updated ?? community, userId, COMMUNITY_ROLES.MEMBER, MEMBERSHIP_STATUS.ACTIVE);
   }
@@ -396,6 +398,12 @@ export class CommunityService {
     await this.requireManager(id, actorId, actorRole);
 
     const membership = await this.members.findMembership(id, targetUserId);
+    if (membership && isActiveMember(membership.status)) {
+      // An approval retry after a partial Stream failure only re-synchronizes;
+      // it does not increment the member count or write another approval.
+      await this.syncMemberToStreamChannels(id, targetUserId, membership.role);
+      return { message: "Join request is approved and chat access is synchronized" };
+    }
     if (!membership || membership.status !== MEMBERSHIP_STATUS.PENDING) {
       throw new ApiError(400, "No pending join request found for this user", [], "NO_PENDING_REQUEST");
     }
@@ -414,7 +422,7 @@ export class CommunityService {
     await this.communities.incrementMemberCount(id, 1);
 
     // Sync user into Stream Chat community channels
-    streamService.addMemberToCommunityChannels(id, targetUserId, COMMUNITY_ROLES.MEMBER).catch(() => {});
+    await this.syncMemberToStreamChannels(id, targetUserId, COMMUNITY_ROLES.MEMBER);
 
     await this.logAdminAction(actorId, "APPROVE_JOIN_REQUEST", id, {
       targetUserId,
@@ -453,6 +461,10 @@ export class CommunityService {
   async leave(id: string, userId: string) {
     const community = await this.requireCommunity(id);
     const membership = await this.members.findMembership(id, userId);
+    if (membership?.status === MEMBERSHIP_STATUS.LEFT) {
+      await this.syncMemberRemovalFromStreamChannels(id, userId, "left");
+      return { message: "Left community successfully" };
+    }
     if (!membership || !isActiveMember(membership.status)) {
       throw new ApiError(404, "You are not an active member of this community", [], "MEMBERSHIP_NOT_FOUND");
     }
@@ -484,8 +496,7 @@ export class CommunityService {
 
     await this.communities.incrementMemberCount(id, -1);
 
-    // Remove user from Stream community channels
-    streamService.removeMemberFromCommunityChannels(id, userId).catch(() => {});
+    await this.syncMemberRemovalFromStreamChannels(id, userId, "left");
 
     return { message: "Left community successfully" };
   }
@@ -518,7 +529,8 @@ export class CommunityService {
     }
 
     if (membership.status === MEMBERSHIP_STATUS.BANNED) {
-      throw new ApiError(400, "Member is already banned", [], "ALREADY_BANNED");
+      await this.syncMemberRemovalFromStreamChannels(id, targetUserId, "banned");
+      return { message: "Member remains banned and Stream access is synchronized" };
     }
 
     const wasActive = isActiveMember(membership.status);
@@ -540,14 +552,13 @@ export class CommunityService {
       await this.communities.incrementMemberCount(id, -1);
     }
 
-    // Evict banned user from Stream community channels
-    streamService.removeMemberFromCommunityChannels(id, targetUserId).catch(() => {});
-
     await this.logAdminAction(actorId, "BAN_MEMBER", id, {
       targetUserId,
       reason,
       communityName: community.name
     });
+
+    await this.syncMemberRemovalFromStreamChannels(id, targetUserId, "banned");
 
     return { message: "Member banned successfully" };
   }
@@ -560,6 +571,10 @@ export class CommunityService {
     if (!membership || membership.status !== MEMBERSHIP_STATUS.BANNED) {
       throw new ApiError(400, "Member is not currently banned", [], "NOT_BANNED");
     }
+
+    // Keep the ban in MongoDB until Stream revocation succeeds, so an unban
+    // cannot clear the retryable restriction while channel access remains.
+    await this.syncMemberRemovalFromStreamChannels(id, targetUserId, "banned");
 
     await this.members.updateMembership(id, targetUserId, {
       $set: {
@@ -620,6 +635,11 @@ export class CommunityService {
       }
     }
 
+    if (membership.status === MEMBERSHIP_STATUS.SUSPENDED) {
+      await this.syncMemberRemovalFromStreamChannels(id, targetUserId, "suspended");
+      return { message: "Member remains suspended and Stream access is synchronized", suspendedUntil: membership.suspendedUntil };
+    }
+
     const wasActive = isActiveMember(membership.status);
     const suspendedUntil = new Date(Date.now() + durationHours * 3600 * 1000);
 
@@ -641,9 +661,6 @@ export class CommunityService {
       await this.communities.incrementMemberCount(id, -1);
     }
 
-    // Evict suspended user from Stream community channels
-    streamService.removeMemberFromCommunityChannels(id, targetUserId).catch(() => {});
-
     await this.logAdminAction(actorId, "SUSPEND_MEMBER", id, {
       targetUserId,
       durationHours,
@@ -651,6 +668,8 @@ export class CommunityService {
       reason,
       communityName: community.name
     });
+
+    await this.syncMemberRemovalFromStreamChannels(id, targetUserId, "suspended");
 
     return { message: "Member suspended successfully", suspendedUntil };
   }
@@ -700,7 +719,7 @@ export class CommunityService {
     await this.communities.updateById(id, { $addToSet: { moderators: new Types.ObjectId(userId) } });
 
     // Update member's channel role in Stream community channels
-    streamService.addMemberToCommunityChannels(id, userId, COMMUNITY_ROLES.MODERATOR).catch(() => {});
+    await this.syncMemberToStreamChannels(id, userId, COMMUNITY_ROLES.MODERATOR);
 
     return this.members.findByCommunity(id);
   }
@@ -709,14 +728,21 @@ export class CommunityService {
     const community = await this.requireCommunity(id);
     await this.assertOwner(community, actorId, actorRole);
     const membership = await this.members.findMembership(id, userId);
-    if (!membership || membership.role !== COMMUNITY_ROLES.MODERATOR) {
+    if (!membership) {
+      throw new ApiError(404, "Moderator membership not found", [], "MODERATOR_NOT_FOUND");
+    }
+    if (membership.role !== COMMUNITY_ROLES.MODERATOR) {
+      if (membership.role === COMMUNITY_ROLES.MEMBER && isActiveMember(membership.status)) {
+        await this.syncMemberToStreamChannels(id, userId, COMMUNITY_ROLES.MEMBER);
+        return this.members.findByCommunity(id);
+      }
       throw new ApiError(404, "Moderator membership not found", [], "MODERATOR_NOT_FOUND");
     }
     await this.members.updateMembership(id, userId, { $set: { role: COMMUNITY_ROLES.MEMBER } });
     await this.communities.updateById(id, { $pull: { moderators: new Types.ObjectId(userId) } });
 
     // Revert member's channel role to normal member in Stream
-    streamService.addMemberToCommunityChannels(id, userId, COMMUNITY_ROLES.MEMBER).catch(() => {});
+    await this.syncMemberToStreamChannels(id, userId, COMMUNITY_ROLES.MEMBER);
 
     return this.members.findByCommunity(id);
   }
@@ -756,8 +782,7 @@ export class CommunityService {
       await this.communities.incrementMemberCount(id, -1);
     }
 
-    // Remove member from Stream community channels
-    streamService.removeMemberFromCommunityChannels(id, userId).catch(() => {});
+    await this.syncMemberRemovalFromStreamChannels(id, userId, "removed");
 
     return this.members.findByCommunity(id);
   }
@@ -768,6 +793,48 @@ export class CommunityService {
       throw new ApiError(404, "Community not found", [], "COMMUNITY_NOT_FOUND");
     }
     return community;
+  }
+
+  private async syncMemberToStreamChannels(
+    communityId: string,
+    userId: string,
+    role: CommunityRole
+  ): Promise<void> {
+    try {
+      await streamService.addMemberToCommunityChannels(communityId, userId, role);
+    } catch (err) {
+      const detail = err instanceof Error ? ` ${err.message}` : "";
+      console.error(
+        `[CommunityService] Community ${communityId} membership for ${userId} is saved, but Stream channel synchronization failed.${detail}`
+      );
+      throw new ApiError(
+        503,
+        `Community membership is saved, but chat access could not be synchronized. Retry the membership action to try again.${detail}`,
+        [],
+        "COMMUNITY_CHAT_SYNC_FAILED"
+      );
+    }
+  }
+
+  private async syncMemberRemovalFromStreamChannels(
+    communityId: string,
+    userId: string,
+    membershipAction: "left" | "removed" | "banned" | "suspended"
+  ): Promise<void> {
+    try {
+      await streamService.removeMemberFromCommunityChannels(communityId, userId);
+    } catch (err) {
+      const detail = err instanceof Error ? ` ${err.message}` : "";
+      console.error(
+        `[CommunityService] Member ${userId} is ${membershipAction} in community ${communityId}, but Stream removal synchronization failed.${detail}`
+      );
+      throw new ApiError(
+        503,
+        `Community membership is ${membershipAction}, but Stream access removal is incomplete. Retry this membership action to try again.${detail}`,
+        [],
+        "COMMUNITY_CHAT_SYNC_FAILED"
+      );
+    }
   }
 
   private async requireMembership(id: string, userId: string) {

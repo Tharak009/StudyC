@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   MessageSquare,
   Loader2,
@@ -15,11 +16,13 @@ import { useStreamChat } from "../hooks/useStreamChat";
 import { useStreamDMs } from "../hooks/useStreamDMs";
 import { useStreamCommunityChannels } from "../hooks/useStreamCommunityChannels";
 import { communitiesApi } from "../api/communities.api";
+import { communityGroupsApi } from "../api/community-groups.api";
 import { usersApi } from "../api/users.api";
 import { UnifiedChatSidebar } from "../components/chat/UnifiedChatSidebar";
 import { StreamChannelView } from "../components/chat/StreamChannelView";
 import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import type { Community } from "../types/community";
+import type { CommunityGroup } from "../types/community-group";
 import type { Channel } from "../types/chat";
 import type { PeerSearchResult } from "../components/dm/ConversationList";
 import type { ActivePeer } from "../components/dm/ConversationHeader";
@@ -36,6 +39,7 @@ import { ChatNotificationSettingsModal } from "../components/chat/modals/ChatNot
 
 
 export function ChatPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const authUser = useAuthStore((state) => state.user);
   const { addToast } = useToastStore();
@@ -75,6 +79,20 @@ export function ChatPage() {
   const activeCommunity = useMemo(() => {
     return communities.find((c) => c._id === activeCircleId) || null;
   }, [communities, activeCircleId]);
+
+  // Use the canonical CommunityGroup collection for modern Circles entries.
+  // The Stream community-channel hook below remains active for legacy channels.
+  const communityGroupsQuery = useQuery({
+    queryKey: ["community-groups", activeCircleId],
+    queryFn: () => communityGroupsApi.list(activeCircleId!),
+    enabled: Boolean(activeCircleId)
+  });
+  const activeCommunityGroups = useMemo(
+    () => (communityGroupsQuery.data || []).filter(
+      (group: CommunityGroup) => group.status === "ACTIVE" && !group.isDeleted
+    ),
+    [communityGroupsQuery.data]
+  );
 
   // Stream DMs hook
   const {
@@ -172,6 +190,14 @@ export function ChatPage() {
       selectCommunityChannel(channel);
     },
     [activeCircleId, setSearchParams, selectCommunityChannel]
+  );
+
+  const handleSelectCommunityGroup = useCallback(
+    (groupId: string) => {
+      if (!activeCircleId) return;
+      navigate(`/communities/${activeCircleId}/groups/${groupId}`);
+    },
+    [activeCircleId, navigate]
   );
 
   const handleStartNewChat = useCallback(
@@ -347,9 +373,14 @@ export function ChatPage() {
                 communities={communities}
                 activeCommunityId={activeCircleId}
                 communityChannels={communityChannels}
+                communityGroups={activeCommunityGroups}
+                loadingCommunityGroups={communityGroupsQuery.isLoading}
+                communityGroupsError={communityGroupsQuery.isError}
+                onRetryCommunityGroups={() => communityGroupsQuery.refetch()}
                 activeCommunityChannelId={activeCommunityChannelId}
                 onSelectCommunity={handleSelectCommunity}
                 onSelectCommunityChannel={handleSelectCommunityChannel}
+                onSelectCommunityGroup={handleSelectCommunityGroup}
                 loadingCommunities={loadingCommunities}
                 directoryPeers={directoryPeers}
                 onStartDmWithPeer={handleStartNewChat}

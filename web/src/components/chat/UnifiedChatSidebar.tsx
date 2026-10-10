@@ -21,11 +21,18 @@ import {
   Archive,
   MoreVertical,
   CheckCheck,
-  Lock
+  Lock,
+  Megaphone,
+  BookOpen,
+  FolderKanban,
+  GraduationCap,
+  MessageCircle,
+  RefreshCw
 } from "lucide-react";
 import type { ConversationItem, PeerSearchResult } from "../dm/ConversationList";
 import type { Community } from "../../types/community";
 import type { Channel } from "../../types/chat";
+import type { CommunityGroup, GroupType } from "../../types/community-group";
 import { useChatOrganizationStore } from "../../store/chat-organization.store";
 import { useChatPrivacyStore } from "../../store/chat-privacy.store";
 import { useStreamChat } from "../../hooks/useStreamChat";
@@ -42,9 +49,14 @@ interface UnifiedChatSidebarProps {
   communities: Community[];
   activeCommunityId: string | null;
   communityChannels: Channel[];
+  communityGroups: CommunityGroup[];
+  loadingCommunityGroups?: boolean;
+  communityGroupsError?: boolean;
+  onRetryCommunityGroups?: () => void;
   activeCommunityChannelId: string | null;
   onSelectCommunity: (communityId: string) => void;
   onSelectCommunityChannel: (channel: Channel) => void;
+  onSelectCommunityGroup: (groupId: string) => void;
   loadingCommunities?: boolean;
 
   // New DM Directory
@@ -64,9 +76,14 @@ export function UnifiedChatSidebar({
   communities,
   activeCommunityId,
   communityChannels,
+  communityGroups,
+  loadingCommunityGroups = false,
+  communityGroupsError = false,
+  onRetryCommunityGroups,
   activeCommunityChannelId,
   onSelectCommunity,
   onSelectCommunityChannel,
+  onSelectCommunityGroup,
   loadingCommunities = false,
   directoryPeers,
   onStartDmWithPeer,
@@ -229,6 +246,22 @@ export function UnifiedChatSidebar({
       return <Coffee size={14} className="text-emerald-500" />;
     }
     return <Hash size={14} className="text-sky-500" />;
+  };
+
+  const getGroupIcon = (type: GroupType) => {
+    switch (type) {
+      case "ANNOUNCEMENT":
+        return <Megaphone size={14} className="text-amber-500" />;
+      case "STUDY":
+        return <BookOpen size={14} className="text-emerald-500" />;
+      case "PROJECT":
+        return <FolderKanban size={14} className="text-purple-500" />;
+      case "SUBJECT":
+        return <GraduationCap size={14} className="text-amber-500" />;
+      case "DISCUSSION":
+      default:
+        return <MessageCircle size={14} className="text-sky-500" />;
+    }
   };
 
   // Reusable Conversation Row Renderer
@@ -616,7 +649,7 @@ export function UnifiedChatSidebar({
                       <div className="pl-6 pr-1 py-1 space-y-0.5">
                         {communityChannels.length === 0 ? (
                           <div className="text-[11px] text-slate-400 p-1">
-                            No channels provisioned
+                            No legacy channels provisioned
                           </div>
                         ) : (
                           communityChannels.map((chan) => {
@@ -652,6 +685,53 @@ export function UnifiedChatSidebar({
                             );
                           })
                         )}
+
+                        <div className="pt-2 mt-1 border-t border-slate-100 dark:border-slate-800/70">
+                          <div className="px-2 pb-1 text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                            Community Groups
+                          </div>
+                          {loadingCommunityGroups ? (
+                            <div className="flex items-center gap-2 px-2 py-2 text-[11px] text-slate-400">
+                              <Loader2 size={12} className="animate-spin text-sky-500" />
+                              <span>Loading groups...</span>
+                            </div>
+                          ) : communityGroupsError ? (
+                            <div className="px-2 py-2 text-[11px] text-slate-400">
+                              <span>Could not load community groups.</span>
+                              {onRetryCommunityGroups && (
+                                <button
+                                  type="button"
+                                  onClick={onRetryCommunityGroups}
+                                  className="ml-1 inline-flex items-center gap-1 text-[#1E90FF] hover:underline"
+                                >
+                                  <RefreshCw size={10} /> Retry
+                                </button>
+                              )}
+                            </div>
+                          ) : communityGroups.length === 0 ? (
+                            <div className="px-2 py-1 text-[11px] text-slate-400">
+                              No active groups
+                            </div>
+                          ) : (
+                            communityGroups.map((group) => (
+                              <button
+                                key={group._id}
+                                type="button"
+                                onClick={() => onSelectCommunityGroup(group._id)}
+                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-xs transition-all hover:bg-slate-100/60 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400"
+                                title={group.description || group.name}
+                              >
+                                {getGroupIcon(group.type)}
+                                <span className="truncate">{group.name}</span>
+                                {(group.isAnnouncement || group.type === "ANNOUNCEMENT") && (
+                                  <span className="ml-auto shrink-0 text-[8px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                                    Broadcast
+                                  </span>
+                                )}
+                              </button>
+                            ))
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

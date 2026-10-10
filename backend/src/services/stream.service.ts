@@ -9,6 +9,8 @@ import {
 } from "../utils/stream-id.js";
 import { Community, type IChannel } from "../models/community.model.js";
 import { CommunityMember } from "../models/community-member.model.js";
+import { CommunityGroup } from "../models/community-group.model.js";
+import { GROUP_STATUS } from "../constants/community-group.js";
 import { isActiveMember, ACTIVE_MEMBERSHIP_STATUSES } from "../constants/community-membership.js";
 import { User } from "../models/user.model.js";
 import { blockService } from "./block.service.js";
@@ -478,28 +480,39 @@ export class StreamService {
     userId: string,
     role: string = "MEMBER"
   ): Promise<void> {
-    try {
-      const community = await Community.findById(communityId).lean().exec();
-      if (!community || !community.channels) return;
+    const [community, groups] = await Promise.all([
+      Community.findById(communityId).lean().exec(),
+      CommunityGroup.find({
+        communityId,
+        status: GROUP_STATUS.ACTIVE,
+        isDeleted: false
+      })
+        .select({ streamChannelId: 1 })
+        .lean()
+        .exec()
+    ]);
 
-      const client = this.getClient();
-      const streamUserId = toStreamUserId(userId);
-      const isPrivileged = role === "OWNER" || role === "MODERATOR";
-      const channelRole = isPrivileged ? "channel_moderator" : "channel_member";
-
-      await Promise.allSettled(
-        community.channels.map(async (ch) => {
-          const channelKey = ch.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-          const streamChannelId = toStreamCommunityChannelId(communityId, channelKey);
-          const channel = client.channel("messaging", streamChannelId);
-          await channel.addMembers([
-            { user_id: streamUserId, channel_role: channelRole } as any
-          ]);
-        })
-      );
-    } catch (err) {
-      console.warn(`Failed to add user ${userId} to community ${communityId} Stream channels:`, err);
+    if (!community) {
+      throw new Error(`Community ${communityId} was not found while syncing Stream membership`);
     }
+
+    const legacyChannelIds = new Set<string>();
+    for (const ch of community.channels || []) {
+      const channelKey = ch.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+      legacyChannelIds.add(toStreamCommunityChannelId(communityId, channelKey));
+    }
+    const groupChannelIds = new Set<string>();
+    for (const group of groups) {
+      if (group.streamChannelId) groupChannelIds.add(group.streamChannelId);
+    }
+
+    const isPrivileged = role === "OWNER" || role === "MODERATOR";
+    const channelRole = isPrivileged ? "channel_moderator" : "channel_member";
+    // If a channel is attached to both models, treat it as a modern group so
+    // its sync failure is surfaced rather than hidden by legacy best-effort.
+    for (const channelId of groupChannelIds) legacyChannelIds.delete(channelId);
+    await this.updateChannelMembership(legacyChannelIds, userId, channelRole, "add", false);
+    await this.updateChannelMembership(groupChannelIds, userId, channelRole, "add");
   }
 
   /**
@@ -509,23 +522,89 @@ export class StreamService {
     communityId: string,
     userId: string
   ): Promise<void> {
+    const [community, groups] = await Promise.all([
+      Community.findById(communityId).lean().exec(),
+      CommunityGroup.find({ communityId })
+        .select({ streamChannelId: 1 })
+        .lean()
+        .exec()
+    ]);
+
+    if (!community) {
+      throw new Error(`Community ${communityId} was not found while removing Stream membership`);
+    }
+
+    const channelIds = new Set<string>();
+    for (const ch of community.channels || []) {
+      const channelKey = ch.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+      channelIds.add(toStreamCommunityChannelId(communityId, channelKey));
+    }
+    // Remove membership from archived groups too: archiving a group does not
+    // make its existing Stream channel safe to leave accessible to ex-members.
+    for (const group of groups) {
+      if (group.streamChannelId) channelIds.add(group.streamChannelId);
+    }
+
+    await this.updateChannelMembership(channelIds, userId, undefined, "remove");
+  }
+
+  private async updateChannelMembership(
+    channelIds: Set<string>,
+    userId: string,
+    channelRole: "channel_moderator" | "channel_member" | undefined,
+    action: "add" | "remove",
+    throwOnFailure = true
+  ): Promise<void> {
+    if (channelIds.size === 0) return;
+
+    let client: StreamChat;
     try {
-      const community = await Community.findById(communityId).lean().exec();
-      if (!community || !community.channels) return;
+      client = this.getClient();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const log = throwOnFailure ? console.error : console.warn;
+      log(`[StreamService] Could not initialize Stream while attempting to ${action} user ${userId}: ${message}`);
+      if (throwOnFailure) throw err;
+      return;
+    }
+    const streamUserId = toStreamUserId(userId);
+    const ids = [...channelIds];
+    const failures: string[] = [];
+    const batchSize = 5;
 
-      const client = this.getClient();
-      const streamUserId = toStreamUserId(userId);
-
-      await Promise.allSettled(
-        community.channels.map(async (ch) => {
-          const channelKey = ch.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-          const streamChannelId = toStreamCommunityChannelId(communityId, channelKey);
-          const channel = client.channel("messaging", streamChannelId);
-          await channel.removeMembers([streamUserId]);
+    // Bound concurrent Stream writes and retry once; add/remove membership
+    // operations are safe to repeat for the same persisted channel and user.
+    for (let offset = 0; offset < ids.length; offset += batchSize) {
+      const batch = ids.slice(offset, offset + batchSize);
+      const results = await Promise.all(
+        batch.map(async (channelId) => {
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+              const channel = client.channel("messaging", channelId);
+              if (action === "add") {
+                await channel.addMembers([
+                  { user_id: streamUserId, channel_role: channelRole } as any
+                ]);
+              } else {
+                await channel.removeMembers([streamUserId]);
+              }
+              return null;
+            } catch {
+              if (attempt === 1) return channelId;
+            }
+          }
+          return channelId;
         })
       );
-    } catch (err) {
-      console.warn(`Failed to remove user ${userId} from community ${communityId} Stream channels:`, err);
+      failures.push(...results.filter((channelId): channelId is string => Boolean(channelId)));
+    }
+
+    if (failures.length > 0) {
+      const uniqueFailures = [...new Set(failures)];
+      const message = `Could not ${action} user ${userId} in Stream channel(s): ${uniqueFailures.join(", ")}`;
+      const log = throwOnFailure ? console.error : console.warn;
+      log(`[StreamService] ${message}`);
+      if (throwOnFailure) throw new Error(message);
     }
   }
 }
