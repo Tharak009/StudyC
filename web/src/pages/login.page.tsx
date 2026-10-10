@@ -8,7 +8,6 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
-  Shield,
   Sun,
   Moon,
   CheckCircle2,
@@ -209,8 +208,8 @@ export function LoginPage() {
             </div>
           </div>
 
-          {/* Remember Me Checkbox & Security Badge */}
-          <div className="flex items-center justify-between py-1">
+          {/* Remember Me Checkbox */}
+          <div className="flex items-center py-1">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -220,9 +219,6 @@ export function LoginPage() {
               />
               <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Remember this device</span>
             </label>
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-              <Shield className="h-3 w-3 text-[#1E90FF]" /> 256-bit Encrypted
-            </span>
           </div>
 
           {/* Primary Action Button */}

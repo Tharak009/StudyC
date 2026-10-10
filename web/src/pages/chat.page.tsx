@@ -427,7 +427,7 @@ export function ChatPage() {
                       Welcome to StudyConnect Chat
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                      Select a direct message or community channel from the left sidebar to start messaging. All messages and presence are synchronized in real time via Stream Chat.
+                      Select a direct message or community channel from the left sidebar to start messaging. All messages and presence are synchronized in real time.
                     </p>
                   </div>
                 </div>

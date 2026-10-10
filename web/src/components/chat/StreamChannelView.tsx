@@ -1330,11 +1330,6 @@ function StreamChannelInner({
           >
             <Info size={16} />
           </button>
-
-          <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold ml-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            <span>Stream Synced</span>
-          </div>
         </div>
       </div>
 

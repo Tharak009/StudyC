@@ -986,13 +986,12 @@ export function StreamMessageComposer({
       )}
 
       {/* Helper Shortcut hint */}
-      <div className="mt-1.5 flex items-center justify-between px-2 text-[10px] text-slate-400 dark:text-slate-500">
+      <div className="mt-1.5 flex items-center px-2 text-[10px] text-slate-400 dark:text-slate-500">
         <span>
           <kbd className="font-sans px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[9px]">Enter</kbd>{" "}
           {editingMessage ? "to save" : "to send"},{" "}
           <kbd className="font-sans px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[9px]">Shift + Enter</kbd> for newline
         </span>
-        <span className="font-medium text-slate-400">Stream Chat Native</span>
       </div>
 
       {/* Interactive Feature Modals */}
