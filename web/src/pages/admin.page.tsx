@@ -13,7 +13,6 @@ import { CommunityGovernanceTab } from "../components/admin/CommunityGovernanceT
 import { EventsGovernanceTab } from "../components/admin/tabs/EventsGovernanceTab";
 import { AuditLogTab } from "../components/admin/AuditLogTab";
 import { BroadcastModal } from "../components/admin/BroadcastModal";
-import { AdminProfilePage } from "./admin-profile.page";
 import { useAuthStore } from "../store/auth.store";
 
 function getAdminHeaderCounts() {
@@ -184,17 +183,6 @@ export function AdminPage() {
                 </motion.div>
               )}
 
-              {activeTab === "profile" && (
-                <motion.div
-                  key="profile"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <AdminProfilePage embedded onNavigateTab={setActiveTab} />
-                </motion.div>
-              )}
             </AnimatePresence>
           </div>
 

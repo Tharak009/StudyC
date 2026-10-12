@@ -108,10 +108,9 @@ export function CreateGroupModal({
         onSuccess(newGroup);
       }
     },
-    onError: (err: any) => {
-      setError(
-        err?.response?.data?.message || err?.message || "Failed to create group"
-      );
+    onError: (err: unknown) => {
+      const error = err as { response?: { data?: { message?: string } }; message?: string };
+      setError(error.response?.data?.message || error.message || "Failed to create group");
     }
   });
 
@@ -119,8 +118,8 @@ export function CreateGroupModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      setError("Please provide a group name");
+    if (name.trim().length < 2) {
+      setError("Group name must be at least 2 characters");
       return;
     }
     setError(null);

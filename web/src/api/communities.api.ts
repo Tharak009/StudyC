@@ -22,11 +22,11 @@ export interface CommunityListParams {
 
 export interface CommunityFormPayload {
   name: string;
-  description: string;
+  description?: string;
   category: CommunityCategory;
   type?: CommunityType;
-  tags: string[];
-  visibility: CommunityVisibility;
+  tags?: string[];
+  visibility?: CommunityVisibility;
   joinPolicy?: CommunityJoinPolicy;
   icon?: string;
   bannerImage?: File;
@@ -35,11 +35,11 @@ export interface CommunityFormPayload {
 const formFrom = (payload: CommunityFormPayload) => {
   const form = new FormData();
   form.append("name", payload.name);
-  form.append("description", payload.description);
+  if (payload.description !== undefined) form.append("description", payload.description);
   form.append("category", payload.category);
   if (payload.type) form.append("type", payload.type);
-  payload.tags.forEach((tag) => form.append("tags", tag));
-  form.append("visibility", payload.visibility);
+  payload.tags?.forEach((tag) => form.append("tags", tag));
+  if (payload.visibility) form.append("visibility", payload.visibility);
   if (payload.joinPolicy) form.append("joinPolicy", payload.joinPolicy);
   if (payload.icon) form.append("icon", payload.icon);
   if (payload.bannerImage) form.append("bannerImage", payload.bannerImage);
@@ -106,3 +106,21 @@ export const communitiesApi = {
     (await apiClient.delete<ApiResponse<CommunityMember[]>>(`/api/communities/${id}/members/${userId}`))
       .data.data
 };
+
+/** Fetch all visible Community pages for workspaces that need the complete joined list. */
+export async function listAllCommunities(params: Omit<CommunityListParams, "page"> = {}) {
+  const limit = Math.min(params.limit ?? 100, 100);
+  const firstPage = await communitiesApi.list({ ...params, page: 1, limit });
+  if (firstPage.pages <= 1) return firstPage;
+
+  const items = [...firstPage.items];
+  for (let page = 2; page <= firstPage.pages; page += 1) {
+    const result = await communitiesApi.list({ ...params, page, limit });
+    items.push(...result.items);
+  }
+
+  return {
+    ...firstPage,
+    items
+  };
+}

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import {
   ChevronDown,
   LayoutDashboard,
@@ -11,7 +11,6 @@ import {
   GraduationCap,
   MessageCircle,
   Lock,
-  ArrowLeft,
   Shield,
   Settings,
   Sparkles
@@ -24,6 +23,7 @@ import { useAuthStore } from "../../store/auth.store";
 interface CommunitySidebarProps {
   community: Community;
   groups: CommunityGroup[];
+  sidebarWidth?: number;
   activeItemId?: string; // "overview" | "announcements" | "members" | groupId
   isLoadingGroups?: boolean;
   onOpenCreateGroup?: () => void;
@@ -67,6 +67,7 @@ function getGroupIconColor(type: GroupType | string, isActive: boolean) {
 export function CommunitySidebar({
   community,
   groups,
+  sidebarWidth,
   activeItemId = "overview",
   isLoadingGroups = false,
   onOpenCreateGroup,
@@ -122,7 +123,8 @@ export function CommunitySidebar({
 
   return (
     <aside
-      className={`w-72 shrink-0 h-full flex flex-col bg-white dark:bg-[#0B132B] border-r border-slate-200/80 dark:border-white/10 select-none transition-colors ${className}`}
+      className={`${sidebarWidth ? "w-[var(--community-sidebar-width)]" : "w-72"} shrink-0 h-full flex flex-col bg-white dark:bg-[#0B132B] border-r border-slate-200/80 dark:border-white/10 select-none transition-colors ${className}`}
+      style={sidebarWidth ? { "--community-sidebar-width": `${sidebarWidth}px` } as React.CSSProperties : undefined}
     >
       {/* 1. Community Identity Header & Action Menu */}
       <div className="relative shrink-0 p-3.5 border-b border-slate-200/80 dark:border-white/10">
@@ -384,7 +386,7 @@ export function CommunitySidebar({
             <button
               type="button"
               onClick={() => navigate(`/communities/${community._id}/edit`)}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${activeItemId === "settings" ? "bg-[#1E90FF] text-white" : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5"}`}
             >
               <Settings size={15} className="text-slate-400" />
               <span className="truncate">Settings</span>
@@ -393,16 +395,6 @@ export function CommunitySidebar({
         </div>
       </div>
 
-      {/* 4. Bottom Footer Navigation */}
-      <div className="shrink-0 p-3 border-t border-slate-200/80 dark:border-white/10 bg-slate-50/50 dark:bg-black/15">
-        <Link
-          to="/communities"
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/5 transition-colors"
-        >
-          <ArrowLeft size={14} />
-          <span>All Communities</span>
-        </Link>
-      </div>
     </aside>
   );
 }

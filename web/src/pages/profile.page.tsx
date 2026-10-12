@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { ProfileHeader, type StudentProfileData } from "../components/profile/ProfileHeader";
 import { ProfileTabs, type ProfileTabType } from "../components/profile/ProfileTabs";
 import { OverviewTab } from "../components/profile/OverviewTab";
@@ -85,7 +84,7 @@ function loadStoredProfile(user: any): StudentProfileData {
     connectionsCount: dynamicCounts.connectionsCount,
     studyStreakDays: dynamicCounts.studyStreakDays,
     isOnline: true,
-    profilePicture: saved.profilePicture || user?.profilePicture
+    profilePicture: user?.profilePicture || saved.profilePicture
   };
 }
 
@@ -96,12 +95,6 @@ export function ProfilePage({ go, dark, tog }: ProfilePageProps) {
 
   const [activeTab, setActiveTab] = useState<ProfileTabType>("overview");
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [viewAsStudent, setViewAsStudent] = useState(false);
-
-  // If authenticated user is Admin or Moderator and hasn't toggled student preview, render AdminProfilePage
-  if ((user?.role === "ADMIN" || user?.role === "MODERATOR") && !viewAsStudent) {
-    return <AdminProfilePage onSwitchToStudentView={() => setViewAsStudent(true)} />;
-  }
 
   const [counts, setCounts] = useState(getDynamicCounts);
   const [profileData, setProfileData] = useState<StudentProfileData>(() => loadStoredProfile(user));
@@ -130,44 +123,31 @@ export function ProfilePage({ go, dark, tog }: ProfilePageProps) {
     };
   }, [activeTab, editModalOpen]);
 
-  const handleUploadAvatar = async (file: File) => {
+  const persistProfilePicture = async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
-      addToast("File size exceeds 5MB limit", "error");
-      return;
+      throw new Error("File size exceeds 5MB limit");
     }
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const previewUrl = reader.result as string;
-      setProfileData((prev) => {
-        const next = { ...prev, profilePicture: previewUrl };
-        try {
-          localStorage.setItem("studyconnect_user_profile", JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-      if (user) {
-        setUser({ ...user, profilePicture: previewUrl });
-      }
-      addToast("Profile picture updated successfully!", "success");
-
+    const updatedUser = await usersApi.uploadProfilePicture(file);
+    if (!updatedUser?.profilePicture) throw new Error("The server did not return the saved profile photo");
+    setUser(updatedUser);
+    setProfileData((prev) => {
+      const next = { ...prev, profilePicture: updatedUser.profilePicture };
       try {
-        const updated = await usersApi.uploadProfilePicture(file);
-        if (updated?.profilePicture) {
-          setProfileData((prev) => {
-            const next = { ...prev, profilePicture: updated.profilePicture };
-            try {
-              localStorage.setItem("studyconnect_user_profile", JSON.stringify(next));
-            } catch {}
-            return next;
-          });
-          setUser(updated);
-        }
-      } catch {
-        // Retain preview URL if backend is offline
-      }
-    };
-    reader.readAsDataURL(file);
+        localStorage.setItem("studyconnect_user_profile", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    return updatedUser.profilePicture;
+  };
+
+  const handleUploadAvatar = async (file: File) => {
+    try {
+      await persistProfilePicture(file);
+      addToast("Profile photo saved and synced across StudyConnect.", "success");
+    } catch (error: any) {
+      addToast(error?.response?.data?.message || error?.message || "Could not upload profile photo", "error");
+    }
   };
 
   const handleRemoveAvatar = () => {
@@ -184,9 +164,21 @@ export function ProfilePage({ go, dark, tog }: ProfilePageProps) {
     addToast("Profile picture removed", "info");
   };
 
-  const handleSaveProfile = (updated: Partial<StudentProfileData>) => {
+  const handleSaveProfile = async (updated: Partial<StudentProfileData>) => {
+    let profilePicture = updated.profilePicture;
+    if (profilePicture?.startsWith("data:")) {
+      const blob = await (await fetch(profilePicture)).blob();
+      const extension = blob.type.split("/")[1] || "jpg";
+      const uploaded = await usersApi.uploadProfilePicture(
+        new File([blob], `profile-picture.${extension}`, { type: blob.type || "image/jpeg" })
+      );
+      profilePicture = uploaded.profilePicture;
+      if (!profilePicture) throw new Error("The server did not return the saved profile photo");
+      setUser(uploaded);
+    }
+
     setProfileData((prev) => {
-      const next = { ...prev, ...updated };
+      const next = { ...prev, ...updated, profilePicture };
       try {
         localStorage.setItem("studyconnect_user_profile", JSON.stringify(next));
       } catch {}
@@ -198,35 +190,20 @@ export function ProfilePage({ go, dark, tog }: ProfilePageProps) {
         fullName: updated.fullName ?? user.fullName,
         bio: updated.bio ?? user.bio,
         interests: updated.interests ?? user.interests,
-        profilePicture: updated.profilePicture !== undefined ? updated.profilePicture : user.profilePicture
+        profilePicture: profilePicture !== undefined ? profilePicture : user.profilePicture
       });
     }
   };
 
-  return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-slate-50 font-sans antialiased transition-colors duration-300">
-      
-      {/* ── 1. Leftmost Workspace Sidebar ─────────────────────────────── */}
-      <DashboardSidebar />
+  // Administrators use their own profile experience rather than a student preview mode.
+  if (user?.role === "ADMIN" || user?.role === "MODERATOR") {
+    return <AdminProfilePage />;
+  }
 
-      {/* ── 2. Main Profile Content Stream ────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+  return (
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-y-auto bg-slate-50 font-sans antialiased text-slate-900 transition-colors duration-300 dark:bg-[#080D1A] dark:text-slate-50">
         <main className="p-4 sm:p-8 space-y-8 max-w-6xl w-full mx-auto">
           
-          {/* Admin Switcher Banner */}
-          {(user?.role === "ADMIN" || user?.role === "MODERATOR") && (
-            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#1E90FF]/10 border border-[#1E90FF]/30 text-xs font-bold text-[#1E90FF]">
-              <span>Viewing Student Profile Preview Mode</span>
-              <button
-                type="button"
-                onClick={() => setViewAsStudent(false)}
-                className="px-3.5 py-1.5 rounded-xl bg-[#1E90FF] text-white hover:bg-[#187bcd] transition-all cursor-pointer shadow-sm shadow-[#1E90FF]/25"
-              >
-                Return to Admin Governance Profile
-              </button>
-            </div>
-          )}
-
           {/* Academic Identity Header Card */}
           <ProfileHeader
             profile={profileData}
@@ -298,7 +275,6 @@ export function ProfilePage({ go, dark, tog }: ProfilePageProps) {
           </div>
 
         </main>
-      </div>
 
       {/* ── Edit Profile Modal ────────────────────────────────────────── */}
       <AnimatePresence>

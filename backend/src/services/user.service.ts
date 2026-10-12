@@ -4,6 +4,9 @@ import { ApiError } from "../utils/api-error.js";
 import { userRepository, type IUserRepository } from "../repositories/user.repository.js";
 import { StorageService, sharedStorageService } from "./storage.service.js";
 import { blockService } from "./block.service.js";
+import { streamService } from "./stream.service.js";
+import { env } from "../config/env.js";
+import type { UpdateMessagingProfileInput } from "../validators/user.validator.js";
 
 export interface UpdateProfileInput {
   fullName?: string;
@@ -41,7 +44,9 @@ export class UserService {
       fullName: user.fullName,
       department: user.department,
       academicYear: user.academicYear,
-      profilePicture: user.profilePicture,
+      profilePicture: user.profilePicture?.startsWith("/")
+        ? new URL(user.profilePicture, env.API_PUBLIC_URL).toString()
+        : user.profilePicture,
       bio: user.bio,
       interests: user.interests,
       karma: user.karma
@@ -51,6 +56,17 @@ export class UserService {
   async updateProfile(userId: string, input: UpdateProfileInput) {
     const user = await this.users.updateById(userId, { $set: input });
     if (!user) throw new ApiError(404, "User profile not found", [], "USER_NOT_FOUND");
+    return user.toJSON();
+  }
+
+  async updateMessagingProfile(userId: string, input: UpdateMessagingProfileInput) {
+    const user = await this.users.updateById(userId, { $set: input });
+    if (!user) throw new ApiError(404, "User profile not found", [], "USER_NOT_FOUND");
+    try {
+      await streamService.upsertStreamUser(user as any);
+    } catch (error) {
+      console.warn("Could not sync messaging profile to Stream Chat:", error);
+    }
     return user.toJSON();
   }
 
@@ -68,10 +84,41 @@ export class UserService {
     if (!existing) throw new ApiError(404, "User profile not found", [], "USER_NOT_FOUND");
 
     const stored = await this.storage.uploadProfilePicture(file);
-    const oldKey = existing.profilePicture?.replace(/^\/uploads\//, "");
-    const user = await this.users.updateById(userId, { $set: { profilePicture: stored.url } });
+    const profilePicture = new URL(stored.url, env.API_PUBLIC_URL).toString();
+    const oldPath = existing.profilePicture
+      ? new URL(existing.profilePicture, env.API_PUBLIC_URL).pathname
+      : "";
+    const oldKey = oldPath.startsWith("/uploads/") ? oldPath.replace(/^\/uploads\//, "") : "";
+    const user = await this.users.updateById(userId, { $set: { profilePicture } });
+    if (!user) throw new ApiError(404, "User profile not found", [], "USER_NOT_FOUND");
+
+    try {
+      await streamService.upsertStreamUser(user as any);
+    } catch (error) {
+      console.warn("Could not sync profile picture to Stream Chat:", error);
+    }
     if (oldKey) await this.storage.delete(oldKey);
     return user?.toJSON();
+  }
+
+  async deleteProfilePicture(userId: string) {
+    const existing = await this.users.findById(userId);
+    if (!existing) throw new ApiError(404, "User profile not found", [], "USER_NOT_FOUND");
+    const user = await this.users.updateById(userId, { $unset: { profilePicture: 1 } });
+    if (!user) throw new ApiError(404, "User profile not found", [], "USER_NOT_FOUND");
+
+    try {
+      await streamService.upsertStreamUser(user as any);
+    } catch (error) {
+      console.warn("Could not sync profile photo removal to Stream Chat:", error);
+    }
+
+    const oldPath = existing.profilePicture
+      ? new URL(existing.profilePicture, env.API_PUBLIC_URL).pathname
+      : "";
+    const oldKey = oldPath.startsWith("/uploads/") ? oldPath.replace(/^\/uploads\//, "") : "";
+    if (oldKey) await this.storage.delete(oldKey);
+    return user.toJSON();
   }
 }
 

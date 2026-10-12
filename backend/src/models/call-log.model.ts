@@ -2,7 +2,16 @@ import { Schema, model, type HydratedDocument, type Model, type Types } from "mo
 
 export type CallLogType = "voice" | "video";
 export type CallLogMode = "direct" | "group" | "stage";
-export type CallLogStatus = "completed" | "missed" | "declined" | "cancelled" | "failed";
+export type CallLogStatus =
+  | "ringing"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "completed"
+  | "missed"
+  | "declined"
+  | "cancelled"
+  | "failed";
 
 export interface ICallParticipantLog {
   userId: Types.ObjectId;
@@ -28,8 +37,10 @@ export interface ICallLog {
   mode: CallLogMode;
   status: CallLogStatus;
   startedAt: Date;
+  connectedAt?: Date | null;
   endedAt?: Date | null;
   durationSeconds: number;
+  endReason?: string | null;
   participants: ICallParticipantLog[];
   createdAt: Date;
   updatedAt: Date;
@@ -66,13 +77,15 @@ const callLogSchema = new Schema<ICallLog, CallLogModel>(
     mode: { type: String, enum: ["direct", "group", "stage"], required: true },
     status: {
       type: String,
-      enum: ["completed", "missed", "declined", "cancelled", "failed"],
+      enum: ["ringing", "connecting", "connected", "reconnecting", "completed", "missed", "declined", "cancelled", "failed"],
       required: true,
       index: true
     },
     startedAt: { type: Date, required: true, default: Date.now, index: true },
+    connectedAt: { type: Date, default: null },
     endedAt: { type: Date, default: null },
     durationSeconds: { type: Number, default: 0, min: 0 },
+    endReason: { type: String, trim: true, default: null },
     participants: { type: [callParticipantSchema], default: [] }
   },
   { timestamps: true, versionKey: false }

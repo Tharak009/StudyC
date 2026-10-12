@@ -30,9 +30,9 @@ export type CallEndReason =
 export const VALID_CALL_TRANSITIONS: Record<CallStatus, readonly CallStatus[]> = {
   IDLE: ["CALLING", "RINGING"],
   CALLING: ["CONNECTING", "CANCELLED", "MISSED", "FAILED", "ENDED"],
-  RINGING: ["ACCEPTED", "REJECTED", "MISSED", "CANCELLED", "FAILED", "ENDED"],
+  RINGING: ["ACCEPTED", "CONNECTING", "REJECTED", "MISSED", "CANCELLED", "FAILED", "ENDED"],
   ACCEPTED: ["CONNECTING", "FAILED", "ENDED"],
-  CONNECTING: ["CONNECTED", "FAILED", "ENDED"],
+  CONNECTING: ["CONNECTED", "RECONNECTING", "FAILED", "ENDED"],
   CONNECTED: ["RECONNECTING", "FAILED", "ENDED"],
   RECONNECTING: ["CONNECTED", "FAILED", "ENDED"],
   REJECTED: ["IDLE"],
@@ -172,7 +172,7 @@ export interface CallHistoryItem {
   direction: "outgoing" | "incoming";
   type: CallType;
   mode: "direct" | "group" | "stage";
-  status: "completed" | "missed" | "declined" | "cancelled" | "failed";
+  status: "ringing" | "connecting" | "connected" | "reconnecting" | "completed" | "missed" | "declined" | "cancelled" | "failed";
   startedAt: string;
   endedAt?: string | null;
   durationSeconds: number;
@@ -194,5 +194,3 @@ export interface PaginatedCallHistory {
   limit: number;
   pages: number;
 }
-
-

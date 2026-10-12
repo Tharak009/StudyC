@@ -5,18 +5,20 @@ import { searchLimiter } from "../middlewares/rate-limit.middleware.js";
 import { profilePictureUpload } from "../middlewares/upload.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
 import { asyncHandler } from "../utils/async-handler.js";
-import { searchUsersSchema, updateProfileSchema } from "../validators/user.validator.js";
+import { searchUsersSchema, updateMessagingProfileSchema, updateProfileSchema } from "../validators/user.validator.js";
 
 export const userRouter = Router();
 userRouter.use(authenticate);
 
 userRouter.get("/profile", asyncHandler(userController.profile));
 userRouter.put("/profile", validate(updateProfileSchema), asyncHandler(userController.updateProfile));
+userRouter.put("/messaging-profile", validate(updateMessagingProfileSchema), asyncHandler(userController.updateMessagingProfile));
 userRouter.post(
   "/profile-picture",
   profilePictureUpload,
   asyncHandler(userController.uploadProfilePicture)
 );
+userRouter.delete("/profile-picture", asyncHandler(userController.deleteProfilePicture));
 
 userRouter.get("/search", searchLimiter, validate(searchUsersSchema), asyncHandler(userController.search));
 userRouter.get("/blocked", asyncHandler(userController.listBlocked));

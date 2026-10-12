@@ -3,7 +3,7 @@ import { userService } from "../services/user.service.js";
 import { blockService } from "../services/block.service.js";
 import { ApiResponse } from "../utils/api-response.js";
 import { ApiError } from "../utils/api-error.js";
-import type { UpdateProfileInput } from "../validators/user.validator.js";
+import type { UpdateMessagingProfileInput, UpdateProfileInput } from "../validators/user.validator.js";
 
 export class UserController {
   async profile(request: Request, response: Response) {
@@ -28,9 +28,22 @@ export class UserController {
     response.json(new ApiResponse(200, profile, "Profile updated"));
   }
 
+  async updateMessagingProfile(request: Request, response: Response) {
+    const profile = await userService.updateMessagingProfile(
+      request.user!.id,
+      request.body as UpdateMessagingProfileInput
+    );
+    response.json(new ApiResponse(200, profile, "Messaging profile updated"));
+  }
+
   async uploadProfilePicture(request: Request, response: Response) {
     const profile = await userService.uploadProfilePicture(request.user!.id, request.file);
     response.json(new ApiResponse(200, profile, "Profile picture updated"));
+  }
+
+  async deleteProfilePicture(request: Request, response: Response) {
+    const profile = await userService.deleteProfilePicture(request.user!.id);
+    response.json(new ApiResponse(200, profile, "Profile picture removed"));
   }
 
   async search(request: Request, response: Response) {

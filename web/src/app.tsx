@@ -18,7 +18,6 @@ import { EventsPage } from "./pages/events.page";
 import { StudentSettingsPage } from "./pages/student-settings.page";
 import { HelpFaqPage } from "./pages/help-faq.page";
 import { AdminPage } from "./pages/admin.page";
-import { AdminProfilePage } from "./pages/admin-profile.page";
 import { ProfilePage } from "./pages/profile.page";
 import { DirectMessagesPage } from "./pages/direct-messages.page";
 import { NotificationsPage } from "./pages/notifications.page";
@@ -27,6 +26,7 @@ import { CommunityDetailsPage } from "./pages/community-details.page";
 import { CommunityFormPage } from "./pages/community-form.page";
 import { CommunityMembersPage } from "./pages/community-members.page";
 import { CommunityGroupChatPage } from "./pages/community-group-chat.page";
+import { CommunitiesWorkspaceLayout } from "./components/community/communities-workspace-layout";
 import { DashboardSidebar } from "./components/dashboard-sidebar";
 import { Routes, Route, Navigate, useNavigate } from "react-router";
 import { ProtectedRoute } from "./routes/guards/ProtectedRoute";
@@ -40,6 +40,10 @@ import { ToastContainer } from "./components/toast-container";
 import { GlobalBroadcastBanner } from "./components/layout/GlobalBroadcastBanner";
 import { StreamChatProvider } from "./providers/StreamChatProvider";
 import { CallOverlay } from "./components/chat/calls/CallOverlay";
+import { UnifiedWorkspaceLayout } from "./components/layout/unified-workspace-layout";
+import { CallsPage } from "./pages/calls.page";
+import { MessagingProfileSettingsPage } from "./pages/messaging-profile-settings.page";
+import { StudyMeetingsPage } from "./pages/study-meetings.page";
 
 type Page = "home" | "login" | "register" | "dashboard" | "chat" | "admin" | "profile" | "direct-messages";
 
@@ -609,7 +613,7 @@ function Dashboard({ go, dark, tog }: { go: (p: Page) => void; dark: boolean; to
 
   const navItems = [
     { id: "dashboard", label: "Dashboard", Icon: Home },
-    { id: "communities", label: "Communities", Icon: Users },
+    { id: "communities", label: "Study Circles", Icon: Users },
     { id: "messages", label: "Direct Messages", Icon: MessageCircle, badge: 3 },
     { id: "resources", label: "Resources", Icon: FolderOpen },
     { id: "events", label: "Events", Icon: Calendar },
@@ -624,7 +628,7 @@ function Dashboard({ go, dark, tog }: { go: (p: Page) => void; dark: boolean; to
         <div className="flex-1 max-w-sm mx-8">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input placeholder="Search communities, files..." className="w-full pl-8 pr-4 py-2 text-sm rounded-lg border border-border bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all" />
+            <input placeholder="Search study circles, files..." className="w-full pl-8 pr-4 py-2 text-sm rounded-lg border border-border bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all" />
           </div>
         </div>
         <div className="flex items-center gap-2.5">
@@ -698,7 +702,7 @@ function Dashboard({ go, dark, tog }: { go: (p: Page) => void; dark: boolean; to
                 {/* Communities */}
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-bold text-foreground">Active Communities</h3>
+                    <h3 className="text-sm font-bold text-foreground">Active Study Circles</h3>
                     <button className="text-xs font-semibold text-sky-500 hover:text-sky-400 transition-colors">View all →</button>
                   </div>
                   <div className="flex gap-4 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
@@ -1148,30 +1152,38 @@ export function App() {
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route element={<UnifiedWorkspaceLayout />}>
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/study-meetings" element={<StudyMeetingsPage />} />
+            <Route path="/study-meetings/:id" element={<StudyMeetingsPage />} />
+            <Route path="/locked-chats" element={<ChatPage lockedOnly />} />
+            <Route path="/calls" element={<CallsPage />} />
             <Route path="/stream-chat" element={<Navigate to="/chat" replace />} />
+            <Route path="/settings" element={<StudentSettingsPage />} />
+            <Route path="/messaging-settings/*" element={<MessagingProfileSettingsPage />} />
+            {/* Communities is one section in the shared messaging workspace. */}
+            <Route path="/communities" element={<CommunitiesWorkspaceLayout />}>
+              <Route index element={<CommunitiesListPage />} />
+              <Route path="new" element={<CommunityFormPage mode="create" />} />
+              <Route path=":id" element={<CommunityDetailsPage />} />
+              <Route path=":id/edit" element={<CommunityFormPage mode="edit" />} />
+              <Route path=":id/members" element={<CommunityMembersPage />} />
+              <Route path=":communityId/groups/:groupId" element={<CommunityGroupChatPage />} />
+            </Route>
+            </Route>
             <Route path="/profile" element={<ProfilePage {...p} />} />
             <Route path="/direct-messages" element={<DirectMessagesPage />} />
             <Route path="/direct-messages/:conversationId" element={<DirectMessagesPage />} />
             <Route path="/resources" element={<ConnectionsResourcesPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/settings" element={<StudentSettingsPage />} />
             <Route path="/help" element={<HelpFaqPage />} />
             <Route path="/faq" element={<Navigate to="/help" replace />} />
-
-            {/* Dedicated Communities Section */}
-            <Route path="/communities" element={<CommunitiesListPage />} />
-            <Route path="/communities/new" element={<CommunityFormPage mode="create" />} />
-            <Route path="/communities/:id" element={<CommunityDetailsPage />} />
-            <Route path="/communities/:id/edit" element={<CommunityFormPage mode="edit" />} />
-            <Route path="/communities/:id/members" element={<CommunityMembersPage />} />
-            <Route path="/communities/:communityId/groups/:groupId" element={<CommunityGroupChatPage />} />
 
             {/* Governance Protected Routes (Admin & Moderator Only) */}
             <Route element={<AdminRoute />}>
               <Route path="/admin" element={<AdminPage />} />
-              <Route path="/admin/profile" element={<AdminProfilePage />} />
+              <Route path="/admin/profile" element={<Navigate to="/profile" replace />} />
               <Route path="/admin/*" element={<AdminPage />} />
             </Route>
           </Route>

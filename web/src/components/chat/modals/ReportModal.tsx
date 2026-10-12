@@ -102,7 +102,7 @@ export function ReportModal({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 select-none animate-in fade-in duration-150"
+        className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/50 select-none animate-in fade-in duration-150"
         onClick={onClose}
       >
         <motion.div

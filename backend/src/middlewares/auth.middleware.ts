@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { USER_STATUS } from "../constants/user-status.js";
+import { env } from "../config/env.js";
 import { userRepository } from "../repositories/user.repository.js";
 import { ApiError } from "../utils/api-error.js";
 import { verifyAccessToken } from "../utils/tokens.js";
@@ -72,6 +73,9 @@ export const authenticateToken = asyncHandler(
         role: user.role,
         department: user.department,
         rollNumber: user.rollNumber,
+        profilePicture: user.profilePicture?.startsWith("/")
+          ? new URL(user.profilePicture, env.API_PUBLIC_URL).toString()
+          : user.profilePicture,
         name: user.fullName,
         fullName: user.fullName,
         status: user.status

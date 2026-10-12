@@ -1,7 +1,11 @@
 import { Types } from "mongoose";
 import { GROUP_STATUS, GROUP_TYPES } from "../constants/community-group.js";
+import { ACTIVE_MEMBERSHIP_STATUSES } from "../constants/community-membership.js";
+import { COMMUNITY_ROLES } from "../constants/community-roles.js";
+import { ROLES } from "../constants/roles.js";
 import { Community } from "../models/community.model.js";
 import { CommunityGroup, type CommunityGroupDocument } from "../models/community-group.model.js";
+import { CommunityMember } from "../models/community-member.model.js";
 import { ApiError } from "../utils/api-error.js";
 import {
   toStreamAnnouncementChannelId,
@@ -16,6 +20,53 @@ import type {
 import { streamService } from "./stream.service.js";
 
 export class CommunityGroupService {
+  /** Creates the standard group set for a newly created Community. Safe to retry. */
+  async ensureDefaultGroups(
+    communityId: string,
+    ownerId: string
+  ): Promise<CommunityGroupDocument[]> {
+    const community = await Community.findById(communityId);
+    if (!community || community.isDeleted) {
+      throw new ApiError(404, "Community not found", [], "COMMUNITY_NOT_FOUND");
+    }
+
+    const defaults = [
+      { name: "general", description: "A shared space for questions and discussion.", type: GROUP_TYPES.DISCUSSION, isAnnouncement: false },
+      { name: "announcements", description: "Official community notices and updates.", type: GROUP_TYPES.ANNOUNCEMENT, isAnnouncement: true },
+      { name: "introductions", description: "Introduce yourself and meet the community.", type: GROUP_TYPES.DISCUSSION, isAnnouncement: false },
+      { name: "resources", description: "Share useful academic resources and references.", type: GROUP_TYPES.STUDY, isAnnouncement: false }
+    ] as const;
+    const created: CommunityGroupDocument[] = [];
+    for (const definition of defaults) {
+      const existing = await CommunityGroup.findOne({
+        communityId: community._id,
+        name: new RegExp(`^${definition.name}$`, "i"),
+        isDeleted: false
+      });
+      if (existing) {
+        created.push(existing);
+        continue;
+      }
+
+      if (definition.isAnnouncement) {
+        const announcement = await this.ensureAnnouncementGroup(communityId, ownerId);
+        created.push(announcement);
+      } else {
+        const group = await this.createGroup(communityId, ownerId, {
+          name: definition.name,
+          description: definition.description,
+          type: definition.type as CreateGroupInput["type"]
+        });
+        if (definition.name === "general") {
+          group.sortOrder = 0;
+          await group.save();
+        }
+        created.push(group);
+      }
+    }
+    return created;
+  }
+
   /**
    * Ensures that the dedicated Announcements group and corresponding Stream Chat
    * channel exist for a community. Idempotent.
@@ -37,22 +88,29 @@ export class CommunityGroupService {
 
     const streamChannelId = toStreamAnnouncementChannelId(communityId);
 
+    if (!streamService.isConfigured()) {
+      throw new ApiError(503, "Group chat is unavailable until Stream Chat is configured", [], "STREAM_NOT_CONFIGURED");
+    }
+
     // Create or get the Stream Chat channel
     try {
-      if (streamService.isConfigured()) {
-        const client = streamService.getClient();
-        const ownerStreamId = toStreamUserId(ownerId);
-        const channel = client.channel("messaging", streamChannelId, {
-          name: "Announcements",
-          studyConnectType: "community_announcement",
-          communityId,
-          created_by_id: ownerStreamId,
-          isAnnouncement: true
-        } as any);
-        await channel.create();
-      }
+      const client = streamService.getClient();
+      const ownerStreamId = toStreamUserId(ownerId);
+      const channel = client.channel("messaging", streamChannelId, {
+        name: "Announcements",
+        studyConnectType: "community_announcement",
+        communityId,
+        created_by_id: ownerStreamId,
+        isAnnouncement: true
+      } as any);
+      await channel.create();
     } catch (err) {
-      console.warn(`[CommunityGroupService] Could not pre-create announcement channel on Stream:`, err);
+      // Existing deterministic channel IDs are safe to reuse after an interrupted retry.
+      try {
+        await streamService.getClient().channel("messaging", streamChannelId).query();
+      } catch {
+        throw new ApiError(503, "The announcement chat could not be initialized. Please try again.", [], "GROUP_CHAT_INITIALIZATION_FAILED");
+      }
     }
 
     const announcementGroup = await CommunityGroup.create({
@@ -111,15 +169,7 @@ export class CommunityGroupService {
       throw new ApiError(404, "Community not found", [], "COMMUNITY_NOT_FOUND");
     }
 
-    const isOwner = community.owner.toString() === creatorId || userRole === "ADMIN";
-    if (!isOwner) {
-      throw new ApiError(
-        403,
-        "Only the community owner can create groups in this community",
-        [],
-        "FORBIDDEN"
-      );
-    }
+    await this.assertGroupManager(community, creatorId, userRole);
 
     const groupDoc = new CommunityGroup({
       communityId: community._id,
@@ -136,28 +186,43 @@ export class CommunityGroupService {
     const streamChannelId = toStreamGroupChannelId(communityId, groupDoc._id.toString());
     groupDoc.streamChannelId = streamChannelId;
 
-    // Create the Stream Chat channel
-    if (streamService.isConfigured()) {
+    if (!streamService.isConfigured()) {
+      throw new ApiError(503, "Group chat is unavailable until Stream Chat is configured", [], "STREAM_NOT_CONFIGURED");
+    }
+
+    let createdStreamChannel = false;
+    try {
+      const client = streamService.getClient();
+      const ownerStreamId = toStreamUserId(creatorId);
+      const channel = client.channel("messaging", streamChannelId, {
+        name: groupDoc.name,
+        studyConnectType: "community_group",
+        communityId,
+        groupId: groupDoc._id.toString(),
+        groupType: groupDoc.type,
+        topic: groupDoc.description,
+        created_by_id: ownerStreamId,
+        isAnnouncement: false
+      } as any);
+      await channel.create();
+      createdStreamChannel = true;
+    } catch (err) {
       try {
-        const client = streamService.getClient();
-        const ownerStreamId = toStreamUserId(creatorId);
-        const channel = client.channel("messaging", streamChannelId, {
-          name: groupDoc.name,
-          studyConnectType: "community_group",
-          communityId,
-          groupId: groupDoc._id.toString(),
-          groupType: groupDoc.type,
-          topic: groupDoc.description,
-          created_by_id: ownerStreamId,
-          isAnnouncement: false
-        } as any);
-        await channel.create();
-      } catch (err) {
-        console.warn(`[CommunityGroupService] Could not create Stream channel for group ${groupDoc._id}:`, err);
+        await streamService.getClient().channel("messaging", streamChannelId).query();
+      } catch {
+        console.error(`[CommunityGroupService] Could not create Stream channel for group ${groupDoc._id}:`, err);
+        throw new ApiError(503, "The group chat could not be initialized. Please try again.", [], "GROUP_CHAT_INITIALIZATION_FAILED");
       }
     }
 
-    await groupDoc.save();
+    try {
+      await groupDoc.save();
+    } catch (error) {
+      if (createdStreamChannel) {
+        await streamService.getClient().channel("messaging", streamChannelId).delete().catch(() => {});
+      }
+      throw error;
+    }
 
     await Community.findByIdAndUpdate(community._id, {
       $inc: { groupCount: 1 }
@@ -180,10 +245,7 @@ export class CommunityGroupService {
       throw new ApiError(404, "Community not found", [], "COMMUNITY_NOT_FOUND");
     }
 
-    const isOwner = community.owner.toString() === actorId || userRole === "ADMIN";
-    if (!isOwner) {
-      throw new ApiError(403, "Only community owners can attach groups", [], "FORBIDDEN");
-    }
+    await this.assertGroupManager(community, actorId, userRole);
 
     // Check if channel is already attached to any group
     const existing = await CommunityGroup.findOne({
@@ -250,10 +312,7 @@ export class CommunityGroupService {
     const community = await Community.findById(communityId);
     if (!community) throw new ApiError(404, "Community not found");
 
-    const isOwner = community.owner.toString() === actorId || userRole === "ADMIN";
-    if (!isOwner) {
-      throw new ApiError(403, "Only the community owner can update groups", [], "FORBIDDEN");
-    }
+    await this.assertGroupManager(community, actorId, userRole);
 
     if (group.isAnnouncement && input.name && input.name !== "Announcements") {
       throw new ApiError(400, "The announcement space name cannot be altered", [], "INVALID_OPERATION");
@@ -316,10 +375,7 @@ export class CommunityGroupService {
     const community = await Community.findById(communityId);
     if (!community) throw new ApiError(404, "Community not found");
 
-    const isOwner = community.owner.toString() === actorId || userRole === "ADMIN";
-    if (!isOwner) {
-      throw new ApiError(403, "Only the community owner can delete groups", [], "FORBIDDEN");
-    }
+    await this.assertGroupManager(community, actorId, userRole);
 
     if (group.isAnnouncement) {
       throw new ApiError(
@@ -339,6 +395,31 @@ export class CommunityGroupService {
     await Community.findByIdAndUpdate(community._id, {
       $inc: { groupCount: -1 }
     });
+  }
+
+  private async assertGroupManager(
+    community: { _id: Types.ObjectId; owner: Types.ObjectId | string },
+    actorId: string,
+    userRole?: string
+  ): Promise<void> {
+    if (userRole === ROLES.ADMIN || community.owner.toString() === actorId) return;
+
+    const membership = await CommunityMember.findOne({
+      communityId: community._id,
+      userId: new Types.ObjectId(actorId),
+      status: { $in: ACTIVE_MEMBERSHIP_STATUSES }
+    }).select({ role: 1 });
+
+    if (membership?.role === COMMUNITY_ROLES.OWNER || membership?.role === COMMUNITY_ROLES.MODERATOR) {
+      return;
+    }
+
+    throw new ApiError(
+      403,
+      "Owner or moderator permissions are required to manage community groups",
+      [],
+      "MANAGER_REQUIRED"
+    );
   }
 }
 

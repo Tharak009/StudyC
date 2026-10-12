@@ -60,9 +60,9 @@ const dangerousExtensions = new Set([
   ".dll"
 ]);
 
-const imageUpload = multer({
+const createImageUpload = (maxFileSizeMb: number) => multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: env.MAX_FILE_SIZE_MB * 1024 * 1024, files: 1 },
+  limits: { fileSize: maxFileSizeMb * 1024 * 1024, files: 1 },
   fileFilter(_request, file, callback) {
     const ext = path.extname(file?.originalname || "").toLowerCase();
     if (dangerousExtensions.has(ext)) {
@@ -78,7 +78,9 @@ const imageUpload = multer({
   }
 });
 
-export const profilePictureUpload = imageUpload.single("profilePicture");
+const imageUpload = createImageUpload(env.MAX_FILE_SIZE_MB);
+
+export const profilePictureUpload = createImageUpload(Math.min(5, env.MAX_FILE_SIZE_MB)).single("profilePicture");
 export const communityBannerUpload = imageUpload.single("bannerImage");
 export const eventImageUpload = imageUpload.single("eventImage");
 

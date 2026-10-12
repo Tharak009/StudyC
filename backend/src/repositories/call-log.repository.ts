@@ -22,8 +22,10 @@ export interface CreateCallLogData {
   mode: "direct" | "group" | "stage";
   status: CallLogStatus;
   startedAt: Date;
+  connectedAt?: Date | null;
   endedAt?: Date | null;
   durationSeconds?: number;
+  endReason?: string | null;
   participants?: Array<{
     userId: string | mongoose.Types.ObjectId;
     name: string;
@@ -54,6 +56,36 @@ export class CallLogRepository {
     return CallLog.findOneAndUpdate({ callId }, { $set: update }, { new: true }).exec();
   }
 
+  async updateActiveDirectCall(callId: string, update: Partial<ICallLog>): Promise<CallLogDocument | null> {
+    return CallLog.findOneAndUpdate(
+      { callId, mode: "direct", status: { $in: ["ringing", "connecting", "connected", "reconnecting"] } },
+      { $set: update },
+      { new: true }
+    ).exec();
+  }
+
+  async updateActiveGroupCall(callId: string, update: Partial<ICallLog>): Promise<CallLogDocument | null> {
+    return CallLog.findOneAndUpdate(
+      { callId, mode: { $in: ["group", "stage"] }, status: { $in: ["connecting", "connected", "reconnecting"] } },
+      { $set: update },
+      { new: true }
+    ).exec();
+  }
+
+  async listActiveGroupCalls(): Promise<CallLogDocument[]> {
+    return CallLog.find({
+      mode: { $in: ["group", "stage"] },
+      status: { $in: ["connecting", "connected", "reconnecting"] }
+    }).exec();
+  }
+
+  async listActiveDirectCalls(): Promise<CallLogDocument[]> {
+    return CallLog.find({
+      mode: "direct",
+      status: { $in: ["ringing", "connecting", "connected", "reconnecting"] }
+    }).exec();
+  }
+
   async listUserHistory(userId: string, options: CallLogListOptions = {}) {
     const page = Math.max(1, options.page || 1);
     const limit = Math.min(50, Math.max(1, options.limit || 20));
@@ -77,6 +109,8 @@ export class CallLogRepository {
 
     if (options.status) {
       filter.status = options.status;
+    } else {
+      filter.status = { $in: ["completed", "missed", "declined", "cancelled", "failed"] };
     }
     if (options.type) {
       filter.type = options.type;

@@ -228,7 +228,7 @@ export function DashboardSidebar({
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Chats", href: "/chat", icon: MessageSquare },
     {
-      label: "Communities",
+      label: "Study Circles",
       href: "/communities",
       icon: Users,
       badge: joinedCommunitiesCount

@@ -1,7 +1,13 @@
 import type { Server, Socket } from "socket.io";
+import mongoose from "mongoose";
 import { BlockRepository } from "../repositories/block.repository.js";
+import { friendshipRepository } from "../repositories/friendship.repository.js";
+import { userRepository } from "../repositories/user.repository.js";
+import { FRIENDSHIP_STATUS } from "../models/friendship.model.js";
 import { callSessionService } from "../services/call-session.service.js";
+import { callHistoryService } from "../services/call-history.service.js";
 import { groupCallSessionService } from "../services/group-call-session.service.js";
+import { liveKitService } from "../services/livekit.service.js";
 import { iceConfigService } from "../services/ice-config.service.js";
 import { type CallType, type RoomSessionMode, type ParticipantRole, type CallParticipant, getCallSummary } from "../types/call.types.js";
 import { fromStreamUserId } from "../utils/stream-id.js";
@@ -38,7 +44,7 @@ interface EndCallPayload {
 
 interface SignalCallPayload {
   callId: string;
-  toSocketId: string;
+  toSocketId?: string;
   signalData: unknown;
 }
 
@@ -93,6 +99,13 @@ export const registerCallHandlers = (
 
     // Group Call Participant Left broadcast
     groupCallSessionService.onParticipantLeft((callId, userId, reason, remaining) => {
+      const activeSession = groupCallSessionService.getSession(callId);
+      if (activeSession) {
+        void callHistoryService.recordGroupProgress(activeSession, "connected");
+        void liveKitService.removeParticipant(activeSession, userId).catch((error) => {
+          console.warn("[CallSocket] Could not remove departed participant from LiveKit:", error);
+        });
+      }
       remaining.forEach((p) => {
         io.to(p.socketId).emit("call:group:participant_left", {
           callId,
@@ -104,12 +117,13 @@ export const registerCallHandlers = (
     });
 
     // Group Call Ended broadcast
-    groupCallSessionService.onGroupCallEnded((callId, summary) => {
-      io.emit("call:group:ended", {
+    groupCallSessionService.onGroupCallEnded((callId, summary, session) => {
+      io.to(`group-call-channel:${summary.channelId}`).emit("call:group:ended", {
         callId,
         channelId: summary.channelId,
         summary
       });
+      void liveKitService.deleteRoom(session);
     });
   }
 
@@ -130,10 +144,21 @@ export const registerCallHandlers = (
         const cleanCallerId = fromStreamUserId(currentUserId);
         const cleanTargetId = fromStreamUserId(targetUserId);
 
+        if (!mongoose.Types.ObjectId.isValid(cleanTargetId)) {
+          acknowledge?.({ success: false, reason: "INVALID_TARGET", message: "Invalid call recipient" });
+          return;
+        }
+
         if (cleanCallerId === cleanTargetId) {
           if (typeof acknowledge === "function") {
             acknowledge({ success: false, reason: "SELF_CALL", message: "Cannot call yourself" });
           }
+          return;
+        }
+
+        const friendship = await friendshipRepository.findBetweenUsers(cleanCallerId, cleanTargetId);
+        if (friendship?.status !== FRIENDSHIP_STATUS.ACCEPTED) {
+          acknowledge?.({ success: false, reason: "NOT_CONNECTED", message: "You can call connected friends only" });
           return;
         }
 
@@ -153,6 +178,21 @@ export const registerCallHandlers = (
           return;
         }
 
+        if (groupCallSessionService.getUserActiveCall(cleanCallerId)) {
+          acknowledge?.({ success: false, reason: "ALREADY_IN_CALL", message: "You are already in a call" });
+          return;
+        }
+        if (groupCallSessionService.getUserActiveCall(cleanTargetId)) {
+          acknowledge?.({ success: false, reason: "USER_BUSY", message: "User is currently busy in another call" });
+          return;
+        }
+
+        const targetUser = await userRepository.findById(cleanTargetId);
+        if (!targetUser) {
+          acknowledge?.({ success: false, reason: "OFFLINE", message: "User is unavailable" });
+          return;
+        }
+
         const callType: CallType = isVideo ? "video" : "voice";
 
         const result = callSessionService.createSession({
@@ -161,6 +201,8 @@ export const registerCallHandlers = (
           callerName: currentUserName,
           callerAvatar: currentUserAvatar,
           calleeId: cleanTargetId,
+          calleeName: targetUser.fullName,
+          calleeAvatar: targetUser.profilePicture,
           channelId,
           type: callType
         });
@@ -173,6 +215,14 @@ export const registerCallHandlers = (
         }
 
         const { session } = result;
+
+        try {
+          await callHistoryService.recordDirectProgress(session, "ringing");
+        } catch (error) {
+          callSessionService.failCall(session.callId, "call_history_unavailable");
+          acknowledge?.({ success: false, reason: "CALL_SETUP_FAILED", message: "Could not prepare call history" });
+          return;
+        }
 
         io.to(`user:${cleanTargetId}`).emit("call:incoming", {
           callId: session.callId,
@@ -197,9 +247,14 @@ export const registerCallHandlers = (
   );
 
   // ── 2. Accept Call ─────────────────────────────────────────────────────────
-  socket.on("call:accept", (payload: AcceptCallPayload, acknowledge?: (res: unknown) => void) => {
-    const { callId } = payload;
-    const session = callSessionService.acceptCall(callId, socket.id);
+  socket.on("call:accept", async (payload: AcceptCallPayload, acknowledge?: (res: unknown) => void) => {
+    const callId = payload?.callId;
+    if (typeof callId !== "string" || callId.length > 100) {
+      acknowledge?.({ success: false, message: "Invalid call session" });
+      return;
+    }
+    const cleanUserId = fromStreamUserId(currentUserId);
+    const session = callSessionService.acceptCall(callId, socket.id, cleanUserId);
 
     if (!session) {
       if (typeof acknowledge === "function") {
@@ -209,6 +264,19 @@ export const registerCallHandlers = (
     }
 
     callSessionService.setConnecting(callId);
+
+    try {
+      await callHistoryService.recordDirectProgress(session, "connecting");
+    } catch {
+      const failed = callSessionService.failCall(callId, "call_history_unavailable");
+      if (failed) {
+        const event = { callId, reason: "Call setup failed", failed: true };
+        io.to(failed.callerSocketId).emit("call:ended", event);
+        if (failed.calleeSocketId) io.to(failed.calleeSocketId).emit("call:ended", event);
+      }
+      acknowledge?.({ success: false, message: "Could not update call session" });
+      return;
+    }
 
     io.to(session.callerSocketId).emit("call:accepted", {
       callId,
@@ -223,8 +291,14 @@ export const registerCallHandlers = (
 
   // ── 3. Reject Call ─────────────────────────────────────────────────────────
   socket.on("call:reject", (payload: RejectCallPayload, acknowledge?: (res: unknown) => void) => {
-    const { callId, reason = "declined" } = payload;
-    const session = callSessionService.rejectCall(callId, reason);
+    const callId = payload?.callId;
+    const reason = payload?.reason || "declined";
+    const cleanUserId = fromStreamUserId(currentUserId);
+    if (typeof callId !== "string" || callId.length > 100 || typeof reason !== "string" || reason.length > 80) {
+      acknowledge?.({ success: false, message: "Invalid call request" });
+      return;
+    }
+    const session = callSessionService.rejectCall(callId, cleanUserId, reason);
 
     if (session) {
       const summary = getCallSummary(session);
@@ -235,14 +309,16 @@ export const registerCallHandlers = (
       });
     }
 
-    if (typeof acknowledge === "function") {
-      acknowledge({ success: true });
-    }
+    acknowledge?.({ success: Boolean(session), alreadyEnded: !session });
   });
 
   // ── 4. Cancel Call ─────────────────────────────────────────────────────────
   socket.on("call:cancel", (payload: CancelCallPayload, acknowledge?: (res: unknown) => void) => {
-    const { callId } = payload;
+    const callId = payload?.callId;
+    if (typeof callId !== "string" || callId.length > 100) {
+      acknowledge?.({ success: false, message: "Invalid call session" });
+      return;
+    }
     const session = callSessionService.cancelCall(callId, fromStreamUserId(currentUserId));
 
     if (session) {
@@ -254,24 +330,24 @@ export const registerCallHandlers = (
       });
     }
 
-    if (typeof acknowledge === "function") {
-      acknowledge({ success: true });
-    }
+    acknowledge?.({ success: Boolean(session), alreadyEnded: !session });
   });
 
   // ── 5. End Call ────────────────────────────────────────────────────────────
   socket.on("call:end", (payload: EndCallPayload, acknowledge?: (res: unknown) => void) => {
-    const { callId, toSocketId, reason = "ended" } = payload;
-    const session = callSessionService.endCall(callId, reason);
+    const callId = payload?.callId;
+    const reason = payload?.reason || "ended";
+    const cleanUserId = fromStreamUserId(currentUserId);
+    if (typeof callId !== "string" || callId.length > 100 || typeof reason !== "string" || reason.length > 120) {
+      acknowledge?.({ success: false, message: "Invalid call request" });
+      return;
+    }
+    const session = callSessionService.endCall(callId, reason, cleanUserId);
 
     const summary = session ? getCallSummary(session) : undefined;
-    const targetSocket =
-      toSocketId ||
-      (session
-        ? session.callerSocketId === socket.id
-          ? session.calleeSocketId
-          : session.callerSocketId
-        : undefined);
+    const targetSocket = session
+      ? session.callerId === cleanUserId ? session.calleeSocketId : session.callerSocketId
+      : undefined;
 
     if (targetSocket) {
       io.to(targetSocket).emit("call:ended", {
@@ -282,40 +358,111 @@ export const registerCallHandlers = (
       });
     }
 
-    if (typeof acknowledge === "function") {
-      acknowledge({ success: true, summary });
+    acknowledge?.({ success: Boolean(session), alreadyEnded: !session, summary });
+  });
+
+  socket.on("call:fail", (payload: { callId: string; reason?: string }, acknowledge?: (res: unknown) => void) => {
+    const cleanUserId = fromStreamUserId(currentUserId);
+    if (typeof payload?.callId !== "string" || payload.callId.length > 100) {
+      acknowledge?.({ success: false, message: "Invalid call session" });
+      return;
     }
+    const reason = typeof payload.reason === "string" ? payload.reason.slice(0, 120) : "connection_failed";
+    const session = callSessionService.failCall(payload.callId, reason, cleanUserId);
+    if (session) {
+      const summary = getCallSummary(session);
+      const peerSocketId = session.callerId === cleanUserId ? session.calleeSocketId : session.callerSocketId;
+      if (peerSocketId) io.to(peerSocketId).emit("call:ended", { callId: session.callId, reason, failed: true, summary });
+    }
+    acknowledge?.({ success: Boolean(session), alreadyEnded: !session });
   });
 
   // ── 6. Relay 1-to-1 WebRTC Signal ──────────────────────────────────────────
   socket.on("call:signal", (payload: SignalCallPayload) => {
-    const { callId, toSocketId, signalData } = payload;
-    if (!callId || !toSocketId || !signalData) return;
+    const { callId, signalData } = payload || {};
+    if (typeof callId !== "string" || callId.length > 100 || !signalData || typeof signalData !== "object") return;
 
     const session = callSessionService.getSession(callId);
     if (!session) return;
 
     const cleanUserId = fromStreamUserId(currentUserId);
-    if (session.callerId !== cleanUserId && session.calleeId !== cleanUserId) {
-      return;
-    }
+    if (!callSessionService.isCurrentParticipantSocket(callId, cleanUserId, socket.id)) return;
+    if (!["ACCEPTED", "CONNECTING", "CONNECTED", "RECONNECTING"].includes(session.status)) return;
 
-    if (session.status !== "CONNECTED") {
-      callSessionService.connectCall(callId);
-    }
+    const targetSocket = session.callerId === cleanUserId ? session.calleeSocketId : session.callerSocketId;
+    if (!targetSocket) return;
+    const signal = signalData as Record<string, unknown>;
+    const candidate = signal.candidate as Record<string, unknown> | undefined;
+    const validSignal =
+      (signal.type === "offer" || signal.type === "answer") && typeof signal.sdp === "string" && signal.sdp.length <= 200_000 ||
+      candidate !== undefined && candidate !== null && typeof candidate === "object" &&
+      typeof candidate.candidate === "string" && candidate.candidate.length <= 8192 &&
+      (candidate.sdpMid === undefined || candidate.sdpMid === null || typeof candidate.sdpMid === "string") &&
+      (candidate.sdpMLineIndex === undefined || candidate.sdpMLineIndex === null || typeof candidate.sdpMLineIndex === "number");
+    if (!validSignal) return;
 
-    io.to(toSocketId).emit("call:signal", {
+    io.to(targetSocket).emit("call:signal", {
       callId,
       fromSocketId: socket.id,
       signalData
     });
   });
 
+  socket.on("call:peer_connected", async (payload: { callId: string }, acknowledge?: (res: unknown) => void) => {
+    const cleanUserId = fromStreamUserId(currentUserId);
+    if (typeof payload?.callId !== "string" || payload.callId.length > 100) {
+      acknowledge?.({ success: false, message: "Invalid call session" });
+      return;
+    }
+    if (!callSessionService.isCurrentParticipantSocket(payload.callId, cleanUserId, socket.id)) {
+      acknowledge?.({ success: false, message: "Call is no longer connecting" });
+      return;
+    }
+    const result = callSessionService.reportPeerConnected(payload.callId, cleanUserId);
+    if (!result) {
+      acknowledge?.({ success: false, message: "Call is no longer connecting" });
+      return;
+    }
+    if (result.connected) {
+      try {
+        await callHistoryService.recordDirectProgress(result.session, "connected");
+      } catch {
+        const failed = callSessionService.failCall(payload.callId, "call_history_unavailable");
+        if (failed) {
+          const event = { callId: failed.callId, reason: "Call setup failed", failed: true };
+          io.to(failed.callerSocketId).emit("call:ended", event);
+          if (failed.calleeSocketId) io.to(failed.calleeSocketId).emit("call:ended", event);
+        }
+        acknowledge?.({ success: false, message: "Could not update call session" });
+        return;
+      }
+      const data = { callId: result.session.callId, connectedAt: result.session.connectedAt };
+      io.to(result.session.callerSocketId).emit("call:connected", data);
+      if (result.session.calleeSocketId) io.to(result.session.calleeSocketId).emit("call:connected", data);
+    }
+    acknowledge?.({ success: true, connected: result.connected });
+  });
+
+  socket.on("call:peer_reconnecting", async (payload: { callId: string }) => {
+    const cleanUserId = fromStreamUserId(currentUserId);
+    if (typeof payload?.callId !== "string" || payload.callId.length > 100) return;
+    if (!callSessionService.isCurrentParticipantSocket(payload.callId, cleanUserId, socket.id)) return;
+    const session = callSessionService.markReconnecting(payload.callId, cleanUserId);
+    if (!session) return;
+    await callHistoryService.recordDirectProgress(session, "reconnecting").catch(() => undefined);
+    const peerSocketId = session.callerId === cleanUserId ? session.calleeSocketId : session.callerSocketId;
+    if (peerSocketId) io.to(peerSocketId).emit("call:peer_reconnecting", { callId: session.callId });
+  });
+
   // ── 7. Reconnect Socket to Active 1-to-1 Call ──────────────────────────────
   socket.on(
     "call:reconnect",
     (payload: { callId: string }, acknowledge?: (res: unknown) => void) => {
-      const { callId } = payload;
+      const callId = payload?.callId;
+      if (typeof callId !== "string" || callId.length > 100) {
+        acknowledge?.({ success: false, message: "Invalid call session" });
+        return;
+      }
       const cleanUserId = fromStreamUserId(currentUserId);
       const res = callSessionService.reconnectUserSocket(callId, cleanUserId, socket.id);
 
@@ -341,17 +488,14 @@ export const registerCallHandlers = (
   socket.on(
     "call:screen_share",
     (payload: { callId: string; isSharing: boolean; toSocketId?: string }) => {
-      const { callId, isSharing, toSocketId } = payload;
+      const { callId, isSharing } = payload || {};
+      if (typeof callId !== "string" || typeof isSharing !== "boolean") return;
       const session = callSessionService.getSession(callId);
       if (!session) return;
       const cleanUserId = fromStreamUserId(currentUserId);
-      if (session.callerId !== cleanUserId && session.calleeId !== cleanUserId) return;
+      if (!callSessionService.isCurrentParticipantSocket(callId, cleanUserId, socket.id)) return;
 
-      const targetSocket =
-        toSocketId ||
-        (session.callerSocketId === socket.id
-          ? session.calleeSocketId
-          : session.callerSocketId);
+      const targetSocket = session.callerId === cleanUserId ? session.calleeSocketId : session.callerSocketId;
 
       if (targetSocket) {
         io.to(targetSocket).emit("call:screen_share", {
@@ -394,8 +538,19 @@ export const registerCallHandlers = (
 
         const { session } = res;
 
-        // Broadcast to channel that a group call is active
-        socket.broadcast.emit("call:group:started", {
+        let media;
+        try {
+          await liveKitService.prepareRoom(session);
+          const host = session.participants.get(cleanCallerId);
+          if (!host) throw new Error("Call host participant could not be loaded");
+          media = await liveKitService.issueParticipantToken(session, host);
+          await callHistoryService.recordGroupProgress(session, "connecting");
+        } catch (error) {
+          groupCallSessionService.abortGroupSession(session.callId);
+          throw error;
+        }
+
+        io.to(`group-call-channel:${session.channelId}`).emit("call:group:started", {
           callId: session.callId,
           channelId: session.channelId,
           communityName: session.communityName,
@@ -408,6 +563,7 @@ export const registerCallHandlers = (
         acknowledge?.({
           success: true,
           callId: session.callId,
+          media,
           session: {
             callId: session.callId,
             channelId: session.channelId,
@@ -443,6 +599,16 @@ export const registerCallHandlers = (
           return;
         }
 
+        let media;
+        try {
+          await liveKitService.prepareRoom(res.session);
+          media = await liveKitService.issueParticipantToken(res.session, res.participant);
+          await callHistoryService.recordGroupProgress(res.session, "connecting");
+        } catch (error) {
+          groupCallSessionService.leaveGroupSession(payload.callId, cleanUserId);
+          throw error;
+        }
+
         // Notify each existing participant that a newcomer joined
         res.existingParticipants.forEach((p) => {
           io.to(p.socketId).emit("call:group:participant_joined", {
@@ -454,6 +620,7 @@ export const registerCallHandlers = (
         acknowledge?.({
           success: true,
           callId: payload.callId,
+          media,
           participant: res.participant,
           existingParticipants: res.existingParticipants,
           session: {
@@ -476,33 +643,12 @@ export const registerCallHandlers = (
   // ── 10. Leave Group Call ───────────────────────────────────────────────────
   socket.on(
     "call:group:leave",
-    (payload: { callId: string }, acknowledge?: (res: any) => void) => {
+    async (payload: { callId: string }, acknowledge?: (res: any) => void) => {
       const cleanUserId = fromStreamUserId(currentUserId);
       const res = groupCallSessionService.leaveGroupSession(payload.callId, cleanUserId);
+      const activeSession = groupCallSessionService.getSession(payload.callId);
+      if (activeSession) await callHistoryService.recordGroupProgress(activeSession, "connected");
       acknowledge?.({ success: true, res });
-    }
-  );
-
-  // ── 11. Relay Group WebRTC Signal (Offer / Answer / ICE) ───────────────────
-  socket.on(
-    "call:group:signal",
-    (payload: { callId: string; toUserId: string; signalData: any }) => {
-      const { callId, toUserId, signalData } = payload;
-      if (!callId || !toUserId || !signalData) return;
-
-      const session = groupCallSessionService.getSession(callId);
-      if (!session) return;
-
-      const cleanToUserId = fromStreamUserId(toUserId);
-      const targetParticipant = session.participants.get(cleanToUserId);
-
-      if (targetParticipant?.socketId) {
-        io.to(targetParticipant.socketId).emit("call:group:signal", {
-          callId,
-          fromUserId: fromStreamUserId(currentUserId),
-          signalData
-        });
-      }
     }
   );
 
@@ -539,7 +685,13 @@ export const registerCallHandlers = (
   // ── 13. Query Active Group Call for Channel ────────────────────────────────
   socket.on(
     "call:group:getActiveCall",
-    (payload: { channelId: string }, acknowledge?: (res: any) => void) => {
+    async (payload: { channelId: string }, acknowledge?: (res: any) => void) => {
+      const cleanUserId = fromStreamUserId(currentUserId);
+      if (!(await groupCallSessionService.canJoinChannel(payload?.channelId, cleanUserId))) {
+        acknowledge?.({ success: false, message: "You are not a member of this channel" });
+        return;
+      }
+      await socket.join(`group-call-channel:${payload.channelId}`);
       const session = groupCallSessionService.getActiveCallForChannel(payload.channelId);
       if (session) {
         acknowledge?.({
@@ -562,6 +714,32 @@ export const registerCallHandlers = (
       }
     }
   );
+
+  socket.on("call:group:unwatch", (payload: { channelId?: string }) => {
+    if (payload?.channelId && /^[a-z0-9_-]{1,64}$/i.test(payload.channelId)) {
+      void socket.leave(`group-call-channel:${payload.channelId}`);
+    }
+  });
+
+  socket.on("call:group:media_joined", async (payload: { callId: string }, acknowledge?: (res: any) => void) => {
+    const cleanUserId = fromStreamUserId(currentUserId);
+    const participant = groupCallSessionService.markMediaConnected(payload?.callId, cleanUserId, socket.id);
+    const session = groupCallSessionService.getSession(payload?.callId);
+    if (!participant || !session) {
+      acknowledge?.({ success: false, message: "Group call participant is not authorized" });
+      return;
+    }
+    await callHistoryService.recordGroupProgress(session, "connected");
+    session.participants.forEach((other) => {
+      if (other.userId !== cleanUserId) {
+        io.to(other.socketId).emit("call:group:participant_connected", {
+          callId: session.callId,
+          participant
+        });
+      }
+    });
+    acknowledge?.({ success: true });
+  });
 
   // ── 13b. Reconnect to Active Group Call ───────────────────────────────────
   socket.on(
@@ -661,12 +839,14 @@ export const registerCallHandlers = (
   // ── 13f. Stage Moderation: Resolve Speaker Request ─────────────────────────
   socket.on(
     "call:stage:resolve_request",
-    (
+    async (
       payload: { callId: string; targetUserId: string; approve: boolean },
       acknowledge?: (res: any) => void
     ) => {
       const { callId, targetUserId, approve } = payload;
       const cleanUserId = fromStreamUserId(currentUserId);
+      const beforeSession = groupCallSessionService.getSession(callId);
+      const priorRole = beforeSession?.participants.get(targetUserId)?.role;
       const res = groupCallSessionService.resolveSpeakRequest(
         callId,
         cleanUserId,
@@ -678,6 +858,15 @@ export const registerCallHandlers = (
         return;
       }
       const session = groupCallSessionService.getSession(callId);
+      if (approve && session && res.participant) {
+        try {
+          await liveKitService.setParticipantRole(session, targetUserId, res.participant.role);
+        } catch (error: any) {
+          if (priorRole) groupCallSessionService.setParticipantRole(callId, cleanUserId, targetUserId, priorRole);
+          acknowledge?.({ success: false, message: error?.message || "Could not update participant media permissions" });
+          return;
+        }
+      }
       if (session) {
         session.participants.forEach((p: CallParticipant) => {
           io.to(p.socketId).emit("call:stage:requests_updated", {
@@ -700,12 +889,18 @@ export const registerCallHandlers = (
   // ── 13g. Stage Moderation: Set Participant Role ────────────────────────────
   socket.on(
     "call:stage:set_role",
-    (
+    async (
       payload: { callId: string; targetUserId: string; role: ParticipantRole },
       acknowledge?: (res: any) => void
     ) => {
       const { callId, targetUserId, role } = payload;
+      if (!["moderator", "speaker", "listener", "participant"].includes(role)) {
+        acknowledge?.({ success: false, message: "Invalid participant role" });
+        return;
+      }
       const cleanUserId = fromStreamUserId(currentUserId);
+      const beforeSession = groupCallSessionService.getSession(callId);
+      const priorRole = beforeSession?.participants.get(targetUserId)?.role;
       const res = groupCallSessionService.setParticipantRole(
         callId,
         cleanUserId,
@@ -717,6 +912,15 @@ export const registerCallHandlers = (
         return;
       }
       const session = groupCallSessionService.getSession(callId);
+      if (session && res.participant) {
+        try {
+          await liveKitService.setParticipantRole(session, targetUserId, res.participant.role);
+        } catch (error: any) {
+          if (priorRole) groupCallSessionService.setParticipantRole(callId, cleanUserId, targetUserId, priorRole);
+          acknowledge?.({ success: false, message: error?.message || "Could not update participant media permissions" });
+          return;
+        }
+      }
       if (session) {
         session.participants.forEach((p: CallParticipant) => {
           io.to(p.socketId).emit("call:stage:role_changed", {
@@ -733,7 +937,7 @@ export const registerCallHandlers = (
   // ── 13h. Group Moderation: Remote Force Mute ──────────────────────────────
   socket.on(
     "call:group:mute_participant",
-    (
+    async (
       payload: { callId: string; targetUserId: string },
       acknowledge?: (res: any) => void
     ) => {
@@ -746,6 +950,12 @@ export const registerCallHandlers = (
       }
       const session = groupCallSessionService.getSession(callId);
       if (session) {
+        try {
+          await liveKitService.muteParticipant(session, targetUserId);
+        } catch (error: any) {
+          acknowledge?.({ success: false, message: error?.message || "Unable to mute participant on the media server" });
+          return;
+        }
         const target = session.participants.get(targetUserId);
         if (target) {
           // Tell target socket directly to mute local hardware
@@ -768,12 +978,25 @@ export const registerCallHandlers = (
   // ── 13i. Group Moderation: Remove (Kick & Ban) Participant ────────────────
   socket.on(
     "call:group:remove_participant",
-    (
+    async (
       payload: { callId: string; targetUserId: string },
       acknowledge?: (res: any) => void
     ) => {
       const { callId, targetUserId } = payload;
       const cleanUserId = fromStreamUserId(currentUserId);
+      const activeSession = groupCallSessionService.getSession(callId);
+      const operator = activeSession?.participants.get(cleanUserId);
+      const target = activeSession?.participants.get(targetUserId);
+      if (!activeSession || !operator || (operator.role !== "host" && operator.role !== "moderator") || !target || target.role === "host") {
+        acknowledge?.({ success: false, message: "You are not authorized to remove this participant" });
+        return;
+      }
+      try {
+        await liveKitService.removeParticipant(activeSession, targetUserId);
+      } catch (error: any) {
+        acknowledge?.({ success: false, message: error?.message || "Unable to remove participant from the media server" });
+        return;
+      }
       const res = groupCallSessionService.removeParticipant(callId, cleanUserId, targetUserId);
       if ("error" in res) {
         acknowledge?.({ success: false, message: res.error });
@@ -821,9 +1044,13 @@ export const registerCallHandlers = (
   socket.on(
     "call:getState",
     (payload: { callId?: string }, acknowledge?: (res: unknown) => void) => {
-      const call = payload.callId
+      const cleanUserId = fromStreamUserId(currentUserId);
+      const activeCall = payload?.callId
         ? callSessionService.getSession(payload.callId)
-        : callSessionService.getUserActiveCall(fromStreamUserId(currentUserId));
+        : callSessionService.getUserActiveCall(cleanUserId);
+      const call = activeCall && (activeCall.callerId === cleanUserId || activeCall.calleeId === cleanUserId)
+        ? activeCall
+        : undefined;
 
       if (typeof acknowledge === "function") {
         acknowledge({
@@ -844,7 +1071,7 @@ export const registerCallHandlers = (
   );
 
   // ── 16. Socket Disconnect Auto-Handling (1-to-1 & Group) ───────────────────
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     const cleanUserId = fromStreamUserId(currentUserId);
 
     // 1-to-1 handling
@@ -858,6 +1085,7 @@ export const registerCallHandlers = (
         summary
       });
     } else if (result && result.graceStarted && result.peerSocketId) {
+      await callHistoryService.recordDirectProgress(result.session, "reconnecting").catch(() => undefined);
       io.to(result.peerSocketId).emit("call:peer_reconnecting", {
         callId: result.session.callId,
         userId: currentUserId

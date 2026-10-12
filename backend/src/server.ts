@@ -3,9 +3,12 @@ import { app } from "./app.js";
 import { connectDatabase, disconnectDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
 import { initializeSockets } from "./sockets/index.js";
+import { callHistoryService } from "./services/call-history.service.js";
 
 const start = async (): Promise<void> => {
   await connectDatabase();
+  await callHistoryService.markInterruptedDirectCalls();
+  await callHistoryService.markInterruptedGroupCalls();
   const server = createServer(app);
   initializeSockets(server);
 

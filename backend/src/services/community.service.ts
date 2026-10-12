@@ -81,11 +81,16 @@ export class CommunityService {
       status: community.status
     });
 
-    // Automatically establish the dedicated Announcements space for the new community
+    // Provision the starter spaces before confirming creation. Any partial setup
+    // remains idempotent and can be completed by a retry without losing channels.
     try {
-      await communityGroupService.ensureAnnouncementGroup(community._id.toString(), ownerId);
+      await communityGroupService.ensureDefaultGroups(community._id.toString(), ownerId);
     } catch (err) {
-      console.warn(`Could not automatically create announcement group for community ${community._id}:`, err);
+      // Roll back the new Community shell so users never receive a successful
+      // create response for a Community with unusable starter chat metadata.
+      await this.members.deleteMembership(community._id.toString(), ownerId).catch(() => null);
+      await this.communities.deleteById(community._id.toString()).catch(() => null);
+      throw err;
     }
 
     return this.withViewerState(community, ownerId, COMMUNITY_ROLES.OWNER, MEMBERSHIP_STATUS.ACTIVE);

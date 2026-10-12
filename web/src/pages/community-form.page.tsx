@@ -6,7 +6,6 @@ import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router";
 import { z } from "zod";
 import { communitiesApi } from "../api/communities.api";
-import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { FormField } from "../components/form-field";
 import { getErrorMessage } from "../utils/errors";
 import {
@@ -102,12 +101,15 @@ export function CommunityFormPage({ mode }: { mode?: "create" | "edit" } = {}) {
         name: values.name,
         description: values.description,
         category: values.category as CommunityCategory,
-        type: values.type as CommunityType,
-        tags: values.tagsText.split(",").map((tag) => tag.trim()).filter(Boolean),
-        visibility: values.visibility as CommunityVisibility,
-        joinPolicy: values.joinPolicy as CommunityJoinPolicy,
-        icon: values.icon,
-        bannerImage: values.bannerImage?.[0]
+        ...(isEdit && {
+          type: values.type as CommunityType,
+          tags: values.tagsText.split(",").map((tag) => tag.trim()).filter(Boolean),
+          visibility: values.visibility as CommunityVisibility,
+          joinPolicy: values.joinPolicy as CommunityJoinPolicy,
+          icon: values.icon,
+          bannerImage: values.bannerImage?.[0]
+        }),
+        ...(!isEdit && { visibility: values.visibility as CommunityVisibility })
       };
       return isEdit ? communitiesApi.update(id!, payload) : communitiesApi.create(payload);
     },
@@ -145,19 +147,14 @@ export function CommunityFormPage({ mode }: { mode?: "create" | "edit" } = {}) {
 
   if (isEdit && existing.isLoading) {
     return (
-      <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-slate-50 font-sans antialiased transition-colors duration-300">
-        <DashboardSidebar currentNav="/communities" />
-        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto items-center justify-center">
-          <div className="py-16 text-sm text-slate-500">Loading community...</div>
-        </div>
+      <div className="flex h-full min-h-0 min-w-0 flex-1 items-center justify-center overflow-y-auto bg-slate-50 text-slate-900 dark:bg-[#080D1A] dark:text-slate-50">
+        <div className="py-16 text-sm text-slate-500">Loading community...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-slate-50 font-sans antialiased transition-colors duration-300">
-      <DashboardSidebar currentNav="/communities" />
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+    <div className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto bg-slate-50 text-slate-900 dark:bg-[#080D1A] dark:text-slate-50">
         <main className="p-4 sm:p-8 space-y-6 max-w-4xl w-full mx-auto">
           {/* Breadcrumb / Back Link */}
           <div>
@@ -166,20 +163,22 @@ export function CommunityFormPage({ mode }: { mode?: "create" | "edit" } = {}) {
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors"
             >
               <ChevronLeft size={14} />
-              <span>Back to Communities</span>
+              <span>Back to Study Circles</span>
             </Link>
           </div>
 
           <div className="animate-fade-up">
             <header className="border-b border-slate-200 pb-7 dark:border-white/10">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#1E90FF]">
-                {isEdit ? "Community management" : "New community"}
+                {isEdit ? "Study Circle management" : "New study circle"}
               </p>
               <h1 className="mt-3 text-4xl font-semibold tracking-[-0.05em]">
-                {isEdit ? "Edit community" : "Create a community"}
+                {isEdit ? "Edit study circle" : "Create a study circle"}
               </h1>
               <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                Set the academic domain, community type, visibility, tags, and banner for collaborative study.
+                {isEdit
+                  ? "Manage your Study Circle details, visibility, and member experience."
+                  : "Create a place for classmates to study and collaborate. You can adjust advanced settings later."}
               </p>
             </header>
 
@@ -190,15 +189,16 @@ export function CommunityFormPage({ mode }: { mode?: "create" | "edit" } = {}) {
             Description
           </span>
           <textarea
-            rows={5}
+            rows={isEdit ? 5 : 3}
+            maxLength={isEdit ? 1000 : 300}
             className="field resize-none"
-            placeholder="What should students use this community for?"
+            placeholder="What should students use this study circle for?"
             {...register("description")}
           />
           <span className="mt-1.5 block text-xs text-slate-500">Maximum 1000 characters</span>
         </label>
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        {isEdit ? <div className="grid gap-5 sm:grid-cols-2">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
               Community Type
@@ -224,9 +224,14 @@ export function CommunityFormPage({ mode }: { mode?: "create" | "edit" } = {}) {
               ))}
             </select>
           </label>
-        </div>
+        </div> : <label className="block">
+          <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">Category</span>
+          <select className="field" {...register("category")}>
+            {COMMUNITY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </label>}
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        {isEdit ? <div className="grid gap-5 sm:grid-cols-2">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
               Visibility
@@ -252,25 +257,30 @@ export function CommunityFormPage({ mode }: { mode?: "create" | "edit" } = {}) {
               ))}
             </select>
           </label>
-        </div>
+        </div> : <label className="block">
+          <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">Visibility</span>
+          <select className="field" {...register("visibility")}>
+            {VISIBILITY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+        </label>}
 
-        <FormField
+        {isEdit && <FormField
           label="Tags"
           hint="Separate up to 10 tags with commas"
           error={errors.tagsText?.message}
           placeholder="algorithms, dsa, java, interview"
           {...register("tagsText")}
-        />
+        />}
 
-        <FormField
+        {isEdit && <FormField
           label="Icon Identifier or URL (Optional)"
           hint="e.g. code, book, or an image link"
           error={errors.icon?.message}
           placeholder="book-open"
           {...register("icon")}
-        />
+        />}
 
-        <div>
+        {isEdit && <div>
           <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
             Community Banner / Custom Photo
           </span>
@@ -322,7 +332,7 @@ export function CommunityFormPage({ mode }: { mode?: "create" | "edit" } = {}) {
               />
             </label>
           )}
-        </div>
+        </div>}
 
         {mutation.isError && (
           <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">
@@ -333,13 +343,12 @@ export function CommunityFormPage({ mode }: { mode?: "create" | "edit" } = {}) {
         <div className="flex justify-end border-t border-slate-200 pt-6 dark:border-white/10">
           <button className="primary-button" type="submit" disabled={mutation.isPending}>
             {mutation.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}
-            {mutation.isPending ? "Saving..." : isEdit ? "Save community" : "Create community"}
+            {mutation.isPending ? "Saving..." : isEdit ? "Save study circle" : "Create study circle"}
           </button>
         </div>
       </form>
     </div>
         </main>
-      </div>
     </div>
   );
 }

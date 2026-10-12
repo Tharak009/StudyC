@@ -824,6 +824,7 @@ export function CallOverlay() {
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
+                muted
                 className={`w-full h-full object-contain ${hasRemoteVideo ? "block" : "hidden"}`}
               />
 

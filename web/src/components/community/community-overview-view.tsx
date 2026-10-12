@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone,
   Plus,
@@ -19,13 +20,17 @@ import {
   Share2,
   Sparkles,
   Layers,
-  Search
+  Search,
+  Trash2
 } from "lucide-react";
+import { communitiesApi } from "../../api/communities.api";
+import { communityGroupsApi } from "../../api/community-groups.api";
 import type { Community, CommunityVisibility } from "../../types/community";
 import type { CommunityGroup, GroupType } from "../../types/community-group";
 import { Avatar } from "../avatar";
 import { useAuthStore } from "../../store/auth.store";
 import { useToastStore } from "../../store/toast.store";
+import { ConfirmationDialog } from "../confirmation-dialog";
 
 interface CommunityOverviewViewProps {
   community: Community;
@@ -137,20 +142,90 @@ export function CommunityOverviewView({
   const navigate = useNavigate();
   const currentUser = useAuthStore((state) => state.user);
   const { addToast } = useToastStore();
+  const queryClient = useQueryClient();
   const [groupFilter, setGroupFilter] = useState("");
+  const [groupToDelete, setGroupToDelete] = useState<CommunityGroup | null>(null);
+  const [isDeleteCommunityOpen, setIsDeleteCommunityOpen] = useState(false);
 
+  const currentUserId = currentUser?._id;
   const isOwner = Boolean(
     community.membershipRole === "OWNER" ||
-      (currentUser?._id && community.owner?._id === currentUser._id)
+      (currentUserId && (community.ownerId === currentUserId || community.owner?._id === currentUserId))
   );
-  const canManage = isOwner || community.membershipRole === "MODERATOR";
+  const isModerator = Boolean(
+    community.membershipRole === "MODERATOR" ||
+      (currentUserId && community.moderators?.includes(currentUserId))
+  );
+  const canManage = isOwner || isModerator;
+  const isMember = Boolean(
+    community.isMember ||
+      community.membershipStatus === "ACTIVE" ||
+      isOwner ||
+      isModerator ||
+      (community.membershipRole === "MEMBER" && !community.membershipStatus)
+  );
+  const joinRequiresApproval =
+    community.joinPolicy === "APPLICATION" ||
+    community.visibility?.toUpperCase() === "PRIVATE";
+  const isInviteOnly =
+    community.joinPolicy === "INVITE_ONLY" ||
+    community.visibility?.toUpperCase() === "INVITE_ONLY";
+  const canRequestOrJoin = Boolean(
+    !isMember && !community.isPending && !community.isBanned && !community.isSuspended && !isInviteOnly
+  );
+  const joinMutation = useMutation({
+    mutationFn: () => joinRequiresApproval
+      ? communitiesApi.requestJoin(community._id)
+      : communitiesApi.join(community._id),
+    onSuccess: async (updatedCommunity) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["communities"] }),
+        queryClient.invalidateQueries({ queryKey: ["community", community._id] })
+      ]);
+      addToast(
+        joinRequiresApproval || updatedCommunity.isPending
+          ? "Join request sent"
+          : "Joined community",
+        "success"
+      );
+    },
+    onError: (error: any) => {
+      addToast(
+        error?.response?.data?.message || error?.message || "Unable to join this community",
+        "error"
+      );
+    }
+  });
+  const deleteCommunityMutation = useMutation({
+    mutationFn: () => communitiesApi.delete(community._id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["communities"] });
+      addToast("Study Circle deleted. Its chat history is preserved.", "success");
+      navigate("/communities", { replace: true });
+    },
+    onError: (error: any) => {
+      addToast(error?.response?.data?.message || error?.message || "Unable to delete this Study Circle", "error");
+    }
+  });
+  const deleteGroupMutation = useMutation({
+    mutationFn: (group: CommunityGroup) => communityGroupsApi.delete(community._id, group._id),
+    onSuccess: async (_result, group) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["community-groups", community._id] }),
+        queryClient.invalidateQueries({ queryKey: ["community", community._id] })
+      ]);
+      setGroupToDelete(null);
+      addToast(`“${group.name}” removed. Its chat history is preserved.`, "success");
+    },
+    onError: (error: any) => {
+      addToast(error?.response?.data?.message || error?.message || "Unable to delete this group", "error");
+    }
+  });
 
   const announcementGroup = groups.find(
     (g) => g.isAnnouncement || g.type === "ANNOUNCEMENT"
   );
-  const regularGroups = groups.filter(
-    (g) => !g.isAnnouncement && g.type !== "ANNOUNCEMENT"
-  );
+  const regularGroups = groups.filter((g) => g.status === "ACTIVE" && !g.isDeleted);
 
   const filteredGroups = regularGroups.filter((g) =>
     groupFilter ? g.name.toLowerCase().includes(groupFilter.toLowerCase()) : true
@@ -208,7 +283,7 @@ export function CommunityOverviewView({
               </div>
 
               {/* Quick Actions Bar */}
-              <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2 sm:pt-0">
                 {announcementTargetId && (
                   <button
                     type="button"
@@ -232,6 +307,41 @@ export function CommunityOverviewView({
                   >
                     <Plus size={14} />
                     <span>Add Group</span>
+                  </button>
+                )}
+
+                {!isMember && (
+                  <button
+                    type="button"
+                    onClick={() => canRequestOrJoin && joinMutation.mutate()}
+                    disabled={!canRequestOrJoin || joinMutation.isPending}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-[#1E90FF] border border-[#1E90FF]/30 hover:bg-[#1E90FF]/10 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+                  >
+                    {community.isBanned
+                      ? "Banned"
+                      : community.isSuspended
+                        ? "Suspended"
+                        : community.isPending
+                          ? "Request pending"
+                          : isInviteOnly
+                            ? "Invite only"
+                            : joinMutation.isPending
+                              ? "Joining…"
+                              : joinRequiresApproval
+                                ? "Request to Join"
+                                : "Join Community"}
+                  </button>
+                )}
+
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteCommunityOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-500/20 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                    title="Delete this Study Circle"
+                  >
+                    <Trash2 size={14} />
+                    <span className="hidden sm:inline">Delete</span>
                   </button>
                 )}
 
@@ -361,7 +471,7 @@ export function CommunityOverviewView({
             </div>
 
             <div className="flex items-center gap-2">
-              {regularGroups.length > 4 && (
+              {regularGroups.filter((g) => !g.isAnnouncement && g.type !== "ANNOUNCEMENT").length > 4 && (
                 <div className="relative">
                   <Search
                     size={14}
@@ -419,7 +529,8 @@ export function CommunityOverviewView({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {filteredGroups.map((group) => {
-                const Icon = getGroupIcon(group.type);
+                const isAnnouncement = group.isAnnouncement || group.type === "ANNOUNCEMENT";
+                const Icon = isAnnouncement ? Megaphone : getGroupIcon(group.type);
                 const colorStyle = getGroupIconColor(group.type);
 
                 return (
@@ -444,13 +555,27 @@ export function CommunityOverviewView({
                             <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#1E90FF] truncate transition-colors">
                               {group.name}
                             </h3>
-                            <GroupTypeBadge type={group.type} />
+                              {isAnnouncement ? <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">Announcement</span> : <GroupTypeBadge type={group.type} />}
                           </div>
                         </div>
 
                         <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-[#1E90FF] group-hover:translate-x-0.5 transition-all shrink-0">
                           <ArrowRight size={13} />
                         </div>
+                        {canManage && !isAnnouncement && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setGroupToDelete(group);
+                            }}
+                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                            aria-label={`Delete group ${group.name}`}
+                            title="Delete group"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
 
                       <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
@@ -550,6 +675,27 @@ export function CommunityOverviewView({
           </div>
         </div>
       </div>
+      <ConfirmationDialog
+        isOpen={isDeleteCommunityOpen}
+        title="Delete this Study Circle?"
+        message={`“${community.name}” will be removed from Study Circles. Existing Stream channels and message history are preserved.`}
+        warning="This cannot be undone from this page."
+        confirmText="Delete Study Circle"
+        isDestructive
+        isLoading={deleteCommunityMutation.isPending}
+        onCancel={() => !deleteCommunityMutation.isPending && setIsDeleteCommunityOpen(false)}
+        onConfirm={() => deleteCommunityMutation.mutate()}
+      />
+      <ConfirmationDialog
+        isOpen={Boolean(groupToDelete)}
+        title="Delete this group?"
+        message={`“${groupToDelete?.name || "This group"}” will be removed from the group list. Its Stream channel and message history are preserved.`}
+        confirmText="Delete Group"
+        isDestructive
+        isLoading={deleteGroupMutation.isPending}
+        onCancel={() => !deleteGroupMutation.isPending && setGroupToDelete(null)}
+        onConfirm={() => groupToDelete && deleteGroupMutation.mutate(groupToDelete)}
+      />
     </div>
   );
 }

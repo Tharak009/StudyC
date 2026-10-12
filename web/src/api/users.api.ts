@@ -14,6 +14,8 @@ export const usersApi = {
     (await apiClient.get<ApiResponse<User>>("/api/users/profile")).data.data,
   updateProfile: async (payload: UpdateProfilePayload) =>
     (await apiClient.put<ApiResponse<User>>("/api/users/profile", payload)).data.data,
+  updateMessagingProfile: async (payload: Pick<UpdateProfilePayload, "fullName" | "bio">) =>
+    (await apiClient.put<ApiResponse<User>>("/api/users/messaging-profile", payload)).data.data,
   uploadProfilePicture: async (file: File) => {
     const form = new FormData();
     form.append("profilePicture", file);
@@ -23,6 +25,8 @@ export const usersApi = {
       })
     ).data.data;
   },
+  deleteProfilePicture: async () =>
+    (await apiClient.delete<ApiResponse<User>>("/api/users/profile-picture")).data.data,
   search: async (query: string) =>
     (await apiClient.get<ApiResponse<User[]>>("/api/users/search", { params: { q: query } })).data.data,
   dashboard: async () =>

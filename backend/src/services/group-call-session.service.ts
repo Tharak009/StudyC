@@ -1,7 +1,11 @@
 import mongoose from "mongoose";
+import { randomUUID } from "node:crypto";
+import { env } from "../config/env.js";
 import { CommunityMember } from "../models/community-member.model.js";
 import { ACTIVE_MEMBERSHIP_STATUSES } from "../constants/community-membership.js";
 import { Community } from "../models/community.model.js";
+import { CommunityGroup } from "../models/community-group.model.js";
+import { GROUP_STATUS } from "../constants/community-group.js";
 import {
   type GroupCallSession,
   type CallParticipant,
@@ -12,7 +16,6 @@ import {
   type StageRequest
 } from "../types/call.types.js";
 import {
-  MAX_GROUP_CALL_PARTICIPANTS,
   GROUP_RECONNECT_TIMEOUT_MS,
   STAGE_MAX_SPEAKERS
 } from "../constants/call.constants.js";
@@ -46,17 +49,19 @@ export type GroupParticipantLeftCallback = (
   remainingParticipants: CallParticipant[]
 ) => void;
 
-export type GroupCallEndedCallback = (callId: string, summary: GroupCallSummary) => void;
+export type GroupCallEndedCallback = (callId: string, summary: GroupCallSummary, session: GroupCallSession) => void;
 
 /**
  * GroupCallSessionService
  * Centralized coordinator for multi-participant group voice and video calls.
- * Manages participant lifecycles, community authorization, disconnect grace periods, and mesh coordination.
+ * Manages participant lifecycles, channel authorization, disconnect grace periods, and SFU session policy.
  */
 export class GroupCallSessionService {
   private groupSessions = new Map<string, GroupCallSession>(); // callId -> GroupCallSession
   private userActiveGroupCallMap = new Map<string, string>(); // userId -> callId
   private channelActiveCallMap = new Map<string, string>(); // channelId -> callId
+  private creationInProgressUsers = new Set<string>();
+  private creationInProgressChannels = new Set<string>();
 
   private participantLeftCallbacks: GroupParticipantLeftCallback[] = [];
   private groupEndedCallbacks: GroupCallEndedCallback[] = [];
@@ -107,13 +112,33 @@ export class GroupCallSessionService {
 
     this.groupEndedCallbacks.forEach((cb) => {
       try {
-        cb(callId, summary);
+        cb(callId, summary, session);
       } catch (err) {
         console.error("[GroupCallSessionService] Error in groupEnded callback:", err);
       }
     });
 
     return summary;
+  }
+
+  /** Remove a newly-created session when SFU provisioning fails before it is exposed. */
+  public abortGroupSession(callId: string): void {
+    const session = this.groupSessions.get(callId);
+    if (!session) return;
+    session.participants.forEach((participant) => {
+      if (participant.reconnectGraceTimer) clearTimeout(participant.reconnectGraceTimer);
+      this.userActiveGroupCallMap.delete(participant.userId);
+    });
+    this.channelActiveCallMap.delete(session.channelId);
+    this.groupSessions.delete(callId);
+  }
+
+  public markMediaConnected(callId: string, userId: string, socketId: string): CallParticipant | null {
+    const session = this.groupSessions.get(callId);
+    const participant = session?.participants.get(userId);
+    if (!session || !participant || participant.socketId !== socketId || session.status !== "CONNECTED") return null;
+    participant.connectionState = "CONNECTED";
+    return participant;
   }
 
   public onParticipantLeft(callback: GroupParticipantLeftCallback): void {
@@ -143,27 +168,32 @@ export class GroupCallSessionService {
   /**
    * Authorize whether a user has access to a community channel
    */
-  private async checkCommunityAuthorization(channelId: string, userId: string): Promise<boolean> {
-    if (!channelId.startsWith("comm_")) {
-      return true; // Non-community channels (e.g. group DMs) handled separately
+  public async canJoinChannel(channelId: string, userId: string): Promise<boolean> {
+    if (!channelId || channelId.length > 64 || !/^[a-z0-9_-]+$/i.test(channelId) || !mongoose.Types.ObjectId.isValid(userId)) {
+      return false;
     }
 
     try {
-      const parts = channelId.slice("comm_".length).split("_");
-      const communityId = parts[0];
-      if (!communityId || !mongoose.Types.ObjectId.isValid(communityId) || !mongoose.Types.ObjectId.isValid(userId)) {
-        return true; // Fallback permit if IDs are non-standard test IDs
+      const { streamService } = await import("./stream.service.js");
+      if (!(await streamService.isChannelMember(channelId, userId))) return false;
+
+      if (channelId.startsWith("comm_")) {
+        const group = await CommunityGroup.findOne({ streamChannelId: channelId }).select("communityId status isDeleted").lean().exec();
+        const communityId = String(group?.communityId || channelId.slice("comm_".length).split("_")[0]);
+        if (!mongoose.Types.ObjectId.isValid(communityId)) return false;
+        if (group && (group.isDeleted || group.status !== GROUP_STATUS.ACTIVE)) return false;
+        const membership = await CommunityMember.exists({
+          communityId: new mongoose.Types.ObjectId(communityId),
+          userId: new mongoose.Types.ObjectId(userId),
+          status: { $in: [...ACTIVE_MEMBERSHIP_STATUSES, undefined as any] }
+        });
+        return Boolean(membership);
       }
 
-      const membership = await CommunityMember.exists({
-        communityId: new mongoose.Types.ObjectId(communityId),
-        userId: new mongoose.Types.ObjectId(userId),
-        status: { $in: [...ACTIVE_MEMBERSHIP_STATUSES, undefined as any] }
-      });
-      return Boolean(membership);
-    } catch (err) {
-      console.warn("[GroupCallSessionService] Community authorization check warning:", err);
       return true;
+    } catch (err) {
+      console.warn("[GroupCallSessionService] Channel authorization check failed closed:", err);
+      return false;
     }
   }
 
@@ -195,6 +225,25 @@ export class GroupCallSessionService {
   public async createGroupSession(
     params: CreateGroupSessionParams
   ): Promise<{ session: GroupCallSession } | { error: string; code: string }> {
+    if (this.creationInProgressUsers.has(params.callerId) || this.userActiveGroupCallMap.has(params.callerId)) {
+      return { error: "You are already in an active call", code: "ALREADY_IN_CALL" };
+    }
+    if (this.creationInProgressChannels.has(params.channelId) || this.channelActiveCallMap.has(params.channelId)) {
+      return { error: "A group call is already active in this channel", code: "CALL_ALREADY_ACTIVE" };
+    }
+    this.creationInProgressUsers.add(params.callerId);
+    this.creationInProgressChannels.add(params.channelId);
+    try {
+      return await this.createGroupSessionInternal(params);
+    } finally {
+      this.creationInProgressUsers.delete(params.callerId);
+      this.creationInProgressChannels.delete(params.channelId);
+    }
+  }
+
+  private async createGroupSessionInternal(
+    params: CreateGroupSessionParams
+  ): Promise<{ session: GroupCallSession } | { error: string; code: string }> {
     const { callerId, callerSocketId, callerName, callerAvatar, channelId, communityId, communityName, type, mode } = params;
 
     // 1. Check if caller is already on a 1-to-1 or group call
@@ -206,7 +255,7 @@ export class GroupCallSessionService {
     }
 
     // 2. Check community authorization
-    const isAuthorized = await this.checkCommunityAuthorization(channelId, callerId);
+    const isAuthorized = await this.canJoinChannel(channelId, callerId);
     if (!isAuthorized) {
       return { error: "You must be a member of this community to start calls", code: "UNAUTHORIZED" };
     }
@@ -233,7 +282,7 @@ export class GroupCallSessionService {
       videoEnabled: type === "video",
       isScreenSharing: false,
       handRaised: false,
-      connectionState: "CONNECTED"
+      connectionState: "JOINING"
     };
 
     const participantsMap = new Map<string, CallParticipant>();
@@ -243,6 +292,7 @@ export class GroupCallSessionService {
 
     const session: GroupCallSession = {
       callId,
+      mediaRoomName: `sc_group_${randomUUID().replace(/-/g, "")}`,
       channelId,
       communityId,
       communityName,
@@ -251,10 +301,11 @@ export class GroupCallSessionService {
       initiatedBy: callerId,
       status: "CONNECTED",
       participants: participantsMap,
+      participantHistory: new Map(participantsMap),
       screenSharerId: null,
       raiseHandQueue: [],
       bannedUserIds: new Set<string>(),
-      maxParticipants: MAX_GROUP_CALL_PARTICIPANTS,
+      maxParticipants: env.GROUP_CALL_MAX_PARTICIPANTS,
       createdAt: Date.now(),
       startedAt: Date.now()
     };
@@ -300,18 +351,37 @@ export class GroupCallSessionService {
       return { error: "You are already in another group call", code: "ALREADY_IN_CALL" };
     }
 
-    // 2. Check participant limit
+    // 2. Check channel membership and current Community membership.
+    const isAuthorized = await this.canJoinChannel(session.channelId, userId);
+    if (!isAuthorized) {
+      return { error: "You are not authorized to join this group call", code: "UNAUTHORIZED" };
+    }
+
+    const existingParticipant = session.participants.get(userId);
+    if (existingParticipant) {
+      const isSameSocket = existingParticipant.socketId === socketId;
+      const isRecovering = existingParticipant.connectionState === "DISCONNECTED";
+      if (!isSameSocket && !isRecovering) {
+        return { error: "You are already connected to this group call", code: "ALREADY_JOINED" };
+      }
+      if (existingParticipant.reconnectGraceTimer) {
+        clearTimeout(existingParticipant.reconnectGraceTimer);
+        existingParticipant.reconnectGraceTimer = undefined;
+      }
+      existingParticipant.socketId = socketId;
+      existingParticipant.connectionState = "JOINING";
+      return {
+        session,
+        participant: existingParticipant,
+        existingParticipants: Array.from(session.participants.values()).filter((participant) => participant.userId !== userId)
+      };
+    }
+
     if (session.participants.size >= session.maxParticipants) {
       return {
         error: `Group call has reached the maximum of ${session.maxParticipants} participants`,
         code: "CALL_FULL"
       };
-    }
-
-    // 3. Check community authorization
-    const isAuthorized = await this.checkCommunityAuthorization(session.channelId, userId);
-    if (!isAuthorized) {
-      return { error: "You are not authorized to join this group call", code: "UNAUTHORIZED" };
     }
 
     const existingParticipants = Array.from(session.participants.values());
@@ -347,6 +417,7 @@ export class GroupCallSessionService {
     };
 
     session.participants.set(userId, newParticipant);
+    session.participantHistory.set(userId, newParticipant);
     this.userActiveGroupCallMap.set(userId, callId);
 
     return {
@@ -376,6 +447,7 @@ export class GroupCallSessionService {
       clearTimeout(participant.reconnectGraceTimer);
     }
 
+    if (participant) participant.leftAt = Date.now();
     session.participants.delete(userId);
     this.userActiveGroupCallMap.delete(userId);
 
@@ -399,7 +471,7 @@ export class GroupCallSessionService {
       callHistoryService.recordGroupCall(session, summary);
       this.groupEndedCallbacks.forEach((cb) => {
         try {
-          cb(callId, summary);
+          cb(callId, summary, session);
         } catch (err) {
           console.error("[GroupCallSessionService] Error in groupEnded callback:", err);
         }
@@ -734,7 +806,7 @@ export class GroupCallSessionService {
       type: session.type,
       mode: session.mode,
       initiatedBy: session.initiatedBy,
-      totalParticipants: session.participants.size,
+      totalParticipants: session.participantHistory.size,
       duration,
       startedAt: session.startedAt,
       endedAt,

@@ -10,6 +10,7 @@ import { userRouter } from "./user.routes.js";
 import { reportRouter } from "./report.routes.js";
 import { streamRouter } from "./stream.routes.js";
 import { callRouter } from "./call.routes.js";
+import { studyMeetingRouter } from "./study-meeting.routes.js";
 
 export const apiRouter = Router();
 
@@ -25,6 +26,7 @@ apiRouter.use("/", globalResourceRouter);
 apiRouter.use("/reports", reportRouter);
 apiRouter.use("/stream", streamRouter);
 apiRouter.use("/calls", callRouter);
+apiRouter.use("/study-meetings", studyMeetingRouter);
 
 apiRouter.get("/future-modules", (_request, response) => {
   response.json({

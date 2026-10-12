@@ -17,8 +17,8 @@ export const DISCONNECT_GRACE_PERIOD_MS = 15_000; // 15 seconds
 // Auto-reset delay: duration call terminated banner remains visible before resetting to IDLE
 export const AUTO_RESET_DELAY_MS = 2_500; // 2.5 seconds
 
-// Group calls: maximum supported participants for peer-to-peer mesh
-export const MAX_GROUP_CALL_PARTICIPANTS = 6;
+// Group-call capacity ceiling; runtime cap is configurable up to 100 via env.
+export const MAX_GROUP_CALL_PARTICIPANTS = 100;
 
 // Group calls: grace period for a temporarily disconnected group participant
 export const GROUP_RECONNECT_TIMEOUT_MS = 15_000; // 15 seconds
@@ -29,4 +29,3 @@ export const STAGE_MAX_SPEAKERS = 6;
 // Active Speaker Detection: volume threshold and polling interval
 export const ACTIVE_SPEAKER_THRESHOLD = 25; // 0-255 RMS volume scale
 export const ACTIVE_SPEAKER_POLL_INTERVAL_MS = 250; // 250ms interval
-

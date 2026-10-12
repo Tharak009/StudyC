@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Channel as StreamChannel } from "stream-chat";
+import { useQuery } from "@tanstack/react-query";
 import {
   X,
   Bell,
@@ -18,20 +19,24 @@ import {
   CornerDownRight,
   Hash,
   Shield,
-  Clock,
   Loader2,
   Lock,
   Unlock,
   Ban,
   Flag,
   ShieldCheck,
-  KeyRound
+  Phone,
+  Video,
+  MessageSquare
 } from "lucide-react";
 import type { ActivePeer } from "../dm/ConversationHeader";
 import type { LightboxImage } from "./media/MediaLightbox";
 import { useChatPrivacyStore } from "../../store/chat-privacy.store";
 import { SetChatPinModal } from "./modals/SetChatPinModal";
 import { useToastStore } from "../../store/toast.store";
+import { usersApi } from "../../api/users.api";
+import { fromStreamUserId } from "../../utils/stream-id";
+import { ContactProfileDrawer } from "./ContactProfileDrawer";
 
 interface ChatInfoPanelProps {
   isOpen: boolean;
@@ -44,6 +49,7 @@ interface ChatInfoPanelProps {
   onJumpToMessage: (messageId: string) => void;
   onOpenSearch?: () => void;
   onOpenStarred?: () => void;
+  onStartCall?: (type: "audio" | "video") => void;
   onOpenLightbox?: (images: LightboxImage[], index: number) => void;
   isPeerBlocked?: boolean;
   onToggleBlockPeer?: () => void;
@@ -75,6 +81,7 @@ export function ChatInfoPanel({
   onJumpToMessage,
   onOpenSearch,
   onOpenStarred,
+  onStartCall,
   onOpenLightbox,
   isPeerBlocked = false,
   onToggleBlockPeer,
@@ -85,45 +92,75 @@ export function ChatInfoPanel({
   const [isTogglingMute, setIsTogglingMute] = useState(false);
   const [isSetPinModalOpen, setIsSetPinModalOpen] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const [showProfilePhoto, setShowProfilePhoto] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<{ id: string; name: string; avatar?: string } | null>(null);
+  const [hasMoreSharedItems, setHasMoreSharedItems] = useState(true);
+  const [loadingSharedItems, setLoadingSharedItems] = useState(false);
+  const [sharedItemsError, setSharedItemsError] = useState(false);
+  const [sharedRevision, setSharedRevision] = useState(0);
 
   const { addToast } = useToastStore();
-  const isLocked = useChatPrivacyStore((state) => state.isLocked(channel.id));
+  const channelId = channel.id || "";
+  const isLocked = useChatPrivacyStore((state) => state.isLocked(channelId));
   const hasPin = useChatPrivacyStore((state) => state.hasPin);
   const toggleLock = useChatPrivacyStore((state) => state.toggleLock);
-  const disappearingDuration =
-    useChatPrivacyStore((state) => state.getDisappearingDuration(channel.id)) ||
-    ((channel.data as any)?.disappearing_duration as number) ||
-    0;
-  const setDisappearingDuration = useChatPrivacyStore(
-    (state) => state.setDisappearingDuration
-  );
+  const profileId = peer?.id ? fromStreamUserId(peer.id) : "";
+  const profileQuery = useQuery({
+    queryKey: ["public-profile", profileId],
+    queryFn: () => usersApi.getPublicProfile(profileId),
+    enabled: isOpen && isDM && Boolean(profileId),
+    retry: false
+  });
 
   const handleToggleLock = () => {
+    if (!channelId) return;
     if (!hasPin()) {
       setIsSetPinModalOpen(true);
       return;
     }
-    toggleLock(channel.id);
+    toggleLock(channelId);
     addToast(
-      isLocked ? "Chat unlocked from privacy lock" : "Chat locked with PIN",
+      isLocked ? "Chat restored to this browser's list" : "Chat hidden in this browser",
       "success"
     );
   };
 
-  const handleChangeDisappearing = async (seconds: number) => {
-    setDisappearingDuration(channel.id, seconds);
+  useEffect(() => {
+    if (!isOpen || !channel) return;
+    let mounted = true;
+    setSharedItemsError(false);
+    channel.query({ messages: { limit: 50 } }).then((response) => {
+      if (mounted) {
+        setHasMoreSharedItems((response.messages || []).length >= 50);
+        setSharedRevision((value) => value + 1);
+      }
+    }).catch(() => { if (mounted) setSharedItemsError(true); });
+    return () => { mounted = false; };
+  }, [isOpen, channel]);
+
+  useEffect(() => {
+    if (!showProfilePhoto) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowProfilePhoto(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showProfilePhoto]);
+
+  const loadMoreSharedItems = async () => {
+    const loaded = channel.state?.messages || [];
+    if (loadingSharedItems || !hasMoreSharedItems || loaded.length === 0) return;
+    setLoadingSharedItems(true);
+    setSharedItemsError(false);
     try {
-      await channel.updatePartial({ set: { disappearing_duration: seconds } });
-    } catch {}
-    const label =
-      seconds === 86400
-        ? "24 hours"
-        : seconds === 604800
-        ? "7 days"
-        : seconds === 2592000
-        ? "30 days"
-        : "Off";
-    addToast(`Disappearing messages set to ${label}`, "success");
+      const response = await channel.query({ messages: { limit: 50, id_lt: loaded[0].id } });
+      setHasMoreSharedItems((response.messages || []).length >= 50);
+      setSharedRevision((value) => value + 1);
+    } catch {
+      setSharedItemsError(true);
+    } finally {
+      setLoadingSharedItems(false);
+    }
   };
 
   // Sync mute status
@@ -165,6 +202,8 @@ export function ChatInfoPanel({
       url: string;
       title?: string;
       createdAt: string;
+      isVideo?: boolean;
+      sender: string;
     }> = [];
 
     const files: Array<{
@@ -174,6 +213,7 @@ export function ChatInfoPanel({
       fileSize?: number;
       mimeType?: string;
       createdAt: string;
+      sender: string;
     }> = [];
 
     const links: Array<{
@@ -181,6 +221,7 @@ export function ChatInfoPanel({
       url: string;
       snippet: string;
       createdAt: string;
+      sender: string;
     }> = [];
 
     messages.forEach((msg) => {
@@ -193,15 +234,18 @@ export function ChatInfoPanel({
           att.type === "image" ||
           Boolean(att.image_url) ||
           /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(url);
+        const isVideo = att.type === "video" || Boolean(att.mime_type?.startsWith("video/"));
 
         const dateStr = msg.created_at ? new Date(msg.created_at).toISOString() : "";
 
-        if (isImg) {
+        if (isImg || isVideo) {
           media.push({
             messageId: msg.id,
             url,
-            title: att.title || att.fallback,
-            createdAt: dateStr
+            title: att.title || att.fallback || (isVideo ? "Shared video" : "Shared photo"),
+            createdAt: dateStr,
+            isVideo,
+            sender: msg.user?.name || "StudyConnect member"
           });
         } else {
           files.push({
@@ -215,7 +259,8 @@ export function ChatInfoPanel({
                 ? parseInt(att.file_size, 10)
                 : undefined,
             mimeType: att.mime_type,
-            createdAt: dateStr
+            createdAt: dateStr,
+            sender: msg.user?.name || "StudyConnect member"
           });
         }
       });
@@ -230,7 +275,8 @@ export function ChatInfoPanel({
               messageId: msg.id,
               url: u,
               snippet: msg.text || "",
-              createdAt: dateStr
+              createdAt: dateStr,
+              sender: msg.user?.name || "StudyConnect member"
             });
           });
         }
@@ -258,7 +304,7 @@ export function ChatInfoPanel({
       pinnedMessages: pinned,
       memberItems: members
     };
-  }, [channel.state?.messages, channel.state?.pinnedMessages, channel.state?.members]);
+  }, [channel.state?.messages, channel.state?.pinnedMessages, channel.state?.members, sharedRevision]);
 
   // Lightbox images array
   const lightboxImages: LightboxImage[] = useMemo(() => {
@@ -309,11 +355,11 @@ export function ChatInfoPanel({
 
             {isDM ? (
               <>
-                <div className="relative mb-3">
-                  {peer?.avatar ? (
+                <button type="button" onClick={() => (profileQuery.data?.profilePicture || peer?.avatar) && setShowProfilePhoto(true)} aria-label="View profile photo" className="relative mb-3 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E90FF]">
+                  {(profileQuery.data?.profilePicture || peer?.avatar) ? (
                     <img
-                      src={peer.avatar}
-                      alt={peer.name}
+                      src={profileQuery.data?.profilePicture || peer?.avatar}
+                      alt={peer?.name || channelName}
                       className="w-16 h-16 rounded-full object-cover ring-2 ring-slate-200 dark:ring-slate-700 shadow-sm"
                     />
                   ) : (
@@ -324,13 +370,14 @@ export function ChatInfoPanel({
                   {peer?.isOnline && (
                     <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#0D1524]" />
                   )}
-                </div>
+                </button>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {peer?.name || channelName}
+                  {profileQuery.data?.fullName || peer?.name || channelName}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {peer?.roll || "Student"} • {peer?.dept || "Campus"}
+                  {profileQuery.data?.rollNumber || peer?.roll || "Student"} • {profileQuery.data?.department || peer?.dept || "Campus"}
                 </p>
+                {profileQuery.data && <p className="mt-2 max-w-xs text-xs text-slate-500 dark:text-slate-400">{profileQuery.data.bio?.trim() || "No About information"}</p>}
                 {peer?.isOnline ? (
                   <span className="inline-flex items-center gap-1.5 mt-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -339,6 +386,7 @@ export function ChatInfoPanel({
                 ) : (
                   <span className="text-[11px] text-slate-400 mt-2">Offline</span>
                 )}
+                <button type="button" onClick={() => profileId && setSelectedMember({ id: profileId, name: profileQuery.data?.fullName || peer?.name || channelName, avatar: profileQuery.data?.profilePicture || peer?.avatar })} className="mt-3 text-xs font-semibold text-[#1E90FF] hover:underline">View profile and friendship</button>
               </>
             ) : (
               <>
@@ -358,7 +406,10 @@ export function ChatInfoPanel({
             )}
 
             {/* Quick Action Buttons */}
-            <div className="grid grid-cols-3 gap-2 w-full mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80">
+            <div className={`grid ${isDM ? "grid-cols-4" : "grid-cols-3"} gap-2 w-full mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80`}>
+              {isDM && <button onClick={onClose} className="flex flex-col items-center gap-1 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-200 text-xs font-semibold"><MessageSquare size={16} /><span>Message</span></button>}
+              {isDM && <button onClick={() => onStartCall?.("audio")} disabled={!onStartCall} className="flex flex-col items-center gap-1 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-200 text-xs font-semibold disabled:opacity-50"><Phone size={16} /><span>Voice</span></button>}
+              {isDM && <button onClick={() => onStartCall?.("video")} disabled={!onStartCall} className="flex flex-col items-center gap-1 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-200 text-xs font-semibold disabled:opacity-50"><Video size={16} /><span>Video</span></button>}
               <button
                 onClick={handleToggleMute}
                 disabled={isTogglingMute}
@@ -403,6 +454,7 @@ export function ChatInfoPanel({
                 <span>Starred</span>
               </button>
             </div>
+            {isDM && <p className="mt-2 text-left text-[10px] leading-relaxed text-slate-400">Mute uses Stream Chat's persistent mute until you unmute. Temporary durations and custom sounds are not supported here.</p>}
 
             {/* Privacy & Conversation Controls */}
             <div className="w-full mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80 space-y-2 text-left">
@@ -424,10 +476,10 @@ export function ChatInfoPanel({
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                      Chat Lock
+                      Hide chat
                     </p>
                     <p className="text-[10px] text-slate-400 truncate">
-                      {isLocked ? "Protected with PIN" : "Lock with 4-digit PIN"}
+                      {isLocked ? "Hidden in this browser" : "Hide in this browser with PIN"}
                     </p>
                   </div>
                 </div>
@@ -440,43 +492,18 @@ export function ChatInfoPanel({
                       : "bg-[#1E90FF] text-white hover:bg-sky-600 shadow-sm"
                   }`}
                 >
-                  {isLocked ? "Locked" : "Lock"}
+                  {isLocked ? "Hidden" : "Hide"}
                 </button>
               </div>
+              <p className="px-1 text-[10px] leading-relaxed text-slate-400">This local PIN only hides the conversation on this browser. It does not protect messages on other devices or encrypt their contents.</p>
 
-              {/* Disappearing Messages Duration */}
-              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-[#1E90FF]">
-                    <Clock size={15} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                      Disappearing Messages
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      {disappearingDuration === 0
-                        ? "Disabled"
-                        : `Expires in ${
-                            disappearingDuration >= 2592000
-                              ? "30 days"
-                              : disappearingDuration >= 604800
-                              ? "7 days"
-                              : "24 hours"
-                          }`}
-                    </p>
-                  </div>
-                </div>
-                <select
-                  value={disappearingDuration}
-                  onChange={(e) => handleChangeDisappearing(Number(e.target.value))}
-                  className="px-2 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-[#152238] border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-                >
-                  <option value={0}>Off</option>
-                  <option value={86400}>24 Hours</option>
-                  <option value={604800}>7 Days</option>
-                  <option value={2592000}>30 Days</option>
-                </select>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left dark:border-slate-700 dark:bg-slate-800/40">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">Disappearing messages unavailable</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Message expiry is not enforced by StudyConnect's backend yet, so this setting is disabled.</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left dark:border-slate-700 dark:bg-slate-800/40">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">Security</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Messages use Stream Chat with account access controls and encrypted transport. StudyConnect does not currently provide end-to-end encryption or cryptographic safety-code verification.</p>
               </div>
 
               {/* Safety & Moderation Actions */}
@@ -505,7 +532,7 @@ export function ChatInfoPanel({
                           peer?.id ||
                           (channel.state?.members
                             ? Object.values(channel.state.members).find(
-                                (m) => m.user_id !== channel.client?.userID
+                                (m) => m.user_id !== channel._client?.userID
                               )?.user_id || ""
                             : "");
                         onOpenReport({
@@ -565,7 +592,7 @@ export function ChatInfoPanel({
               }`}
             >
               <FileText size={14} />
-              <span>Files ({fileItems.length})</span>
+              <span>Documents ({fileItems.length})</span>
             </button>
             <button
               onClick={() => setActiveTab("links")}
@@ -622,6 +649,10 @@ export function ChatInfoPanel({
                         key={idx}
                         className="relative group aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 cursor-pointer"
                         onClick={() => {
+                          if (item.isVideo) {
+                            window.open(item.url, "_blank", "noopener,noreferrer");
+                            return;
+                          }
                           if (onOpenLightbox) {
                             onOpenLightbox(lightboxImages, idx);
                           } else {
@@ -630,11 +661,8 @@ export function ChatInfoPanel({
                           }
                         }}
                       >
-                        <img
-                          src={item.url}
-                          alt={item.title || "Shared photo"}
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                        />
+                        {item.isVideo ? <video src={item.url} aria-label={item.title || "Shared video"} className="w-full h-full object-cover" /> : <img src={item.url} alt={item.title || "Shared photo"} className="w-full h-full object-cover transition-transform group-hover:scale-105" />}
+                        <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-1 text-[9px] text-white opacity-0 transition-opacity group-hover:opacity-100">{item.sender}{item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString()}` : ""}</span>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -676,9 +704,8 @@ export function ChatInfoPanel({
                           <p className="text-xs font-semibold truncate" title={item.title}>
                             {item.title}
                           </p>
-                          <p className="text-[10px] text-slate-400">
-                            {formatFileSize(item.fileSize)}
-                          </p>
+                          <p className="text-[10px] text-slate-400">{item.mimeType || "File"}{item.fileSize ? ` · ${formatFileSize(item.fileSize)}` : ""}</p>
+                          <p className="text-[10px] text-slate-400">{item.sender}{item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString()}` : ""}</p>
                         </div>
                       </div>
 
@@ -732,7 +759,7 @@ export function ChatInfoPanel({
                           rel="noopener noreferrer"
                           className="text-xs font-semibold text-[#1E90FF] hover:underline truncate flex items-center gap-1 flex-1"
                         >
-                          <span className="truncate">{item.url}</span>
+                          <span className="truncate">{(() => { try { return new URL(item.url).hostname; } catch { return item.url; } })()} · {item.url}</span>
                           <ExternalLink size={12} className="shrink-0" />
                         </a>
                         <button
@@ -747,9 +774,8 @@ export function ChatInfoPanel({
                           <CornerDownRight size={13} />
                         </button>
                       </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
-                        {item.snippet}
-                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">{item.sender}{item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString()}` : ""}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">{item.snippet}</p>
                     </div>
                   ))
                 )}
@@ -796,12 +822,12 @@ export function ChatInfoPanel({
             {activeTab === "members" && !isDM && (
               <div className="space-y-2">
                 {memberItems.map((m) => (
-                  <div
-                    key={m.id}
+                    <div
+                      key={m.id}
                     className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121B2D] border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="relative shrink-0">
+                      <button type="button" onClick={() => m.id && setSelectedMember({ id: m.id, name: m.name, avatar: m.avatar })} aria-label={`View ${m.name}'s profile`} className="relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E90FF]">
                         {m.avatar ? (
                           <img
                             src={m.avatar}
@@ -816,11 +842,11 @@ export function ChatInfoPanel({
                         {m.isOnline && (
                           <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#0D1524]" />
                         )}
-                      </div>
+                      </button>
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                        <button type="button" onClick={() => m.id && setSelectedMember({ id: m.id, name: m.name, avatar: m.avatar })} className="text-left text-xs font-semibold text-slate-900 dark:text-white truncate hover:text-[#1E90FF]">
                           {m.name}
-                        </p>
+                        </button>
                         <p className="text-[10px] text-slate-400 truncate">
                           {m.roll} • {m.dept}
                         </p>
@@ -840,6 +866,14 @@ export function ChatInfoPanel({
                 ))}
               </div>
             )}
+            {activeTab !== "pinned" && activeTab !== "members" && (hasMoreSharedItems || sharedItemsError) && (
+              <div className="pt-4 text-center">
+                {sharedItemsError && <p className="mb-2 text-xs text-rose-500">Could not load shared history.</p>}
+                <button type="button" disabled={loadingSharedItems} onClick={loadMoreSharedItems} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+                  {loadingSharedItems ? "Loading…" : sharedItemsError ? "Retry" : "Load older shared items"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </motion.div>
@@ -850,9 +884,26 @@ export function ChatInfoPanel({
         isOpen={isSetPinModalOpen}
         onClose={() => setIsSetPinModalOpen(false)}
         onPinSet={() => {
-          toggleLock(channel.id);
-          addToast("Chat locked with PIN", "success");
+          if (channelId) toggleLock(channelId);
+          addToast("Chat hidden in this browser", "success");
         }}
+      />
+
+      {showProfilePhoto && (profileQuery.data?.profilePicture || peer?.avatar) && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4" onClick={() => setShowProfilePhoto(false)}>
+          <button type="button" aria-label="Close profile photo" className="absolute right-4 top-4 rounded-full bg-black/40 p-2 text-white"><X /></button>
+          <img src={profileQuery.data?.profilePicture || peer?.avatar} alt={`${peer?.name || "Contact"} profile photo`} className="max-h-full max-w-full object-contain" onClick={(event) => event.stopPropagation()} />
+        </div>
+      )}
+
+      <ContactProfileDrawer
+        isOpen={Boolean(selectedMember)}
+        userId={selectedMember?.id || ""}
+        fallbackName={selectedMember?.name}
+        fallbackAvatar={selectedMember?.avatar}
+        contextLabel={communityName ? `${communityName} · ${channelName}` : channelName}
+        onSearchInChat={isDM ? () => { onClose(); onOpenSearch?.(); } : undefined}
+        onClose={() => setSelectedMember(null)}
       />
 
       {/* Block / Unblock Confirmation Modal */}
@@ -909,4 +960,3 @@ export function ChatInfoPanel({
     </AnimatePresence>
   );
 }
-

@@ -7,8 +7,7 @@ import {
   AlertTriangle,
   FileCheck,
   MessageSquare,
-  ScrollText,
-  ShieldCheck
+  ScrollText
 } from "lucide-react";
 
 export type AdminTabKey =
@@ -18,8 +17,7 @@ export type AdminTabKey =
   | "reports"
   | "resources"
   | "communities"
-  | "audit"
-  | "profile";
+  | "audit";
 
 interface AdminTabsNavProps {
   activeTab: AdminTabKey;
@@ -78,12 +76,6 @@ export function AdminTabsNav({
       icon: ScrollText,
       count: null
     },
-    {
-      id: "profile" as AdminTabKey,
-      label: "Admin Profile",
-      icon: ShieldCheck,
-      count: null
-    }
   ];
 
   return (

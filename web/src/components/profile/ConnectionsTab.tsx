@@ -20,7 +20,7 @@ import { useToastStore } from "../../store/toast.store";
 import { useAuthStore } from "../../store/auth.store";
 import { usersApi } from "../../api/users.api";
 import { friendsApi, type FriendRecord, type FriendRequestsResult } from "../../api/friends.api";
-import { directMessagesApi } from "../../api/direct-messages.api";
+import { streamApi } from "../../api/stream.api";
 import type { User as AuthUser } from "../../types/auth";
 import { ImageViewerModal } from "../chat/media/ImageViewerModal";
 
@@ -157,14 +157,10 @@ export function ConnectionsTab() {
 
   const handleMessagePeer = async (peerId: string) => {
     try {
-      const conv = await directMessagesApi.startConversation(peerId);
-      if (conv?._id) {
-        navigate(`/direct-messages/${conv._id}`);
-      } else {
-        navigate("/direct-messages");
-      }
-    } catch {
-      navigate("/direct-messages");
+      const conversation = await streamApi.getOrCreateDm(peerId);
+      navigate(`/chat?mode=dms&conv=${encodeURIComponent(conversation.channelId)}`);
+    } catch (error: any) {
+      addToast(error?.response?.data?.message || error?.message || "Could not start this chat", "error");
     }
   };
 
@@ -250,7 +246,7 @@ export function ConnectionsTab() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => setActiveTab("friends")}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${

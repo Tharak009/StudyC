@@ -80,7 +80,7 @@ export function SetChatPinModal({ isOpen, onClose, onPinSet }: SetChatPinModalPr
                   {hasPin() ? "Change Chat Lock PIN" : "Set Chat Lock PIN"}
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  4-digit security code for private chats
+                  A browser-local PIN for hiding chats on this device
                 </p>
               </div>
             </div>
@@ -94,6 +94,9 @@ export function SetChatPinModal({ isOpen, onClose, onPinSet }: SetChatPinModalPr
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              This does not encrypt messages or prevent access from another device or browser session. It only controls the local hidden-chat view.
+            </p>
             <div>
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
                 Create 4-digit PIN

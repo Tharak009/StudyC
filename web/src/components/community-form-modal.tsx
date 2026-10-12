@@ -1,22 +1,16 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
-  Camera,
-  Upload,
   Sparkles,
   Users,
   Shield,
-  Lock,
-  Globe,
-  Layers,
-  ArrowRight
+  Lock
 } from "lucide-react";
 import {
   COMMUNITY_CATEGORIES,
   type Community,
   type CommunityVisibility,
   type CommunityCategory,
-  type CommunityType,
   type CommunityJoinPolicy
 } from "../types/community";
 
@@ -25,25 +19,6 @@ interface CommunityFormModalProps {
   onClose: () => void;
   onSave: (values: any) => void;
 }
-
-const DEPARTMENTS = [
-  "Computer Science",
-  "Information Technology",
-  "Electrical Engineering",
-  "Electronics Engineering",
-  "Mechanical Engineering",
-  "Civil Engineering",
-  "Multidisciplinary"
-];
-
-const COMMUNITY_TYPES: { label: string; value: CommunityType }[] = [
-  { label: "Academic", value: "ACADEMIC" },
-  { label: "Study Group", value: "STUDY_GROUP" },
-  { label: "College", value: "COLLEGE" },
-  { label: "Club", value: "CLUB" },
-  { label: "Interest", value: "INTEREST" },
-  { label: "Project", value: "PROJECT" }
-];
 
 const VISIBILITY_OPTIONS: { label: string; value: CommunityVisibility }[] = [
   { label: "Public", value: "PUBLIC" },
@@ -61,55 +36,24 @@ export function CommunityFormModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<CommunityCategory>("PROGRAMMING");
-  const [type, setType] = useState<CommunityType>("ACADEMIC");
-  const [department, setDepartment] = useState("Computer Science");
   const [visibility, setVisibility] = useState<CommunityVisibility>("PUBLIC");
-  const [bannerPreview, setBannerPreview] = useState<string>("");
-  const [bannerFile, setBannerFile] = useState<File | null>(null);
-  const [icon, setIcon] = useState<string>("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (community) {
       setName(community.name || "");
       setDescription(community.description || "");
       setCategory(community.category || "PROGRAMMING");
-      setType(community.type || "ACADEMIC");
-      setDepartment(community.tags?.[0] || "Computer Science");
       setVisibility(community.visibility || "PUBLIC");
-      setBannerPreview(community.bannerImage || community.banner || "");
-      setIcon(community.icon || "");
       setErrors({});
     } else {
       setName("");
       setDescription("");
       setCategory("PROGRAMMING");
-      setType("ACADEMIC");
-      setDepartment("Computer Science");
       setVisibility("PUBLIC");
-      setBannerPreview("");
-      setIcon("");
       setErrors({});
     }
   }, [community]);
-
-  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      alert("File size exceeds 5MB limit");
-      return;
-    }
-
-    setBannerFile(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setBannerPreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,10 +64,6 @@ export function CommunityFormModal({
     } else if (name.trim().length < 3) {
       newErrors.name = "Name must be at least 3 characters";
     }
-    if (!description.trim()) {
-      newErrors.description = "Description is required";
-    }
-
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -133,11 +73,7 @@ export function CommunityFormModal({
       name: name.trim(),
       description: description.trim(),
       category,
-      type,
-      tags: [department],
-      visibility,
-      icon: icon.trim() || undefined,
-      bannerImage: bannerFile || undefined
+      visibility
     });
   };
 
@@ -191,13 +127,14 @@ export function CommunityFormModal({
             {/* Description */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                Description *
+                Description
               </label>
               <textarea
                 rows={3}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="What is this community for? Mention goals, topics, and collaboration expectations."
+                maxLength={300}
+                placeholder="A short note about what members will study or discuss."
                 className="w-full px-3.5 py-2 rounded-xl text-xs bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1E90FF]"
               />
               {errors.description && (
@@ -205,9 +142,7 @@ export function CommunityFormModal({
               )}
             </div>
 
-            {/* Category & Type Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
+            <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                   Academic Category
                 </label>
@@ -222,29 +157,9 @@ export function CommunityFormModal({
                     </option>
                   ))}
                 </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                  Community Type
-                </label>
-                <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value as CommunityType)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#1E90FF]"
-                >
-                  {COMMUNITY_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
 
-            {/* Visibility & Department Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
+            <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                   Access Visibility
                 </label>
@@ -259,64 +174,9 @@ export function CommunityFormModal({
                     </option>
                   ))}
                 </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                  Department
-                </label>
-                <select
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#1E90FF]"
-                >
-                  {DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
 
-            {/* Custom Icon URL & Banner File */}
-            <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-white/5">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                  Community Icon (Image URL)
-                </label>
-                <input
-                  type="url"
-                  value={icon}
-                  onChange={(e) => setIcon(e.target.value)}
-                  placeholder="https://example.com/icon.png"
-                  className="w-full px-3.5 py-2 rounded-xl text-xs bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1E90FF]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                  Cover Banner Image
-                </label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleBannerChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-white/[0.02] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  <Upload size={14} className="text-[#1E90FF]" />
-                  <span>
-                    {bannerFile ? bannerFile.name : "Upload Banner (Max 5MB)"}
-                  </span>
-                </button>
-              </div>
-            </div>
+            {!isEdit && <p className="text-xs text-slate-500">You can change advanced settings later from Community settings.</p>}
           </form>
 
           {/* Right Column: Interactive Live Preview Card (5 cols) */}
@@ -330,33 +190,23 @@ export function CommunityFormModal({
               {/* Mock Community Card */}
               <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0B132B] p-4 shadow-md">
                 <div className="relative h-28 w-full overflow-hidden rounded-xl bg-gradient-to-br from-[#080D1A] via-[#0F1A30] to-[#162544]">
-                  {bannerPreview ? (
-                    <img
-                      src={bannerPreview}
-                      alt=""
-                      className="size-full object-cover opacity-80"
-                    />
-                  ) : (
+                  {
                     <div className="size-full opacity-25 bg-[radial-gradient(#1E90FF_1px,transparent_1px)] [background-size:12px_12px]" />
-                  )}
+                  }
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
                   <div className="absolute top-2 right-2">
                     <span className="rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-xs border border-white/10">
-                      {type.replace("_", " ")}
+                      Community
                     </span>
                   </div>
 
                   <div className="absolute bottom-2 left-2">
-                    {icon ? (
-                      <div className="w-10 h-10 rounded-xl overflow-hidden border-2 border-white dark:border-[#0B132B] shadow-md bg-white">
-                        <img src={icon} alt="" className="size-full object-cover" />
-                      </div>
-                    ) : (
+                    {
                       <div className="w-10 h-10 rounded-xl border-2 border-white dark:border-[#0B132B] bg-gradient-to-br from-[#1E90FF] to-indigo-600 flex items-center justify-center text-white text-base font-black shadow-md">
                         {name ? name.charAt(0).toUpperCase() : "S"}
                       </div>
-                    )}
+                    }
                   </div>
                 </div>
 

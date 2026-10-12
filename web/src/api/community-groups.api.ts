@@ -9,14 +9,14 @@ import type {
 export const communityGroupsApi = {
   list: async (communityId: string): Promise<CommunityGroup[]> => {
     const { data } = await apiClient.get<ApiResponse<CommunityGroup[]>>(
-      `/communities/${communityId}/groups`
+      `/api/communities/${communityId}/groups`
     );
     return data.data;
   },
 
   get: async (communityId: string, groupId: string): Promise<CommunityGroup> => {
     const { data } = await apiClient.get<ApiResponse<CommunityGroup>>(
-      `/communities/${communityId}/groups/${groupId}`
+      `/api/communities/${communityId}/groups/${groupId}`
     );
     return data.data;
   },
@@ -26,7 +26,7 @@ export const communityGroupsApi = {
     payload: CreateGroupInput
   ): Promise<CommunityGroup> => {
     const { data } = await apiClient.post<ApiResponse<CommunityGroup>>(
-      `/communities/${communityId}/groups`,
+      `/api/communities/${communityId}/groups`,
       payload
     );
     return data.data;
@@ -37,7 +37,7 @@ export const communityGroupsApi = {
     payload: AttachGroupInput
   ): Promise<CommunityGroup> => {
     const { data } = await apiClient.post<ApiResponse<CommunityGroup>>(
-      `/communities/${communityId}/groups/attach`,
+      `/api/communities/${communityId}/groups/attach`,
       payload
     );
     return data.data;
@@ -49,7 +49,7 @@ export const communityGroupsApi = {
     payload: Partial<CreateGroupInput> & { status?: string; sortOrder?: number }
   ): Promise<CommunityGroup> => {
     const { data } = await apiClient.put<ApiResponse<CommunityGroup>>(
-      `/communities/${communityId}/groups/${groupId}`,
+      `/api/communities/${communityId}/groups/${groupId}`,
       payload
     );
     return data.data;
@@ -57,12 +57,12 @@ export const communityGroupsApi = {
 
   archive: async (communityId: string, groupId: string): Promise<CommunityGroup> => {
     const { data } = await apiClient.post<ApiResponse<CommunityGroup>>(
-      `/communities/${communityId}/groups/${groupId}/archive`
+      `/api/communities/${communityId}/groups/${groupId}/archive`
     );
     return data.data;
   },
 
   delete: async (communityId: string, groupId: string): Promise<void> => {
-    await apiClient.delete(`/communities/${communityId}/groups/${groupId}`);
+    await apiClient.delete(`/api/communities/${communityId}/groups/${groupId}`);
   }
 };

@@ -11,7 +11,6 @@ import {
   Settings,
   HelpCircle
 } from "lucide-react";
-import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { NotificationSettings } from "../components/settings/NotificationSettings";
 import { AppearanceSettings } from "../components/settings/AppearanceSettings";
@@ -33,13 +32,7 @@ export function StudentSettingsPage() {
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-slate-50 font-sans antialiased transition-colors duration-300">
-      
-      {/* ── 1. Workspace Sidebar ───────────────────────────────────────── */}
-      <DashboardSidebar />
-
-      {/* ── 2. Scrollable Settings Content Area ────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+    <div className="h-full min-h-0 w-full min-w-0 overflow-y-auto bg-slate-50 font-sans antialiased text-slate-900 transition-colors duration-300 dark:bg-[#080D1A] dark:text-slate-50">
         <main className="p-4 sm:p-8 space-y-8 max-w-6xl w-full mx-auto">
           
           {/* ── Page Header ───────────────────────────────────────────── */}
@@ -171,7 +164,6 @@ export function StudentSettingsPage() {
           </div>
 
         </main>
-      </div>
 
     </div>
   );

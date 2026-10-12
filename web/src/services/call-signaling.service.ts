@@ -4,6 +4,7 @@ import { webrtcService } from "./webrtc.service";
 import { groupWebRTCManager } from "./group-webrtc.service";
 import { audioMonitorService } from "./audio-monitor.service";
 import { useCallStore } from "../store/call.store";
+import { useAuthStore } from "../store/auth.store";
 import { apiClient } from "../api/client";
 import { streamChatService } from "./stream-chat.service";
 import type { CallSummary, CallType, CallParticipant, RoomSessionMode, ParticipantRole } from "../types/call.types";
@@ -21,6 +22,7 @@ function formatDuration(totalSeconds: number): string {
 
 class CallSignalingService {
   private isInitialized = false;
+  private boundSocket: ReturnType<typeof socketService.get> = null;
   private cachedIceServers: RTCIceServer[] = [];
   private durationTimer: number | null = null;
   private connectingTimer: number | null = null;
@@ -28,30 +30,31 @@ class CallSignalingService {
   private autoResetTimer: number | null = null;
   private ringtoneAudio: HTMLAudioElement | null = null;
   private remoteAudioElement: HTMLAudioElement | null = null;
+  private iceRestartAttempts = 0;
 
   public init(): void {
-    if (this.isInitialized) return;
     const socket = socketService.get() || socketService.connect();
     if (!socket) return;
 
-    this.isInitialized = true;
-    audioMonitorService.subscribe((speakerId) => {
-      useCallStore.getState().setActiveSpeakerId(speakerId);
-    });
-    this.registerSocketListeners();
-    this.bindNetworkAndPageListeners();
-    this.bindDeviceLifecycleListeners();
-    this.fetchIceServers().catch(() => {});
+    if (this.boundSocket !== socket) {
+      this.boundSocket = socket;
+      this.registerSocketListeners();
+    }
+    if (!this.isInitialized) {
+      this.isInitialized = true;
+      audioMonitorService.subscribe((speakerId) => {
+        useCallStore.getState().setActiveSpeakerId(speakerId);
+      });
+      this.bindNetworkAndPageListeners();
+      this.bindDeviceLifecycleListeners();
+      this.fetchIceServers().catch(() => {});
+    }
   }
 
   /**
    * Fetch secure ICE servers from backend
    */
   public async fetchIceServers(): Promise<RTCIceServer[]> {
-    if (this.cachedIceServers.length > 0) {
-      return this.cachedIceServers;
-    }
-
     try {
       const response = await apiClient.get<{ success: boolean; data: { iceServers: RTCIceServer[] } }>(
         "/api/calls/ice-servers"
@@ -78,30 +81,6 @@ class CallSignalingService {
   private registerSocketListeners(): void {
     const socket = socketService.get();
     if (!socket) return;
-
-    socket.off("connect");
-    socket.off("disconnect");
-    socket.off("call:incoming");
-    socket.off("call:accepted");
-    socket.off("call:rejected");
-    socket.off("call:cancelled");
-    socket.off("call:missed");
-    socket.off("call:ended");
-    socket.off("call:signal");
-    socket.off("call:peer_reconnecting");
-    socket.off("call:peer_reconnected");
-    socket.off("call:group:started");
-    socket.off("call:group:participant_joined");
-    socket.off("call:group:participant_left");
-    socket.off("call:group:participant_media");
-    socket.off("call:group:signal");
-    socket.off("call:group:ended");
-    socket.off("call:screen_share");
-    socket.off("call:group:screen_share");
-    socket.off("call:stage:requests_updated");
-    socket.off("call:stage:role_changed");
-    socket.off("call:group:force_mute");
-    socket.off("call:group:removed");
 
     // ── 0. Transport Disconnect & Reconnect (Decoupled from WebRTC Media) ─────
     socket.on("disconnect", () => {
@@ -164,6 +143,7 @@ class CallSignalingService {
         callerSocketId: string;
       }) => {
         const store = useCallStore.getState();
+        if (store.callId === data.callId) return;
         if (store.status !== "IDLE") {
           // Reject busy automatically if recipient is already in a call
           socket.emit("call:reject", {
@@ -184,7 +164,7 @@ class CallSignalingService {
       "call:accepted",
       async (data: { callId: string; responderSocketId: string; responderId: string }) => {
         const store = useCallStore.getState();
-        if (!store.callId || store.callId !== data.callId) return;
+        if (store.callId !== data.callId || !store.isCaller || store.status !== "CALLING") return;
 
         store.setConnecting(data.responderSocketId);
         this.stopRingtone();
@@ -232,15 +212,27 @@ class CallSignalingService {
           });
         } catch (err: any) {
           console.error("[CallSignalingService] Caller negotiation error:", err);
-          this.endCall(err.message || "Failed to establish connection");
+          this.failCall(err.message || "Failed to establish connection");
         }
       }
     );
 
+    socket.on("call:connected", (data: { callId: string; connectedAt?: number }) => {
+      const store = useCallStore.getState();
+      if (store.callMode !== "direct" || store.callId !== data.callId) return;
+      const connectionState = webrtcService.getConnectionState();
+      const iceState = webrtcService.getIceConnectionState();
+      if (connectionState !== "connected" || (iceState !== "connected" && iceState !== "completed")) return;
+      this.stopConnectingTimer();
+      this.stopReconnectingTimer();
+      useCallStore.getState().setConnected(data.connectedAt);
+      this.startDurationTimer();
+    });
+
     // ── 3. Call Rejected ─────────────────────────────────────────────────────
     socket.on("call:rejected", (data: { callId: string; reason?: string; summary?: CallSummary }) => {
       const store = useCallStore.getState();
-      if (store.callId && store.callId !== data.callId) return;
+      if (store.callId !== data.callId || ["IDLE", "ENDED", "FAILED", "REJECTED", "CANCELLED", "MISSED"].includes(store.status)) return;
 
       this.stopRingtone();
       this.clearAllTimers();
@@ -270,7 +262,7 @@ class CallSignalingService {
     // ── 4. Call Cancelled ────────────────────────────────────────────────────
     socket.on("call:cancelled", (data: { callId: string; reason?: string; summary?: CallSummary }) => {
       const store = useCallStore.getState();
-      if (store.callId && store.callId !== data.callId) return;
+      if (store.callId !== data.callId || ["IDLE", "ENDED", "FAILED", "REJECTED", "CANCELLED", "MISSED"].includes(store.status)) return;
 
       this.stopRingtone();
       this.clearAllTimers();
@@ -289,7 +281,7 @@ class CallSignalingService {
       "call:missed",
       (data: { callId: string; reason?: string; message?: string; summary?: CallSummary }) => {
         const store = useCallStore.getState();
-        if (store.callId && store.callId !== data.callId) return;
+        if (store.callId !== data.callId || ["IDLE", "ENDED", "FAILED", "REJECTED", "CANCELLED", "MISSED"].includes(store.status)) return;
 
         this.stopRingtone();
         this.clearAllTimers();
@@ -307,16 +299,20 @@ class CallSignalingService {
     // ── 6. Call Ended ────────────────────────────────────────────────────────
     socket.on(
       "call:ended",
-      (data: { callId: string; endedBy?: string; reason?: string; summary?: CallSummary }) => {
+      (data: { callId: string; endedBy?: string; reason?: string; failed?: boolean; summary?: CallSummary }) => {
         const store = useCallStore.getState();
-        if (store.callId && store.callId !== data.callId) return;
+        if (store.callId !== data.callId || ["IDLE", "ENDED", "FAILED", "REJECTED", "CANCELLED", "MISSED"].includes(store.status)) return;
 
         this.stopRingtone();
         this.clearAllTimers();
         this.cleanupHardware();
 
         const duration = data.summary?.duration ?? store.duration;
-        useCallStore.getState().setEnded("Call ended");
+        if (data.failed || data.summary?.status === "FAILED") {
+          useCallStore.getState().setFailed(data.reason || "Call failed");
+        } else {
+          useCallStore.getState().setEnded(data.reason === "ended" ? "Call ended" : data.reason || "Call ended");
+        }
 
         if (store.isCaller && store.channelId) {
           this.postCallSummaryToChannel(store.channelId, store.type, "completed", duration);
@@ -331,13 +327,15 @@ class CallSignalingService {
       "call:signal",
       async (data: { callId: string; fromSocketId: string; signalData: any }) => {
         const store = useCallStore.getState();
-        if (!store.callId || store.callId !== data.callId) return;
+        if (store.callId !== data.callId || !["CALLING", "RINGING", "ACCEPTED", "CONNECTING", "CONNECTED", "RECONNECTING"].includes(store.status)) return;
 
         const { signalData } = data;
         try {
           if (signalData.type === "offer") {
             // Callee receives offer (initial or ICE restart)
-            store.setConnecting(data.fromSocketId);
+            if (store.status === "CALLING" || store.status === "RINGING" || store.status === "ACCEPTED") {
+              store.setConnecting(data.fromSocketId);
+            }
             await webrtcService.setRemoteDescription(signalData);
 
             const answer = await webrtcService.createAnswer();
@@ -355,6 +353,7 @@ class CallSignalingService {
           }
         } catch (err) {
           console.error("[CallSignalingService] WebRTC signaling error:", err);
+          this.failCall("Failed to negotiate the call connection");
         }
       }
     );
@@ -392,6 +391,15 @@ class CallSignalingService {
       }
     );
 
+    socket.on(
+      "call:group:participant_connected",
+      (data: { callId: string; participant: CallParticipant }) => {
+        const store = useCallStore.getState();
+        if (store.callMode !== "group" || store.groupCallId !== data.callId || !data.participant?.userId) return;
+        store.addGroupParticipant({ ...data.participant, connectionState: "CONNECTED" });
+      }
+    );
+
     // ── 11. Group Call: Participant Left ─────────────────────────────────────
     socket.on(
       "call:group:participant_left",
@@ -420,16 +428,7 @@ class CallSignalingService {
       }
     );
 
-    // ── 13. Group Call: WebRTC Signal Relay ──────────────────────────────────
-    socket.on(
-      "call:group:signal",
-      async (data: { callId: string; fromUserId: string; signalData: any }) => {
-        const store = useCallStore.getState();
-        if (store.callMode !== "group" || store.groupCallId !== data.callId) return;
-
-        await groupWebRTCManager.handleSignal(data.fromUserId, data.signalData);
-      }
-    );
+    // Group media uses LiveKit's SFU transport. Legacy call:group:signal offers are ignored.
 
     // ── 14. Group Call: Ended ────────────────────────────────────────────────
     socket.on(
@@ -472,7 +471,7 @@ class CallSignalingService {
       const store = useCallStore.getState();
       if (store.groupCallId === data.callId) {
         store.setRaiseHandQueue(data.requests);
-        const myUserId = socketService.getUserId() || "";
+        const myUserId = useAuthStore.getState().user?._id || "";
         const amInQueue = data.requests.some((r) => r.userId === myUserId);
         store.setHandRaised(amInQueue);
       }
@@ -483,10 +482,13 @@ class CallSignalingService {
       const store = useCallStore.getState();
       if (store.groupCallId === data.callId) {
         store.updateParticipantRole(data.userId, data.role);
-        const myUserId = socketService.getUserId() || "";
-        if (data.userId === myUserId && data.role === "listener") {
-          mediaDeviceManager.toggleAudio(false);
-          store.toggleMute(false);
+        const myUserId = useAuthStore.getState().user?._id || "";
+        if (data.userId === myUserId) {
+          void groupWebRTCManager.setCanPublish(data.role !== "listener");
+          if (data.role === "listener") {
+            mediaDeviceManager.toggleAudio(false);
+            store.toggleMute(false);
+          }
         }
       }
     });
@@ -586,7 +588,6 @@ class CallSignalingService {
       }
       if (store.status === "CONNECTED" || store.status === "CONNECTING") {
         console.warn("[CallSignalingService] Camera became unavailable. Degraded to voice.");
-        store.setRemoteCameraOff(true);
         store.toggleCamera(false);
         webrtcService.replaceVideoTrack(null);
       }
@@ -602,6 +603,13 @@ class CallSignalingService {
       if (store.status === "CONNECTED") {
         console.log("[CallSignalingService] Microphone recovered, updating WebRTC sender.");
         webrtcService.replaceAudioTrack(newTrack);
+      }
+    });
+
+    mediaDeviceManager.onAudioUnavailable(() => {
+      const store = useCallStore.getState();
+      if (store.callMode === "direct" && store.status !== "IDLE" && store.status !== "ENDED" && store.status !== "FAILED") {
+        this.failCall("Microphone disconnected. The call has ended.");
       }
     });
   }
@@ -698,6 +706,9 @@ class CallSignalingService {
     try {
       store.setConnecting();
       const mediaResult = await mediaDeviceManager.acquireMedia(true, shouldVideo);
+      if (shouldVideo && !mediaResult.videoAvailable) {
+        store.toggleCamera(false);
+      }
       store.setLocalStream(mediaResult.stream);
       audioMonitorService.trackStream("local", mediaResult.stream);
 
@@ -817,6 +828,21 @@ class CallSignalingService {
     this.scheduleAutoReset();
   }
 
+  public failCall(reason = "connection_failed"): void {
+    const store = useCallStore.getState();
+    if (store.status === "IDLE" || store.status === "ENDED" || store.status === "FAILED" || store.isEnding) return;
+
+    if (store.callMode === "direct" && store.callId) {
+      socketService.get()?.emit("call:fail", { callId: store.callId, reason });
+    } else if (store.callMode === "group") return;
+
+    this.stopRingtone();
+    this.clearAllTimers();
+    this.cleanupHardware();
+    useCallStore.getState().setFailed(reason);
+    this.scheduleAutoReset();
+  }
+
   /**
    * Toggle local microphone
    */
@@ -839,6 +865,42 @@ class CallSignalingService {
   /**
    * Initiate a multi-participant group call
    */
+  private initializeGroupMediaTransport(): void {
+    groupWebRTCManager.initialize([], {
+      onParticipantStream: (participantId, stream) => {
+        useCallStore.getState().setGroupParticipantStream(participantId, stream);
+        audioMonitorService.trackStream(participantId, stream);
+      },
+      onParticipantStreamRemoved: (participantId) => {
+        useCallStore.getState().setGroupParticipantStream(participantId, null);
+        audioMonitorService.untrackStream(participantId);
+      },
+      onParticipantMediaState: (participantId, audioEnabled, videoEnabled) => {
+        useCallStore.getState().updateGroupParticipantMedia(participantId, audioEnabled, videoEnabled);
+      },
+      onParticipantVideoState: (participantId, videoEnabled) => {
+        const participant = useCallStore.getState().groupParticipants[participantId];
+        if (participant) {
+          useCallStore.getState().updateGroupParticipantMedia(participantId, participant.audioEnabled, videoEnabled);
+        }
+      },
+      onNetworkQualityChange: (quality) => useCallStore.getState().setNetworkQuality(quality),
+      onConnectionStateChange: (state) => {
+        const callStore = useCallStore.getState();
+        if (callStore.callMode !== "group") return;
+        if (state === "reconnecting" && callStore.status === "CONNECTED") callStore.setReconnecting();
+        if (state === "connected" && callStore.status === "RECONNECTING") callStore.setConnected();
+        if (state === "failed" && callStore.status !== "IDLE" && callStore.status !== "ENDED") {
+          callStore.setFailed("The group media connection was lost");
+          if (callStore.groupCallId) socketService.get()?.emit("call:group:leave", { callId: callStore.groupCallId });
+          this.cleanupHardware();
+          this.scheduleAutoReset();
+        }
+      },
+      onActiveSpeakerChange: (participantId) => useCallStore.getState().setActiveSpeakerId(participantId)
+    });
+  }
+
   public async initiateGroupCall(params: {
     channelId: string;
     communityName?: string;
@@ -872,37 +934,7 @@ class CallSignalingService {
       store.setLocalStream(mediaResult.stream);
       audioMonitorService.trackStream("local", mediaResult.stream);
 
-      const iceServers = await this.fetchIceServers();
-      groupWebRTCManager.initialize(iceServers, {
-        onParticipantStream: (participantId, stream) => {
-          useCallStore.getState().setGroupParticipantStream(participantId, stream);
-          audioMonitorService.trackStream(participantId, stream);
-        },
-        onParticipantStreamRemoved: (participantId) => {
-          useCallStore.getState().setGroupParticipantStream(participantId, null);
-          audioMonitorService.untrackStream(participantId);
-        },
-        onSendSignal: (toParticipantId, signalData) => {
-          const currentCallId = useCallStore.getState().groupCallId;
-          if (currentCallId) {
-            socket.emit("call:group:signal", {
-              callId: currentCallId,
-              toUserId: toParticipantId,
-              signalData
-            });
-          }
-        },
-        onParticipantVideoState: (participantId, videoEnabled) => {
-          const p = useCallStore.getState().groupParticipants[participantId];
-          if (p) {
-            useCallStore.getState().updateGroupParticipantMedia(participantId, p.audioEnabled, videoEnabled);
-          }
-        },
-        onNetworkQualityChange: (quality) => {
-          useCallStore.getState().setNetworkQuality(quality);
-        }
-      });
-
+      this.initializeGroupMediaTransport();
       groupWebRTCManager.setLocalStream(mediaResult.stream);
 
       return new Promise((resolve) => {
@@ -914,9 +946,20 @@ class CallSignalingService {
             isVideo: isVideoActual,
             mode: params.mode
           },
-          (res: any) => {
+          async (res: any) => {
             useCallStore.setState({ isInitiating: false });
             if (res?.success && res.session) {
+              try {
+                await groupWebRTCManager.connect(res.media?.url, res.media?.token, Boolean(res.media?.canPublish));
+              } catch (mediaError: any) {
+                socket.emit("call:group:leave", { callId: res.callId });
+                this.cleanupHardware();
+                const reason = mediaError?.message || "Could not connect to the group media server";
+                useCallStore.getState().setFailed(reason);
+                this.scheduleAutoReset();
+                resolve({ success: false, reason });
+                return;
+              }
               useCallStore.getState().setGroupConnected({
                 callId: res.callId,
                 channelId: params.channelId,
@@ -925,6 +968,7 @@ class CallSignalingService {
                 isVideo: isVideoActual,
                 mode: res.session.mode
               });
+              socket.emit("call:group:media_joined", { callId: res.callId });
               this.startDurationTimer();
               resolve({ success: true });
             } else {
@@ -979,40 +1023,24 @@ class CallSignalingService {
       store.setLocalStream(mediaResult.stream);
       audioMonitorService.trackStream("local", mediaResult.stream);
 
-      const iceServers = await this.fetchIceServers();
-      groupWebRTCManager.initialize(iceServers, {
-        onParticipantStream: (participantId, stream) => {
-          useCallStore.getState().setGroupParticipantStream(participantId, stream);
-          audioMonitorService.trackStream(participantId, stream);
-        },
-        onParticipantStreamRemoved: (participantId) => {
-          useCallStore.getState().setGroupParticipantStream(participantId, null);
-          audioMonitorService.untrackStream(participantId);
-        },
-        onSendSignal: (toParticipantId, signalData) => {
-          socket.emit("call:group:signal", {
-            callId: params.callId,
-            toUserId: toParticipantId,
-            signalData
-          });
-        },
-        onParticipantVideoState: (participantId, videoEnabled) => {
-          const p = useCallStore.getState().groupParticipants[participantId];
-          if (p) {
-            useCallStore.getState().updateGroupParticipantMedia(participantId, p.audioEnabled, videoEnabled);
-          }
-        },
-        onNetworkQualityChange: (quality) => {
-          useCallStore.getState().setNetworkQuality(quality);
-        }
-      });
-
+      this.initializeGroupMediaTransport();
       groupWebRTCManager.setLocalStream(mediaResult.stream);
 
       return new Promise((resolve) => {
-        socket.emit("call:group:join", { callId: params.callId }, (res: any) => {
+        socket.emit("call:group:join", { callId: params.callId }, async (res: any) => {
           useCallStore.setState({ isInitiating: false });
           if (res?.success && res.session) {
+            try {
+              await groupWebRTCManager.connect(res.media?.url, res.media?.token, Boolean(res.media?.canPublish));
+            } catch (mediaError: any) {
+              socket.emit("call:group:leave", { callId: params.callId });
+              this.cleanupHardware();
+              const reason = mediaError?.message || "Could not connect to the group media server";
+              useCallStore.getState().setFailed(reason);
+              this.scheduleAutoReset();
+              resolve({ success: false, reason });
+              return;
+            }
             const allParticipants: CallParticipant[] = [
               res.participant,
               ...(res.existingParticipants || [])
@@ -1035,13 +1063,7 @@ class CallSignalingService {
               useCallStore.getState().toggleMute(false);
             }
 
-            // For each existing participant, ensure peer connection is prepared as answerer
-            (res.existingParticipants || []).forEach((p: CallParticipant) => {
-              groupWebRTCManager.addPeer(p.userId, false).catch((err) => {
-                console.warn("[CallSignalingService] Error preparing peer for", p.userId, err);
-              });
-            });
-
+            socket.emit("call:group:media_joined", { callId: params.callId });
             this.startDurationTimer();
             resolve({ success: true });
           } else {
@@ -1193,7 +1215,7 @@ class CallSignalingService {
 
       store.setScreenSharing(true);
       store.setLocalScreenStream(screenStream);
-      const authUserId = socketService.getUserId() || "local";
+      const authUserId = useAuthStore.getState().user?._id || "local";
       store.setScreenSharerId(authUserId);
 
       // Listen for user stopping via native browser chrome UI
@@ -1367,8 +1389,14 @@ class CallSignalingService {
     const store = useCallStore.getState();
     const socket = socketService.get();
     if (!socket || !store.callId || !store.peerSocketId) return;
+    if (webrtcService.getIsNegotiating()) return;
+    if (this.iceRestartAttempts >= 2) {
+      this.failCall("Could not restore the call connection");
+      return;
+    }
 
     try {
+      this.iceRestartAttempts += 1;
       const offer = await webrtcService.restartIce();
       socket.emit("call:signal", {
         callId: store.callId,
@@ -1377,6 +1405,7 @@ class CallSignalingService {
       });
     } catch (err) {
       console.warn("[CallSignalingService] Failed to trigger ICE restart:", err);
+      if (this.iceRestartAttempts >= 2) this.failCall("Could not restore the call connection");
     }
   }
 
@@ -1398,21 +1427,37 @@ class CallSignalingService {
     const store = useCallStore.getState();
 
     if (health === "connected") {
+      this.iceRestartAttempts = 0;
       this.stopConnectingTimer();
       this.stopReconnectingTimer();
-      store.setConnected();
-      this.startDurationTimer();
+      if (store.callMode === "direct" && store.callId) {
+        socketService.get()?.emit("call:peer_connected", { callId: store.callId });
+      }
     } else if (health === "connecting") {
-      store.setConnecting();
+      if (store.status === "CALLING" || store.status === "RINGING" || store.status === "ACCEPTED") {
+        store.setConnecting();
+      }
     } else if (health === "reconnecting") {
       store.setReconnecting();
       this.startReconnectingTimer();
+      if (store.callMode === "direct" && store.callId) {
+        socketService.get()?.emit("call:peer_reconnecting", { callId: store.callId });
+      }
       // If we are caller, try ICE restart proactively
       if (store.isCaller) {
         this.triggerIceRestart();
       }
     } else if (health === "failed") {
-      this.endCall("Connection failed");
+      if ((store.status === "CONNECTED" || store.status === "RECONNECTING" || store.status === "CONNECTING") && this.iceRestartAttempts < 2) {
+        store.setReconnecting();
+        this.startReconnectingTimer();
+        if (store.callMode === "direct" && store.callId) {
+          socketService.get()?.emit("call:peer_reconnecting", { callId: store.callId });
+        }
+        void this.triggerIceRestart();
+      } else {
+        this.failCall("Connection failed");
+      }
     } else if (health === "closed") {
       this.stopDurationTimer();
     }
@@ -1424,7 +1469,7 @@ class CallSignalingService {
       const store = useCallStore.getState();
       if (store.status === "CONNECTING" || store.status === "ACCEPTED") {
         console.warn("[CallSignalingService] Connecting timeout reached without WebRTC media connection.");
-        this.endCall("Connection timed out");
+        this.failCall("Connection timed out");
       }
     }, CONNECTING_TIMEOUT_MS);
   }
@@ -1442,7 +1487,7 @@ class CallSignalingService {
       const store = useCallStore.getState();
       if (store.status === "RECONNECTING") {
         console.warn("[CallSignalingService] Reconnection timeout reached. Terminating call.");
-        this.endCall("Reconnection timed out");
+        this.failCall("Reconnection timed out");
       }
     }, RECONNECTING_TIMEOUT_MS);
   }
@@ -1493,6 +1538,7 @@ class CallSignalingService {
       this.remoteAudioElement.srcObject = null;
       this.remoteAudioElement.pause();
     }
+    this.iceRestartAttempts = 0;
   }
 
   private scheduleAutoReset(delayMs = AUTO_RESET_DELAY_MS): void {

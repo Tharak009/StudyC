@@ -20,6 +20,65 @@
        local('Inter');
 }
 
+/* Stream Chat ships unlayered CSS, which takes precedence over the theme
+   overrides above inside @layer base. Keep the Community chat's Stream tree
+   explicitly flexible so it fills the available workspace instead of leaving
+   a blank column beside the conversation. */
+.community-group-chat .str-chat,
+.community-group-chat .str-chat__channel,
+.community-group-chat .str-chat__container,
+.community-group-chat .studyconnect-stream-layout {
+  flex: 1 1 0%;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.community-group-chat .str-chat__channel,
+.community-group-chat .str-chat__container,
+.community-group-chat .studyconnect-stream-layout {
+  height: 100%;
+}
+
+.community-group-chat .str-chat__container {
+  display: flex;
+}
+
+.community-group-chat .str-chat__main-panel {
+  flex: 1 1 0%;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.community-group-chat .str-chat__thread-container {
+  display: none;
+}
+
+.community-group-chat .studyconnect-stream-layout--thread-open .str-chat__main-panel {
+  width: auto;
+}
+
+.community-group-chat .studyconnect-stream-layout--thread-open .str-chat__thread-container {
+  display: flex;
+  flex: 0 0 min(42%, 520px);
+  width: min(42%, 520px);
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .community-group-chat .studyconnect-stream-layout--thread-open .str-chat__main-panel {
+    flex: 0 0 0;
+    width: 0;
+    overflow: hidden;
+  }
+
+  .community-group-chat .studyconnect-stream-layout--thread-open .str-chat__thread-container {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
 @layer base {
   :root {
     --font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -216,6 +275,75 @@
     flex-direction: column;
   }
 
+  /* The SDK mounts an empty Thread panel beside every channel. Keep it out of
+     the layout until a reply thread is selected so the message view can fill
+     the available width. */
+  .studyconnect-stream-layout .str-chat__container > .str-chat__main-panel {
+    flex: 1 1 0%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .studyconnect-stream-layout .str-chat__container > .str-chat__thread-container {
+    display: none;
+  }
+
+  .studyconnect-stream-layout > .str-chat__main-panel {
+    flex: 1 1 0%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .studyconnect-stream-layout > .str-chat__thread-container {
+    display: none;
+  }
+
+  .studyconnect-stream-layout--thread-open .str-chat__container > .str-chat__main-panel {
+    width: auto;
+  }
+
+  .studyconnect-stream-layout--thread-open .str-chat__container > .str-chat__thread-container {
+    display: flex;
+    flex: 0 0 min(42%, 520px);
+    width: min(42%, 520px);
+    min-width: 0;
+  }
+
+  .studyconnect-stream-layout--thread-open > .str-chat__main-panel {
+    width: auto;
+  }
+
+  .studyconnect-stream-layout--thread-open > .str-chat__thread-container {
+    display: flex;
+    flex: 0 0 min(42%, 520px);
+    width: min(42%, 520px);
+    min-width: 0;
+  }
+
+  @media (max-width: 767px) {
+    .studyconnect-stream-layout--thread-open .str-chat__container > .str-chat__main-panel {
+      flex: 0 0 0;
+      width: 0;
+      overflow: hidden;
+    }
+
+    .studyconnect-stream-layout--thread-open .str-chat__container > .str-chat__thread-container {
+      flex: 1 1 auto;
+      width: 100%;
+    }
+
+    .studyconnect-stream-layout--thread-open > .str-chat__main-panel {
+      flex: 0 0 0;
+      width: 0;
+      overflow: hidden;
+    }
+
+    .studyconnect-stream-layout--thread-open > .str-chat__thread-container {
+      flex: 1 1 auto;
+      width: 100%;
+    }
+  }
+
   .str-chat__list {
     background-color: transparent !important;
     height: 100%;
@@ -236,4 +364,3 @@
     list-style: none !important;
   }
 }
-

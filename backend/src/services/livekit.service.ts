@@ -1,0 +1,210 @@
+import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
+import { env } from "../config/env.js";
+import type { CallParticipant, GroupCallSession } from "../types/call.types.js";
+
+export interface GroupCallMediaCredentials {
+  url: string;
+  token: string;
+  identity: string;
+  role: CallParticipant["role"];
+  canPublish: boolean;
+  maxParticipants: number;
+  expiresInSeconds: number;
+}
+
+/** Server-only LiveKit adapter. Application sessions remain the authorization source. */
+export class LiveKitService {
+  private roomService?: RoomServiceClient;
+
+  public isConfigured(): boolean {
+    return Boolean(env.LIVEKIT_URL && env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET);
+  }
+
+  private getRoomService(): RoomServiceClient {
+    if (!this.isConfigured()) {
+      throw new Error("Group calling is unavailable because the LiveKit SFU is not configured");
+    }
+    if (!this.roomService) {
+      const apiUrl = env.LIVEKIT_API_URL || env.LIVEKIT_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
+      this.roomService = new RoomServiceClient(apiUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+    }
+    return this.roomService;
+  }
+
+  public async prepareRoom(session: GroupCallSession): Promise<void> {
+    const rooms = await this.getRoomService().listRooms([session.mediaRoomName]);
+    if (rooms.length > 0) return;
+    try {
+      await this.getRoomService().createRoom({
+        name: session.mediaRoomName,
+        emptyTimeout: 60,
+        departureTimeout: 20,
+        maxParticipants: session.maxParticipants,
+        metadata: JSON.stringify({ callId: session.callId, media: "group-call" })
+      });
+    } catch (error) {
+      // Concurrent retries may both observe an absent room. Confirm the room exists;
+      // propagate all other service errors so callers fail closed.
+      const racedRooms = await this.getRoomService().listRooms([session.mediaRoomName]).catch(() => []);
+      if (racedRooms.length === 0) throw error;
+    }
+  }
+
+  public async issueParticipantToken(
+    session: GroupCallSession,
+    participant: CallParticipant
+  ): Promise<GroupCallMediaCredentials> {
+    const room = this.getRoomService();
+    const canPublish = participant.role !== "listener";
+    const token = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+      identity: participant.userId,
+      name: participant.name,
+      ttl: env.LIVEKIT_TOKEN_TTL_SECONDS,
+      attributes: {
+        appUserId: participant.userId,
+        callId: session.callId,
+        role: participant.role
+      }
+    });
+    token.addGrant({
+      roomJoin: true,
+      room: session.mediaRoomName,
+      canPublish,
+      canPublishSources: canPublish
+        ? session.type === "video"
+          ? [TrackSource.MICROPHONE, TrackSource.CAMERA]
+          : [TrackSource.MICROPHONE]
+        : [],
+      canSubscribe: true,
+      canPublishData: false
+    });
+
+    return {
+      url: env.LIVEKIT_URL,
+      token: await token.toJwt(),
+      identity: participant.userId,
+      role: participant.role,
+      canPublish,
+      maxParticipants: session.maxParticipants,
+      expiresInSeconds: env.LIVEKIT_TOKEN_TTL_SECONDS
+    };
+  }
+
+  /** Credentials for persisted Study Meeting Rooms; authorization is done by StudyMeetingService first. */
+  public async issueMeetingToken(input: {
+    roomName: string;
+    userId: string;
+    displayName: string;
+    role: "HOST" | "PARTICIPANT";
+    mediaType: "voice" | "video";
+    maxParticipants: number;
+  }): Promise<GroupCallMediaCredentials> {
+    const token = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+      identity: input.userId,
+      name: input.displayName,
+      ttl: env.LIVEKIT_TOKEN_TTL_SECONDS,
+      attributes: { appUserId: input.userId, role: input.role, media: "study-meeting" }
+    });
+    const canPublish = true;
+    token.addGrant({
+      roomJoin: true,
+      room: input.roomName,
+      canPublish,
+      // Only users admitted by StudyMeetingService receive this scoped token.
+      // Screen capture is a separate browser permission prompt, and may be used
+      // in voice-first rooms as well as video rooms.
+      canPublishSources: input.mediaType === "video"
+        ? [TrackSource.MICROPHONE, TrackSource.CAMERA, TrackSource.SCREEN_SHARE]
+        : [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE],
+      canSubscribe: true,
+      canPublishData: false
+    });
+    return {
+      url: env.LIVEKIT_URL,
+      token: await token.toJwt(),
+      identity: input.userId,
+      role: input.role.toLowerCase() as CallParticipant["role"],
+      canPublish,
+      maxParticipants: input.maxParticipants,
+      expiresInSeconds: env.LIVEKIT_TOKEN_TTL_SECONDS
+    };
+  }
+
+  public async prepareMeetingRoom(input: {
+    roomName: string;
+    meetingId: string;
+    maxParticipants: number;
+  }): Promise<void> {
+    const roomService = this.getRoomService();
+    const rooms = await roomService.listRooms([input.roomName]);
+    if (rooms.length > 0) return;
+    try {
+      await roomService.createRoom({
+        name: input.roomName,
+        emptyTimeout: 60,
+        departureTimeout: 30,
+        maxParticipants: input.maxParticipants,
+        metadata: JSON.stringify({ meetingId: input.meetingId, media: "study-meeting" })
+      });
+    } catch (error) {
+      const racedRooms = await roomService.listRooms([input.roomName]).catch(() => []);
+      if (racedRooms.length === 0) throw error;
+    }
+  }
+
+  public async removeMeetingParticipant(roomName: string, userId: string): Promise<void> {
+    await this.getRoomService().removeParticipant(roomName, userId, {
+      revokeTokenTs: BigInt(Math.floor(Date.now() / 1000) + 1)
+    }).catch((error: any) => {
+      if (!String(error?.message || "").toLowerCase().includes("not found")) throw error;
+    });
+  }
+
+  public async endMeetingRoom(roomName: string): Promise<void> {
+    if (!this.isConfigured()) return;
+    await this.getRoomService().deleteRoom(roomName).catch((error) => {
+      console.warn(`[LiveKitService] Could not delete meeting room ${roomName}:`, error);
+    });
+  }
+
+  public async removeParticipant(session: GroupCallSession, userId: string): Promise<void> {
+    if (!this.isConfigured()) return;
+    const participant = (await this.getRoomService().listParticipants(session.mediaRoomName))
+      .find((item) => item.identity === userId);
+    if (!participant) return;
+    await this.getRoomService().removeParticipant(session.mediaRoomName, userId, {
+      // Revoke previously issued credentials as well as disconnecting the participant.
+      revokeTokenTs: BigInt(Math.floor(Date.now() / 1000) + 1)
+    });
+  }
+
+  public async muteParticipant(session: GroupCallSession, userId: string): Promise<boolean> {
+    if (!this.isConfigured()) throw new Error("LiveKit is not configured");
+    const participants = await this.getRoomService().listParticipants(session.mediaRoomName);
+    const target = participants.find((participant) => participant.identity === userId);
+    const microphone = target?.tracks?.find((track) => track.source === TrackSource.MICROPHONE);
+    if (!target || !microphone?.sid) return false;
+    await this.getRoomService().mutePublishedTrack(session.mediaRoomName, userId, microphone.sid, true);
+    return true;
+  }
+
+  public async setParticipantRole(session: GroupCallSession, userId: string, role: CallParticipant["role"]): Promise<void> {
+    if (!this.isConfigured()) throw new Error("LiveKit is not configured");
+    await this.getRoomService().updateParticipant(session.mediaRoomName, userId, {
+      permission: {
+        canSubscribe: true,
+        canPublish: role !== "listener",
+        canPublishData: false
+      }
+    });
+  }
+
+  public async deleteRoom(session: GroupCallSession): Promise<void> {
+    if (!this.isConfigured()) return;
+    await this.getRoomService().deleteRoom(session.mediaRoomName).catch((error) => {
+      console.warn(`[LiveKitService] Could not delete room ${session.mediaRoomName}:`, error);
+    });
+  }
+}
+
+export const liveKitService = new LiveKitService();

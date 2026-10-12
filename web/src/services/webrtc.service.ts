@@ -10,6 +10,7 @@ export type ConnectionHealth = "connecting" | "connected" | "reconnecting" | "fa
  * ICE restart, track replacement, network quality monitoring, and state synthesis.
  */
 export class WebRTCService {
+  private static readonly MAX_QUEUED_ICE_CANDIDATES = 256;
   private peerConnection: RTCPeerConnection | null = null;
   private iceCandidatesQueue: RTCIceCandidateInit[] = [];
   private remoteStream: MediaStream | null = null;
@@ -20,6 +21,7 @@ export class WebRTCService {
   private onNetworkQualityChange?: (quality: NetworkQuality) => void;
   private statsTimer: number | null = null;
   private isNegotiating = false;
+  private lastHealth: ConnectionHealth | null = null;
 
   /**
    * Initializes a new RTCPeerConnection with configured ICE servers
@@ -46,6 +48,7 @@ export class WebRTCService {
     this.onHealthChange = onHealthChange;
     this.onNetworkQualityChange = onNetworkQualityChange;
     this.isNegotiating = false;
+    this.lastHealth = null;
 
     // ICE Candidate Generation
     pc.onicecandidate = (event) => {
@@ -114,22 +117,28 @@ export class WebRTCService {
     const iceState = pc.iceConnectionState;
 
     if (connState === "connected" && (iceState === "connected" || iceState === "completed")) {
-      this.onHealthChange?.("connected");
+      this.notifyHealth("connected");
       this.startStatsMonitoring();
-    } else if (connState === "connecting" || iceState === "checking") {
-      this.onHealthChange?.("connecting");
+    } else if (connState === "failed" || iceState === "failed") {
+      // A terminal ICE/peer failure takes precedence over a lingering disconnected state.
+      this.notifyHealth("failed");
+      this.onNetworkQualityChange?.("poor");
     } else if (connState === "disconnected" || iceState === "disconnected") {
       // Temporary network interruption -> Reconnecting
-      this.onHealthChange?.("reconnecting");
+      this.notifyHealth("reconnecting");
       this.onNetworkQualityChange?.("reconnecting");
-    } else if (connState === "failed" || iceState === "failed") {
-      // Connection failure -> Attempt recovery or fail
-      this.onHealthChange?.("failed");
-      this.onNetworkQualityChange?.("poor");
+    } else if (connState === "connecting" || iceState === "checking") {
+      this.notifyHealth("connecting");
     } else if (connState === "closed" || iceState === "closed") {
-      this.onHealthChange?.("closed");
+      this.notifyHealth("closed");
       this.stopStatsMonitoring();
     }
+  }
+
+  private notifyHealth(health: ConnectionHealth): void {
+    if (this.lastHealth === health) return;
+    this.lastHealth = health;
+    this.onHealthChange?.(health);
   }
 
   /**
@@ -221,6 +230,9 @@ export class WebRTCService {
     if (!this.peerConnection || this.peerConnection.signalingState === "closed") {
       throw new Error("Cannot restart ICE: peer connection unavailable or closed");
     }
+    if (this.isNegotiating || this.peerConnection.signalingState !== "stable") {
+      throw new Error("Cannot restart ICE while another WebRTC negotiation is in progress");
+    }
 
     console.log("[WebRTCService] Triggering ICE restart to recover disrupted connection...");
     this.isNegotiating = true;
@@ -254,6 +266,9 @@ export class WebRTCService {
     if (!this.peerConnection) {
       throw new Error("Peer connection not initialized");
     }
+    if ((desc.type !== "offer" && desc.type !== "answer") || typeof desc.sdp !== "string") {
+      throw new Error("Invalid WebRTC session description");
+    }
 
     // Glare handling: if offer received while we have local offer and state is not stable
     if (desc.type === "offer" && this.peerConnection.signalingState !== "stable") {
@@ -281,6 +296,9 @@ export class WebRTCService {
    */
   public async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     if (!this.peerConnection || !this.peerConnection.remoteDescription) {
+      if (this.iceCandidatesQueue.length >= WebRTCService.MAX_QUEUED_ICE_CANDIDATES) {
+        this.iceCandidatesQueue.shift();
+      }
       this.iceCandidatesQueue.push(candidate);
       return;
     }
@@ -351,6 +369,7 @@ export class WebRTCService {
     this.onHealthChange = undefined;
     this.onNetworkQualityChange = undefined;
     this.isNegotiating = false;
+    this.lastHealth = "closed";
   }
 
   public getConnectionState(): RTCPeerConnectionState | null {
@@ -359,6 +378,10 @@ export class WebRTCService {
 
   public getIceConnectionState(): RTCIceConnectionState | null {
     return this.peerConnection?.iceConnectionState || null;
+  }
+
+  public getIsNegotiating(): boolean {
+    return this.isNegotiating || Boolean(this.peerConnection && this.peerConnection.signalingState !== "stable");
   }
 
   public getRemoteStream(): MediaStream | null {

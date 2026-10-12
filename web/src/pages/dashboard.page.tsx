@@ -328,14 +328,14 @@ export function DashboardPage() {
 
               {/* Quick Jump Action */}
               <div className="flex items-center gap-3 shrink-0">
-                <Link to="/chat">
+                <Link to="/study-meetings">
                   <motion.button
                     whileHover={{ scale: 1.04, y: -1 }}
                     whileTap={{ scale: 0.96 }}
                     className="inline-flex items-center gap-2 rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] px-5 py-3 text-xs font-bold text-white shadow-[0_0_20px_rgba(30,144,255,0.35)] hover:shadow-[0_0_25px_rgba(30,144,255,0.45)] transition-all cursor-pointer"
                   >
                     <MessageSquare size={14} />
-                    <span>Enter Study Rooms</span>
+                    <span>Enter Study Meetings</span>
                     <ArrowRight size={14} />
                   </motion.button>
                 </Link>

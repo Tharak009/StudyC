@@ -17,9 +17,9 @@ export type CallStatus =
 export const VALID_CALL_TRANSITIONS: Record<CallStatus, readonly CallStatus[]> = {
   IDLE: ["CALLING", "RINGING"],
   CALLING: ["CONNECTING", "CANCELLED", "MISSED", "FAILED", "ENDED"],
-  RINGING: ["ACCEPTED", "REJECTED", "MISSED", "CANCELLED", "FAILED", "ENDED"],
+  RINGING: ["ACCEPTED", "CONNECTING", "REJECTED", "MISSED", "CANCELLED", "FAILED", "ENDED"],
   ACCEPTED: ["CONNECTING", "FAILED", "ENDED"],
-  CONNECTING: ["CONNECTED", "FAILED", "ENDED"],
+  CONNECTING: ["CONNECTED", "RECONNECTING", "FAILED", "ENDED"],
   CONNECTED: ["RECONNECTING", "FAILED", "ENDED"],
   RECONNECTING: ["CONNECTED", "FAILED", "ENDED"],
   REJECTED: ["IDLE"],
@@ -49,10 +49,14 @@ export interface CallSession {
   callerName: string;
   callerAvatar?: string;
   calleeId: string;
+  calleeName?: string;
+  calleeAvatar?: string;
   calleeSocketId?: string;
   channelId?: string;
   status: CallStatus;
+  connectedUserIds: Set<string>;
   startedAt: number;
+  stateChangedAt?: number;
   connectedAt?: number;
   endedAt?: number;
   endReason?: string;
@@ -139,6 +143,8 @@ export interface CallParticipant {
 
 export interface GroupCallSession {
   callId: string;
+  /** Opaque, server-generated LiveKit room name. Never supplied by clients. */
+  mediaRoomName: string;
   channelId: string;
   communityId?: string;
   communityName?: string;
@@ -147,6 +153,7 @@ export interface GroupCallSession {
   initiatedBy: string;
   status: CallStatus;
   participants: Map<string, CallParticipant>;
+  participantHistory: Map<string, CallParticipant>;
   screenSharerId?: string | null;
   raiseHandQueue: StageRequest[];
   bannedUserIds: Set<string>;
@@ -170,4 +177,3 @@ export interface GroupCallSummary {
   endedAt: number;
   endReason?: string;
 }
-

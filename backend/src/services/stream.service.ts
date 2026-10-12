@@ -72,6 +72,55 @@ export class StreamService {
     return Boolean(env.STREAM_API_KEY && env.STREAM_API_SECRET);
   }
 
+  /** Verify membership through Stream's authoritative channel state. */
+  public async isChannelMember(channelId: string, userId: string): Promise<boolean> {
+    if (!channelId || !userId || !this.isConfigured()) return false;
+    try {
+      const channel = this.getClient().channel("messaging", channelId);
+      const state = await channel.query({ state: true, watch: false });
+      const streamUserId = toStreamUserId(fromStreamUserId(userId));
+      return Boolean(state.members?.some((member) => member.user_id === streamUserId));
+    } catch (error) {
+      console.warn("[StreamService] Channel membership lookup failed:", error);
+      return false;
+    }
+  }
+
+  /** Create the one persistent Stream conversation attached to a Study Meeting Room. */
+  public async createStudyMeetingChannel(input: {
+    channelId: string;
+    meetingId: string;
+    name: string;
+    hostUserId: string;
+  }): Promise<void> {
+    const channel = this.getClient().channel("messaging", input.channelId, {
+      name: input.name,
+      studyConnectType: "study_meeting",
+      studyMeetingId: input.meetingId,
+      created_by_id: toStreamUserId(input.hostUserId)
+    } as any);
+    try {
+      await channel.create({ members: [toStreamUserId(input.hostUserId)] as any });
+    } catch (error: any) {
+      // Room creation retries may find the channel already provisioned. Do not
+      // silently accept a channel with unrelated identity metadata.
+      const state = await channel.query({ state: true, watch: false }).catch(() => null);
+      if ((state?.channel as any)?.studyMeetingId !== input.meetingId) throw error;
+    }
+  }
+
+  public async addStudyMeetingMember(channelId: string, userId: string): Promise<void> {
+    if (await this.isChannelMember(channelId, userId)) return;
+    const channel = this.getClient().channel("messaging", channelId);
+    await channel.addMembers([toStreamUserId(userId)] as any);
+  }
+
+  public async removeStudyMeetingMember(channelId: string, userId: string): Promise<void> {
+    if (!(await this.isChannelMember(channelId, userId))) return;
+    const channel = this.getClient().channel("messaging", channelId);
+    await channel.removeMembers([toStreamUserId(userId)] as any);
+  }
+
   private hasEnsuredUploadConfig = false;
 
   /**
@@ -116,7 +165,7 @@ export class StreamService {
     await client.upsertUser({
       id: streamUserId,
       name: user.fullName || user.name || "Student",
-      image: user.profilePicture || undefined,
+      image: user.profilePicture || "",
       role: user.role === "ADMIN" ? "admin" : "user",
       department: user.department,
       rollNumber: user.rollNumber

@@ -19,6 +19,7 @@ import { communitiesApi } from "../../api/communities.api";
 import { Avatar } from "../avatar";
 import { useAuthStore } from "../../store/auth.store";
 import { useToastStore } from "../../store/toast.store";
+import { ContactProfileDrawer } from "../chat/ContactProfileDrawer";
 
 interface CommunityMembersViewProps {
   community: Community;
@@ -36,6 +37,7 @@ export function CommunityMembersView({
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [activeMenuMemberId, setActiveMenuMemberId] = useState<string | null>(null);
+  const [contact, setContact] = useState<{ id: string; name: string; avatar?: string } | null>(null);
 
   const membersQuery = useQuery({
     queryKey: ["community-members", community._id],
@@ -247,17 +249,19 @@ export function CommunityMembersView({
                     className="flex items-center justify-between p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0B132B] shadow-2xs hover:border-[#1E90FF]/30 transition-all"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <Avatar
-                        src={u.profilePicture}
-                        name={u.fullName}
-                        className="size-11 rounded-xl"
-                      />
+                      <button type="button" onClick={() => setContact({ id: u._id, name: u.fullName, avatar: u.profilePicture })} aria-label={`View ${u.fullName}'s profile`} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E90FF]">
+                        <Avatar
+                          src={u.profilePicture}
+                          name={u.fullName}
+                          className="size-11 rounded-xl"
+                        />
+                      </button>
 
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                          <button type="button" onClick={() => setContact({ id: u._id, name: u.fullName, avatar: u.profilePicture })} className="text-left text-sm font-bold text-slate-900 dark:text-white truncate hover:text-[#1E90FF] focus-visible:outline-none focus-visible:underline">
                             {u.fullName}
-                          </p>
+                          </button>
 
                           {isTargetOwner ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
@@ -400,6 +404,14 @@ export function CommunityMembersView({
           )}
         </div>
       </div>
+      <ContactProfileDrawer
+        isOpen={Boolean(contact)}
+        userId={contact?.id || ""}
+        fallbackName={contact?.name}
+        fallbackAvatar={contact?.avatar}
+        contextLabel={community.name}
+        onClose={() => setContact(null)}
+      />
     </div>
   );
 }

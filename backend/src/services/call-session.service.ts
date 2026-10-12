@@ -19,6 +19,8 @@ export interface InitiateSessionParams {
   callerName: string;
   callerAvatar?: string;
   calleeId: string;
+  calleeName?: string;
+  calleeAvatar?: string;
   calleeSocketId?: string;
   channelId?: string;
   type: CallType;
@@ -63,7 +65,7 @@ export class CallSessionService {
         this.endCall(callId, "max_duration_exceeded");
       } else if (
         (session.status === "CONNECTING" || session.status === "RECONNECTING" || session.status === "ACCEPTED") &&
-        now - session.startedAt > 10 * 60 * 1000
+        now - (session.stateChangedAt ?? session.startedAt) > 10 * 60 * 1000
       ) {
         console.log(`[CallSessionService] Sweeping abandoned hung session ${callId}`);
         this.failCall(callId, "session_timeout");
@@ -92,6 +94,14 @@ export class CallSessionService {
     return this.callSessions.get(callId);
   }
 
+  public isCurrentParticipantSocket(callId: string, userId: string, socketId: string): boolean {
+    const session = this.callSessions.get(callId);
+    if (!session) return false;
+    return session.callerId === userId
+      ? session.callerSocketId === socketId
+      : session.calleeId === userId && session.calleeSocketId === socketId;
+  }
+
   /**
    * Retrieves active call session for a given user if currently in a call
    */
@@ -112,6 +122,7 @@ export class CallSessionService {
       return false;
     }
     session.status = nextStatus;
+    session.stateChangedAt = Date.now();
     return true;
   }
 
@@ -119,7 +130,10 @@ export class CallSessionService {
    * Initiates a new call session after concurrency validation
    */
   public createSession(params: InitiateSessionParams): { session: CallSession } | { error: string; code: string } {
-    const { callerId, callerSocketId, callerName, callerAvatar, calleeId, calleeSocketId, channelId, type } = params;
+    const {
+      callerId, callerSocketId, callerName, callerAvatar, calleeId, calleeName, calleeAvatar,
+      calleeSocketId, channelId, type
+    } = params;
 
     if (callerId === calleeId) {
       return { error: "Cannot initiate call with yourself", code: "INVALID_TARGET" };
@@ -152,10 +166,14 @@ export class CallSessionService {
       callerName,
       callerAvatar,
       calleeId,
+      calleeName,
+      calleeAvatar,
       calleeSocketId,
       channelId,
-      status: "CALLING",
+      status: "RINGING",
+      connectedUserIds: new Set<string>(),
       startedAt: Date.now(),
+      stateChangedAt: Date.now(),
       ringTimer
     };
 
@@ -169,9 +187,9 @@ export class CallSessionService {
   /**
    * Callee accepts the call
    */
-  public acceptCall(callId: string, calleeSocketId: string): CallSession | null {
+  public acceptCall(callId: string, calleeSocketId: string, calleeUserId: string): CallSession | null {
     const session = this.callSessions.get(callId);
-    if (!session) return null;
+    if (!session || session.calleeId !== calleeUserId || session.status !== "RINGING") return null;
 
     if (!this.transition(session, "ACCEPTED")) {
       return null;
@@ -192,6 +210,7 @@ export class CallSessionService {
   public setConnecting(callId: string): CallSession | null {
     const session = this.callSessions.get(callId);
     if (!session) return null;
+    if (session.status === "CONNECTING") return session;
     if (!this.transition(session, "CONNECTING")) {
       return null;
     }
@@ -212,7 +231,33 @@ export class CallSessionService {
     if (!session.connectedAt) {
       session.connectedAt = Date.now();
     }
+    session.connectedUserIds.clear();
     this.clearGraceTimer(session);
+    return session;
+  }
+
+  /** Accept WebRTC-connected reports only from the two authenticated call participants. */
+  public reportPeerConnected(callId: string, userId: string): { session: CallSession; connected: boolean } | null {
+    const session = this.callSessions.get(callId);
+    if (!session || (session.callerId !== userId && session.calleeId !== userId)) return null;
+    if (session.status !== "CONNECTING" && session.status !== "RECONNECTING" && session.status !== "CONNECTED") {
+      return null;
+    }
+
+    session.connectedUserIds.add(userId);
+    if (session.status === "CONNECTED") return { session, connected: true };
+    if (session.connectedUserIds.size < 2) return { session, connected: false };
+
+    const connectedSession = this.connectCall(callId);
+    return connectedSession ? { session: connectedSession, connected: true } : null;
+  }
+
+  public markReconnecting(callId: string, userId: string): CallSession | null {
+    const session = this.callSessions.get(callId);
+    if (!session || (session.callerId !== userId && session.calleeId !== userId)) return null;
+    if (session.status === "RECONNECTING") return session;
+    if (!this.transition(session, "RECONNECTING")) return null;
+    session.connectedUserIds.clear();
     return session;
   }
 
@@ -259,12 +304,12 @@ export class CallSessionService {
   /**
    * Callee rejects incoming call
    */
-  public rejectCall(callId: string, reason = "declined"): CallSession | null {
+  public rejectCall(callId: string, actorUserId: string, reason = "declined"): CallSession | null {
     const session = this.callSessions.get(callId);
-    if (!session) return null;
+    if (!session || session.calleeId !== actorUserId || (session.status !== "RINGING" && session.status !== "CALLING")) return null;
 
     this.cleanupTimers(session);
-    this.transition(session, "REJECTED");
+    if (!this.transition(session, "REJECTED")) return null;
     session.endedAt = Date.now();
     session.endReason = reason;
 
@@ -281,12 +326,12 @@ export class CallSessionService {
     const session = this.callSessions.get(callId);
     if (!session) return null;
 
-    if (session.callerId !== callerId) {
+    if (session.callerId !== callerId || (session.status !== "RINGING" && session.status !== "CALLING")) {
       return null;
     }
 
     this.cleanupTimers(session);
-    this.transition(session, "CANCELLED");
+    if (!this.transition(session, "CANCELLED")) return null;
     session.endedAt = Date.now();
     session.endReason = "cancelled_by_caller";
 
@@ -299,30 +344,30 @@ export class CallSessionService {
   /**
    * Normal call end / hangup by either party
    */
-  public endCall(callId: string, reason = "ended"): CallSession | null {
+  public endCall(callId: string, reason = "ended", actorUserId?: string): CallSession | null {
     const session = this.callSessions.get(callId);
-    if (!session) return null;
+    if (!session || (actorUserId && session.callerId !== actorUserId && session.calleeId !== actorUserId)) return null;
 
     this.cleanupTimers(session);
-    this.transition(session, "ENDED");
+    if (!this.transition(session, "ENDED")) return null;
     session.endedAt = Date.now();
     session.endReason = reason;
 
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
-    callHistoryService.recordDirectCall(session, "completed");
+    callHistoryService.recordDirectCall(session, session.connectedAt ? "completed" : "failed");
     return session;
   }
 
   /**
    * Call failure handler
    */
-  public failCall(callId: string, reason = "connection_failed"): CallSession | null {
+  public failCall(callId: string, reason = "connection_failed", actorUserId?: string): CallSession | null {
     const session = this.callSessions.get(callId);
-    if (!session) return null;
+    if (!session || (actorUserId && session.callerId !== actorUserId && session.calleeId !== actorUserId)) return null;
 
     this.cleanupTimers(session);
-    this.transition(session, "FAILED");
+    if (!this.transition(session, "FAILED")) return null;
     session.endedAt = Date.now();
     session.endReason = reason;
 
@@ -350,8 +395,8 @@ export class CallSessionService {
       return null;
     }
 
-    const isCaller = session.callerSocketId === socketId || session.callerId === userId;
-    const isCallee = session.calleeSocketId === socketId || session.calleeId === userId;
+    const isCaller = session.callerSocketId === socketId && session.callerId === userId;
+    const isCallee = session.calleeSocketId === socketId && session.calleeId === userId;
 
     if (!isCaller && !isCallee) {
       return null;
@@ -362,7 +407,7 @@ export class CallSessionService {
     // If call is actively connected or reconnecting, provide a 15-second grace period
     // so momentary WebSocket reconnection does not immediately terminate active WebRTC media
     if (session.status === "CONNECTED" || session.status === "RECONNECTING") {
-      this.transition(session, "RECONNECTING");
+      this.markReconnecting(callId, userId);
       this.clearGraceTimer(session);
 
       session.reconnectGraceTimer = setTimeout(() => {
@@ -380,6 +425,8 @@ export class CallSessionService {
 
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
+
+    callHistoryService.recordDirectCall(session, "cancelled");
 
     return { session, peerSocketId, isCaller, graceStarted: false };
   }
@@ -436,7 +483,7 @@ export class CallSessionService {
     if (!session) return;
 
     this.cleanupTimers(session);
-    this.transition(session, "ENDED");
+    this.transition(session, "FAILED");
     session.endedAt = Date.now();
     session.endReason = "reconnect_timeout";
 
@@ -444,7 +491,7 @@ export class CallSessionService {
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
 
-    callHistoryService.recordDirectCall(session, "completed");
+    callHistoryService.recordDirectCall(session, "failed");
 
     const summary = getCallSummary(session);
     for (const callback of this.graceExpiredCallbacks) {

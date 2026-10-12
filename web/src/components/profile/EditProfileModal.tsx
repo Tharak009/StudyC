@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   X,
@@ -19,7 +19,7 @@ interface EditProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   profile: StudentProfileData;
-  onSave: (updated: Partial<StudentProfileData>) => void;
+  onSave: (updated: Partial<StudentProfileData>) => void | Promise<void>;
 }
 
 export function EditProfileModal({
@@ -36,9 +36,14 @@ export function EditProfileModal({
   const [linkedinUrl, setLinkedinUrl] = useState(profile.linkedinUrl || "");
   const [portfolioUrl, setPortfolioUrl] = useState(profile.portfolioUrl || "");
   const [profilePicture, setProfilePicture] = useState<string | undefined>(profile.profilePicture);
+  const [isSaving, setIsSaving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToastStore();
+
+  useEffect(() => {
+    if (isOpen) setProfilePicture(profile.profilePicture);
+  }, [isOpen, profile.profilePicture]);
 
   if (!isOpen) return null;
 
@@ -73,19 +78,26 @@ export function EditProfileModal({
     setInterests(interests.filter((i) => i !== tag));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      fullName,
-      bio,
-      interests,
-      githubUrl,
-      linkedinUrl,
-      portfolioUrl,
-      profilePicture
-    });
-    addToast("Academic profile updated successfully!", "success");
-    onClose();
+    setIsSaving(true);
+    try {
+      await onSave({
+        fullName,
+        bio,
+        interests,
+        githubUrl,
+        linkedinUrl,
+        portfolioUrl,
+        profilePicture
+      });
+      addToast("Academic profile updated successfully!", "success");
+      onClose();
+    } catch (error: any) {
+      addToast(error?.response?.data?.message || error?.message || "Could not save profile changes", "error");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -251,10 +263,11 @@ export function EditProfileModal({
             </button>
             <button
               type="submit"
-              className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
+              disabled={isSaving}
+              className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#1E90FF] hover:bg-[#187bcd] disabled:opacity-60 disabled:cursor-wait text-white text-xs font-bold shadow-md shadow-[#1E90FF]/25 cursor-pointer transition-all"
             >
               <Check size={14} />
-              <span>Save Profile</span>
+              <span>{isSaving ? "Saving…" : "Save Profile"}</span>
             </button>
           </div>
         </form>

@@ -140,23 +140,28 @@ describe("communities API", () => {
     expect(promoted.body.data.some((item: { role: string }) => item.role === "MODERATOR")).toBe(true);
   });
 
-  it("auto-provisions Announcements group on community creation and allows owner to create groups", async () => {
+  it("auto-provisions default groups on community creation and allows owner to create groups", async () => {
     const ownerToken = await register(owner);
     const memberToken = await register(member);
     const community = await createCommunity(ownerToken);
 
-    // 1. Check auto-provisioned announcements group
+    // 1. Check auto-provisioned default groups
     const initialGroupsRes = await request(app)
       .get(`/api/communities/${community._id}/groups`)
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(200);
 
     const initialGroups = initialGroupsRes.body.data;
-    expect(initialGroups).toHaveLength(1);
-    expect(initialGroups[0].type).toBe("ANNOUNCEMENT");
-    expect(initialGroups[0].isAnnouncement).toBe(true);
-    expect(initialGroups[0].name).toBe("Announcements");
-    expect(initialGroups[0].streamChannelId).toBe(`comm_${community._id}_announcements`);
+    expect(initialGroups.map((group: { name: string }) => group.name)).toEqual([
+      "announcements",
+      "general",
+      "introductions",
+      "resources"
+    ]);
+    const announcement = initialGroups[0];
+    expect(announcement.type).toBe("ANNOUNCEMENT");
+    expect(announcement.isAnnouncement).toBe(true);
+    expect(announcement.streamChannelId).toBe(`comm_${community._id}_announcements`);
 
     // 2. Student joins community
     await request(app)
@@ -198,7 +203,7 @@ describe("communities API", () => {
       .set("Authorization", `Bearer ${memberToken}`)
       .expect(200);
 
-    expect(memberGroupsRes.body.data).toHaveLength(2);
+    expect(memberGroupsRes.body.data).toHaveLength(5);
 
     // 6. Member can get specific group details
     const groupDetailsRes = await request(app)

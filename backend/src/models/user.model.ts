@@ -71,6 +71,9 @@ const userSchema = new Schema<IUser, UserModel, UserMethods>(
     toJSON: {
       transform(_document, returned) {
         const safe = returned as Record<string, unknown>;
+        if (typeof safe.profilePicture === "string" && safe.profilePicture.startsWith("/")) {
+          safe.profilePicture = new URL(safe.profilePicture, env.API_PUBLIC_URL).toString();
+        }
         delete safe.password;
         delete safe.passwordResetTokenHash;
         delete safe.passwordResetExpiresAt;

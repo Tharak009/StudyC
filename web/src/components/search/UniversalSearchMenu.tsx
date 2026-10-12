@@ -19,7 +19,7 @@ import { communitiesApi } from "../../api/communities.api";
 import { resourcesApi } from "../../api/resources.api";
 import { usersApi } from "../../api/users.api";
 import { eventsApi } from "../../api/events.api";
-import { directMessagesApi } from "../../api/direct-messages.api";
+import { streamApi } from "../../api/stream.api";
 import { useAuthStore } from "../../store/auth.store";
 import { getOrganizerName } from "../../types/event";
 
@@ -215,16 +215,12 @@ export function UniversalSearchMenu() {
   };
 
   const handleSelectPeer = async (peerId: string) => {
-    setIsOpen(false);
     try {
-      const conv = await directMessagesApi.startConversation(peerId);
-      if (conv?._id) {
-        navigate(`/direct-messages/${conv._id}`);
-      } else {
-        navigate("/direct-messages");
-      }
-    } catch {
-      navigate("/direct-messages");
+      const conversation = await streamApi.getOrCreateDm(peerId);
+      setIsOpen(false);
+      navigate(`/chat?mode=dms&conv=${encodeURIComponent(conversation.channelId)}`);
+    } catch (error) {
+      console.warn("Could not start direct message:", error);
     }
   };
 

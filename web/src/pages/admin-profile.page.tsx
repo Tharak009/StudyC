@@ -1,7 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from "react";
 import {
   User,
-  Clock,
   Camera,
   Check,
   Trash2,
@@ -18,20 +17,25 @@ import {
   Activity,
   Users,
   MessageSquare,
-  ScrollText,
   Calendar,
   AlertTriangle
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useAuthStore } from "../store/auth.store";
 import { useToastStore } from "../store/toast.store";
+import { usersApi } from "../api/users.api";
 import { ConfirmationDialog } from "../components/confirmation-dialog";
 import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import { ConnectionsTab } from "../components/profile/ConnectionsTab";
 import { BroadcastModal } from "../components/admin/BroadcastModal";
 import type { AdminTabKey } from "../components/admin/AdminTabsNav";
 
-type ProfileTab = "PERSONAL" | "CONNECTIONS" | "ACTIVITY";
+interface AdminProfilePageProps {
+  embedded?: boolean;
+  onNavigateTab?: (tab: AdminTabKey) => void;
+}
+
+type ProfileTab = "PERSONAL" | "CONNECTIONS";
 
 interface AdminProfileData {
   fullName: string;
@@ -42,22 +46,10 @@ interface AdminProfileData {
   profilePicture?: string;
 }
 
-interface AuditLogEntry {
-  id: string;
-  timestamp: string;
-  relativeTime: string;
-  adminName: string;
-  action: string;
-  targetType: string;
-  targetId: string;
-  metadataSummary: string;
-}
-
 function loadDynamicAdminStats() {
   let pendingReportsCount = 0;
   let totalUsersCount = 1;
   let totalCirclesCount = 0;
-  let totalAuditLogsCount = 0;
 
   try {
     const rawReports = localStorage.getItem("studyconnect_content_reports");
@@ -84,18 +76,10 @@ function loadDynamicAdminStats() {
     }
   } catch {}
 
-  try {
-    const rawAudit = localStorage.getItem("studyconnect_audit_logs");
-    if (rawAudit) {
-      totalAuditLogsCount = JSON.parse(rawAudit).length;
-    }
-  } catch {}
-
   return {
     pendingReportsCount,
     totalUsersCount,
-    totalCirclesCount,
-    totalAuditLogsCount
+    totalCirclesCount
   };
 }
 
@@ -116,32 +100,11 @@ function loadSavedAdminProfile(user: any): AdminProfileData {
     bio:
       saved.bio ||
       "Responsible for maintaining campus academic integrity, reviewing content reports, managing student permissions, and coordinating emergency communications.",
-    profilePicture: saved.profilePicture || user?.profilePicture
+    profilePicture: user?.profilePicture || saved.profilePicture
   };
 }
 
-function loadAdminAuditLogs(): AuditLogEntry[] {
-  try {
-    const raw = localStorage.getItem("studyconnect_audit_logs");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.slice(0, 15);
-    }
-  } catch {}
-  return [];
-}
-
-interface AdminProfilePageProps {
-  embedded?: boolean;
-  onNavigateTab?: (tab: AdminTabKey) => void;
-  onSwitchToStudentView?: () => void;
-}
-
-export function AdminProfilePage({
-  embedded = false,
-  onNavigateTab,
-  onSwitchToStudentView
-}: AdminProfilePageProps) {
+export function AdminProfilePage({ embedded = false, onNavigateTab }: AdminProfilePageProps) {
   const navigate = useNavigate();
   const { addToast } = useToastStore();
   const user = useAuthStore((state) => state.user)!;
@@ -162,9 +125,6 @@ export function AdminProfilePage({
   // Dynamic Live Stats
   const [stats, setStats] = useState(loadDynamicAdminStats);
 
-  // Live Audit Logs from localStorage
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(loadAdminAuditLogs);
-
   // Broadcast Modal State
   const [broadcastOpen, setBroadcastOpen] = useState(false);
 
@@ -181,7 +141,6 @@ export function AdminProfilePage({
   // Refresh live data on tab change
   useEffect(() => {
     setStats(loadDynamicAdminStats());
-    setAuditLogs(loadAdminAuditLogs());
   }, [activeTab]);
 
   // Photo handlers
@@ -189,7 +148,7 @@ export function AdminProfilePage({
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -198,21 +157,22 @@ export function AdminProfilePage({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setAvatarPreview(result);
-      const updated = { ...profileData, profilePicture: result };
+    try {
+      const updatedUser = await usersApi.uploadProfilePicture(file);
+      if (!updatedUser?.profilePicture) throw new Error("The server did not return the saved profile photo");
+      setAvatarPreview(updatedUser.profilePicture);
+      const updated = { ...profileData, profilePicture: updatedUser.profilePicture };
       setProfileData(updated);
       try {
         localStorage.setItem("studyconnect_admin_profile", JSON.stringify(updated));
       } catch {}
-      if (user) {
-        setUser({ ...user, profilePicture: result });
-      }
-      addToast("Administrator avatar updated successfully.", "success");
-    };
-    reader.readAsDataURL(file);
+      setUser(updatedUser);
+      addToast("Administrator profile photo saved and synced.", "success");
+    } catch (error: any) {
+      addToast(error?.response?.data?.message || error?.message || "Could not upload profile photo", "error");
+    } finally {
+      e.target.value = "";
+    }
   };
 
   const executeConfirmAction = () => {
@@ -261,10 +221,10 @@ export function AdminProfilePage({
 
   // Content body
   const content = (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       {/* ── Top Clearance Header ────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 dark:border-slate-800/80">
-        <div className="space-y-1.5">
+      <div className="flex min-w-0 flex-col gap-4 border-b border-slate-200/80 pb-4 dark:border-slate-800/80 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 space-y-1.5">
           <div className="inline-flex items-center gap-2 rounded-full border border-[#1E90FF]/30 bg-[#1E90FF]/10 px-3 py-1 text-xs font-bold text-[#1E90FF]">
             <ShieldCheck size={14} className="shrink-0" />
             <span>Institutional Governance Clearance • Elevated Access</span>
@@ -280,7 +240,7 @@ export function AdminProfilePage({
         </div>
 
         {/* Quick Actions */}
-        <div className="flex flex-wrap items-center gap-3 shrink-0">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:gap-3 lg:w-auto lg:shrink-0">
           {embedded ? (
             <button
               onClick={() => onNavigateTab?.("overview")}
@@ -309,27 +269,19 @@ export function AdminProfilePage({
             <span>Broadcast Alert</span>
           </button>
 
-          {onSwitchToStudentView ? (
-            <button
-              type="button"
-              onClick={onSwitchToStudentView}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F1A30] text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-[#1E90FF] hover:text-[#1E90FF] transition-all cursor-pointer"
-            >
-              <span>Student Profile Preview</span>
-            </button>
-          ) : (
+          {!embedded && (
             <Link
               to="/dashboard"
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F1A30] text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-[#1E90FF] hover:text-[#1E90FF] transition-all"
+              className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 transition-all hover:border-[#1E90FF] hover:text-[#1E90FF] dark:border-slate-800 dark:bg-[#0F1A30] dark:text-slate-300"
             >
-              <span>Student Workspace</span>
+              <span>Back to Dashboard</span>
             </Link>
           )}
         </div>
       </div>
 
       {/* ── 4 Live Institutional Metrics Cards ─────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Pending Content Reports */}
         <div
           onClick={() => {
@@ -420,31 +372,6 @@ export function AdminProfilePage({
           </div>
         </div>
 
-        {/* Audit Actions */}
-        <div
-          onClick={() => {
-            if (embedded && onNavigateTab) onNavigateTab("audit");
-            else navigate("/admin?tab=audit");
-          }}
-          className="rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0F1A30]/80 p-4 shadow-sm backdrop-blur-sm cursor-pointer hover:border-[#1E90FF]/40 transition-all group"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Audit Compliance Logs</span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500">
-              <ScrollText size={15} />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 dark:text-slate-50 tabular-nums">
-              {stats.totalAuditLogsCount}
-            </span>
-            <span className="text-[10px] font-bold text-amber-500">Logged Actions</span>
-          </div>
-          <div className="mt-2 text-[10px] text-slate-400 group-hover:text-[#1E90FF] flex items-center gap-1 transition-colors">
-            <span>90-Day tamper trail</span>
-            <ExternalLink size={10} />
-          </div>
-        </div>
       </div>
 
       {/* ── Main Split Pane: Left Summary Card + Right Tabs ──────────────── */}
@@ -604,10 +531,6 @@ export function AdminProfilePage({
                 <Check size={13} className="text-emerald-500 shrink-0" />
                 <span>Campus-Wide Emergency Broadcasts</span>
               </li>
-              <li className="flex items-center gap-2">
-                <Check size={13} className="text-emerald-500 shrink-0" />
-                <span>90-Day Tamper-Evident Audit Trail</span>
-              </li>
             </ul>
           </div>
         </div>
@@ -618,8 +541,7 @@ export function AdminProfilePage({
           <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto scrollbar-none bg-slate-50/50 dark:bg-[#162544]/30">
             {[
               { id: "PERSONAL" as ProfileTab, label: "Staff Profile & Clearance", icon: User },
-              { id: "CONNECTIONS" as ProfileTab, label: "Campus Connections & Requests", icon: Users },
-              { id: "ACTIVITY" as ProfileTab, label: "90-Day Audit Timeline", icon: Clock }
+              { id: "CONNECTIONS" as ProfileTab, label: "Campus Connections & Requests", icon: Users }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -843,77 +765,6 @@ export function AdminProfilePage({
               </div>
             )}
 
-            {/* ── Tab 3: Live Activity Log ───────────────────────────────── */}
-            {activeTab === "ACTIVITY" && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-50">
-                      Recent Governance Actions & Audit Entries
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Live audit entries executed by your administrative account and fellow faculty members.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (embedded && onNavigateTab) onNavigateTab("audit");
-                      else navigate("/admin?tab=audit");
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-[#1E90FF] hover:bg-[#1E90FF]/10 transition-all cursor-pointer"
-                  >
-                    <span>Full 90-Day Audit Trail</span>
-                    <ExternalLink size={12} />
-                  </button>
-                </div>
-
-                {auditLogs.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1E90FF]/10 text-[#1E90FF]">
-                      <Clock size={24} />
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-50">
-                        No Recent Moderation Actions Logged Yet
-                      </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                        Actions taken in the Admin Governance Console (user bans, report resolutions, and campus announcements) are recorded here in real time.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="relative pl-6 border-l-2 border-[#1E90FF]/30 space-y-6">
-                    {auditLogs.map((entry) => (
-                      <div key={entry.id} className="relative group">
-                        <span className="absolute -left-[31px] top-1 flex size-4 items-center justify-center rounded-full bg-white dark:bg-[#0F1A30] ring-2 ring-[#1E90FF]">
-                          <span className="size-2 rounded-full bg-[#1E90FF]" />
-                        </span>
-
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
-                              {entry.relativeTime || entry.timestamp}
-                            </span>
-                            <span className="rounded bg-[#1E90FF]/10 border border-[#1E90FF]/20 px-2 py-0.5 text-[9px] font-bold text-[#1E90FF] uppercase">
-                              {entry.action}
-                            </span>
-                            <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                              by {entry.adminName}
-                            </span>
-                          </div>
-
-                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                            {entry.metadataSummary || `Executed ${entry.action} on ${entry.targetType}`}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -943,11 +794,11 @@ export function AdminProfilePage({
 
   // Full standalone page layout with DashboardSidebar
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#080D1A] text-slate-900 dark:text-slate-50 font-sans antialiased transition-colors duration-300">
+    <div className="flex h-dvh min-h-0 min-w-0 overflow-hidden bg-slate-50 font-sans antialiased text-slate-900 transition-colors duration-300 dark:bg-[#080D1A] dark:text-slate-50">
       <DashboardSidebar currentNav="/profile" />
 
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
-        <main className="p-4 sm:p-8 space-y-6 max-w-7xl w-full mx-auto">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+        <main className="mx-auto w-full min-w-0 max-w-[1600px] space-y-6 p-4 sm:p-6 xl:p-8">
           {content}
         </main>
       </div>

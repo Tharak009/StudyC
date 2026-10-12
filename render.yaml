@@ -28,6 +28,8 @@ services:
         sync: false # Set securely in Render dashboard (e.g. MongoDB Atlas cluster URI)
       - key: CLIENT_URL
         value: https://studyconnect-frontend.onrender.com
+      - key: API_PUBLIC_URL
+        value: https://studyconnect-backend.onrender.com
       - key: FRONTEND_URL
         value: https://studyconnect-frontend.onrender.com
       - key: APPROVED_EMAIL_DOMAINS

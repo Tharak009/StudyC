@@ -162,6 +162,28 @@ export function useStreamDMs(initialConversationId?: string | null) {
     [streamChannels]
   );
 
+  const deleteConversation = useCallback(
+    async (channelId: string) => {
+      if (!client || connectionStatus !== "connected") {
+        throw new Error("Stream Chat is not connected");
+      }
+
+      const channel = streamChannels.find((item) => item.id === channelId);
+      if (!channel) throw new Error("Chat could not be found");
+
+      // Hide only for the current user. This preserves the shared conversation
+      // and message history for the other participant.
+      await channel.hide();
+      setStreamChannels((current) => current.filter((item) => item.id !== channelId));
+      setConversations((current) => current.filter((item) => item.id !== channelId));
+      if (activeConversationId === channelId) {
+        setActiveChannel(null);
+        setActiveConversationId(null);
+      }
+    },
+    [client, connectionStatus, streamChannels, activeConversationId]
+  );
+
   // Start a new DM with a classmate via the backend API
   const startDm = useCallback(
     async (targetUserId: string): Promise<string> => {
@@ -196,6 +218,7 @@ export function useStreamDMs(initialConversationId?: string | null) {
     loading,
     error,
     selectConversation,
+    deleteConversation,
     startDm,
     refetchDMs: fetchDMs
   };

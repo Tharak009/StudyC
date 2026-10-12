@@ -72,7 +72,6 @@ import { callSignalingService } from "../../services/call-signaling.service";
 import { socketService } from "../../services/socket.service";
 import { useCallStore } from "../../store/call.store";
 import { useChatOrganizationStore } from "../../store/chat-organization.store";
-import { useChatPrivacyStore } from "../../store/chat-privacy.store";
 import { usersApi } from "../../api/users.api";
 import { fromStreamUserId, toStreamUserId } from "../../utils/stream-id";
 import { useToastStore } from "../../store/toast.store";
@@ -98,6 +97,7 @@ interface StreamChannelViewProps {
   communityName?: string;
   targetMessageId?: string | null;
   onBack?: () => void;
+  headerActions?: React.ReactNode;
   isReadOnly?: boolean;
   readOnlyNotice?: string;
 }
@@ -168,20 +168,6 @@ function StudyConnectMessageItem(props: Partial<MessageContextValue>) {
   // 1. Delete for Me Check (Local hide)
   if (hiddenMessageIds.has(message.id)) {
     return null;
-  }
-
-  // 1b. Disappearing Messages Expiration Check
-  const disappearingDuration =
-    useChatPrivacyStore((state) => state.getDisappearingDuration(channel.id)) ||
-    ((channel.data as any)?.disappearing_duration as number) ||
-    0;
-
-  if (disappearingDuration > 0 && message.created_at) {
-    const ageSeconds =
-      (Date.now() - new Date(message.created_at).getTime()) / 1000;
-    if (ageSeconds > disappearingDuration) {
-      return null;
-    }
   }
 
   const isForwarded = Boolean((message as any).forwarded);
@@ -737,6 +723,7 @@ function StreamChannelInner({
   peer,
   communityName,
   onBack,
+  headerActions,
   isReadOnly = false,
   readOnlyNotice
 }: {
@@ -746,6 +733,7 @@ function StreamChannelInner({
   peer?: ActivePeer | null;
   communityName?: string;
   onBack?: () => void;
+  headerActions?: React.ReactNode;
   isReadOnly?: boolean;
   readOnlyNotice?: string;
 }) {
@@ -847,12 +835,6 @@ function StreamChannelInner({
     }
   };
 
-  // Disappearing messages duration
-  const disappearingDuration =
-    useChatPrivacyStore((state) => state.getDisappearingDuration(channel.id)) ||
-    ((channel.data as any)?.disappearing_duration as number) ||
-    0;
-
   // Strict Study Mode check
   const isStrictStudyMode =
     !isDM &&
@@ -878,8 +860,9 @@ function StreamChannelInner({
     const socket = socketService.get();
     if (!socket) return;
 
-    // Query active group call for this channel
-    socket.emit("call:group:getActiveCall", { channelId: channel.id }, (res: any) => {
+    // Join the authenticated call-notification room and restore active-call state,
+    // including after Socket.IO reconnects (which clears server-side room membership).
+    const queryActiveGroupCall = () => socket.emit("call:group:getActiveCall", { channelId: channel.id }, (res: any) => {
       if (res?.success && res.call) {
         setActiveGroupCall({
           callId: res.call.callId,
@@ -892,6 +875,8 @@ function StreamChannelInner({
         setActiveGroupCall(null);
       }
     });
+    if (socket.connected) queryActiveGroupCall();
+    socket.on("connect", queryActiveGroupCall);
 
     const onGroupStarted = (data: any) => {
       if (data.channelId === channel.id) {
@@ -935,6 +920,8 @@ function StreamChannelInner({
     socket.on("call:group:ended", onGroupEnded);
 
     return () => {
+      socket.emit("call:group:unwatch", { channelId: channel.id });
+      socket.off("connect", queryActiveGroupCall);
       socket.off("call:group:started", onGroupStarted);
       socket.off("call:group:participant_joined", onParticipantJoined);
       socket.off("call:group:participant_left", onParticipantLeft);
@@ -1096,7 +1083,7 @@ function StreamChannelInner({
           )}
 
           {isDM ? (
-            <div className="flex items-center gap-3 min-w-0">
+            <button type="button" onClick={() => setIsInfoPanelOpen(true)} aria-label={`Open ${peer?.name || "contact"} contact information`} className="flex items-center gap-3 min-w-0 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E90FF]">
               <div className="relative shrink-0">
                 {peer?.avatar ? (
                   <img
@@ -1124,16 +1111,6 @@ function StreamChannelInner({
                       Blocked
                     </span>
                   )}
-                  {disappearingDuration > 0 && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 text-[10px] font-semibold border border-sky-500/20">
-                      <Clock size={10} />
-                      {disappearingDuration >= 2592000
-                        ? "30d"
-                        : disappearingDuration >= 604800
-                        ? "7d"
-                        : "24h"}
-                    </span>
-                  )}
                 </div>
                 <p className="text-[11px] text-slate-400 truncate">
                   {peer?.isOnline ? (
@@ -1145,7 +1122,7 @@ function StreamChannelInner({
                   )}
                 </p>
               </div>
-            </div>
+            </button>
           ) : (
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-950/50 text-[#1E90FF] flex items-center justify-center shrink-0">
@@ -1160,16 +1137,6 @@ function StreamChannelInner({
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold border border-indigo-500/20">
                       <ShieldCheck size={10} />
                       Study Mode
-                    </span>
-                  )}
-                  {disappearingDuration > 0 && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 text-[10px] font-semibold border border-sky-500/20">
-                      <Clock size={10} />
-                      {disappearingDuration >= 2592000
-                        ? "30d"
-                        : disappearingDuration >= 604800
-                        ? "7d"
-                        : "24h"}
                     </span>
                   )}
                 </div>
@@ -1330,6 +1297,7 @@ function StreamChannelInner({
           >
             <Info size={16} />
           </button>
+          {headerActions}
         </div>
       </div>
 
@@ -1477,6 +1445,16 @@ function StreamChannelInner({
         onJumpToMessage={(msgId) => jumpToMessage(msgId)}
         onOpenSearch={() => setIsInChatSearchOpen(true)}
         onOpenStarred={() => setIsStarredDrawerOpen(true)}
+        onStartCall={(type) => {
+          if (!peer) return;
+          callSignalingService.initiateCall({
+            targetUserId: peer.id,
+            targetUserName: peer.name,
+            targetUserAvatar: peer.avatar,
+            channelId: channel.id,
+            isVideo: type === "video"
+          });
+        }}
         onOpenLightbox={openLightbox}
       />
 
@@ -1525,9 +1503,14 @@ function StreamChannelWrapper({
   communityName,
   targetMessageId,
   onBack,
+  headerActions,
   isReadOnly = false,
   readOnlyNotice
 }: StreamChannelViewProps) {
+  const { thread } = useChannelStateContext("StreamChannelWrapper");
+  // Stream can retain an empty thread object in channel state before a reply
+  // thread is actually selected. Only reserve the thread pane for a real message.
+  const hasActiveThread = Boolean(thread?.id);
   const [replyingTo, setReplyingTo] = useState<LocalMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<LocalMessage | null>(null);
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(
@@ -1733,7 +1716,7 @@ function StreamChannelWrapper({
 
   return (
     <MessageInteractionsContext.Provider value={contextValue}>
-      <div className="flex w-full h-full min-h-0 overflow-hidden relative">
+      <div className={`studyconnect-stream-layout flex w-full h-full min-h-0 overflow-hidden relative ${hasActiveThread ? "studyconnect-stream-layout--thread-open" : ""}`}>
         <Window>
           <StreamChannelInner
             channel={channel}
@@ -1742,6 +1725,7 @@ function StreamChannelWrapper({
             peer={peer}
             communityName={communityName}
             onBack={onBack}
+            headerActions={headerActions}
             isReadOnly={isReadOnly}
             readOnlyNotice={readOnlyNotice}
           />
@@ -1790,6 +1774,7 @@ export function StreamChannelView({
   communityName,
   targetMessageId,
   onBack,
+  headerActions,
   isReadOnly = false,
   readOnlyNotice
 }: StreamChannelViewProps) {
@@ -1803,6 +1788,7 @@ export function StreamChannelView({
         communityName={communityName}
         targetMessageId={targetMessageId}
         onBack={onBack}
+        headerActions={headerActions}
         isReadOnly={isReadOnly}
         readOnlyNotice={readOnlyNotice}
       />

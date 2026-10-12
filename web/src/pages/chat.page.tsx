@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -16,19 +16,15 @@ import { useStreamChat } from "../hooks/useStreamChat";
 import { useStreamDMs } from "../hooks/useStreamDMs";
 import { useStreamCommunityChannels } from "../hooks/useStreamCommunityChannels";
 import { communitiesApi } from "../api/communities.api";
-import { communityGroupsApi } from "../api/community-groups.api";
 import { usersApi } from "../api/users.api";
 import { UnifiedChatSidebar } from "../components/chat/UnifiedChatSidebar";
 import { StreamChannelView } from "../components/chat/StreamChannelView";
-import { DashboardSidebar } from "../components/layout/dashboard-sidebar";
 import type { Community } from "../types/community";
-import type { CommunityGroup } from "../types/community-group";
-import type { Channel } from "../types/chat";
-import type { PeerSearchResult } from "../components/dm/ConversationList";
 import type { ActivePeer } from "../components/dm/ConversationHeader";
 import { fromStreamUserId } from "../utils/stream-id";
 import { useChatNotifications } from "../hooks/useChatNotifications";
 import { useChatPrivacyStore } from "../store/chat-privacy.store";
+import { useChatOrganizationStore } from "../store/chat-organization.store";
 import { ChatLockChallenge } from "../components/chat/modals/ChatLockChallenge";
 import { SetChatPinModal } from "../components/chat/modals/SetChatPinModal";
 import {
@@ -38,11 +34,144 @@ import {
 import { ChatNotificationSettingsModal } from "../components/chat/modals/ChatNotificationSettingsModal";
 
 
-export function ChatPage() {
+const MIN_SIDEBAR_WIDTH = 300;
+const MAX_SIDEBAR_WIDTH = 600;
+const MIN_WORKSPACE_WIDTH = 360;
+const RESIZE_HANDLE_WIDTH = 8;
+
+export function ChatPage({ lockedOnly = false }: { lockedOnly?: boolean }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [sidebarWidth, setSidebarWidth] = useState(400);
+  const [maxSidebarWidth, setMaxSidebarWidth] = useState(MAX_SIDEBAR_WIDTH);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const chatLayoutRef = useRef<HTMLDivElement>(null);
+  const resizePointerId = useRef<number | null>(null);
+  const resizePointerOffset = useRef(0);
+  const resizeHandleRef = useRef<HTMLDivElement>(null);
+  const pendingSidebarWidth = useRef<number | null>(null);
+  const resizeFrame = useRef<number | null>(null);
   const authUser = useAuthStore((state) => state.user);
   const { addToast } = useToastStore();
+  const handleBack = useCallback(() => {
+    navigate("/dashboard");
+  }, [navigate]);
+
+  const getSidebarMaxWidth = useCallback(() => {
+    const layoutWidth = chatLayoutRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+    return Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(
+        MAX_SIDEBAR_WIDTH,
+        layoutWidth - MIN_WORKSPACE_WIDTH - RESIZE_HANDLE_WIDTH
+      )
+    );
+  }, []);
+
+  const flushPendingSidebarWidth = useCallback(() => {
+    if (resizeFrame.current !== null) {
+      cancelAnimationFrame(resizeFrame.current);
+      resizeFrame.current = null;
+    }
+    if (pendingSidebarWidth.current !== null) {
+      setSidebarWidth(pendingSidebarWidth.current);
+      pendingSidebarWidth.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const updateWidthConstraints = () => {
+      const nextMaxWidth = getSidebarMaxWidth();
+      setMaxSidebarWidth(nextMaxWidth);
+      setSidebarWidth((currentWidth) => Math.min(currentWidth, nextMaxWidth));
+    };
+
+    updateWidthConstraints();
+    window.addEventListener("resize", updateWidthConstraints);
+    return () => window.removeEventListener("resize", updateWidthConstraints);
+  }, [getSidebarMaxWidth]);
+
+  useEffect(() => () => {
+    if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizingSidebar) return;
+
+    const stopResizing = () => {
+      flushPendingSidebarWidth();
+      const pointerId = resizePointerId.current;
+      if (pointerId !== null && resizeHandleRef.current?.hasPointerCapture(pointerId)) {
+        resizeHandleRef.current.releasePointerCapture(pointerId);
+      }
+      resizePointerId.current = null;
+      setIsResizingSidebar(false);
+    };
+
+    window.addEventListener("blur", stopResizing);
+    return () => window.removeEventListener("blur", stopResizing);
+  }, [flushPendingSidebarWidth, isResizingSidebar]);
+
+  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    resizePointerId.current = event.pointerId;
+    const layoutLeft = chatLayoutRef.current?.getBoundingClientRect().left ?? 0;
+    resizePointerOffset.current = event.clientX - layoutLeft - sidebarWidth;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsResizingSidebar(true);
+  };
+
+  const handleResizePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (resizePointerId.current !== event.pointerId || !chatLayoutRef.current) return;
+    const layoutLeft = chatLayoutRef.current.getBoundingClientRect().left;
+    const nextWidth = event.clientX - layoutLeft - resizePointerOffset.current;
+    pendingSidebarWidth.current = Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(getSidebarMaxWidth(), nextWidth)
+    );
+    if (resizeFrame.current === null) {
+      resizeFrame.current = requestAnimationFrame(() => {
+        resizeFrame.current = null;
+        if (pendingSidebarWidth.current !== null) {
+          setSidebarWidth(pendingSidebarWidth.current);
+          pendingSidebarWidth.current = null;
+        }
+      });
+    }
+  };
+
+  const handleResizePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (resizePointerId.current !== event.pointerId) return;
+    flushPendingSidebarWidth();
+    resizePointerId.current = null;
+    setIsResizingSidebar(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleLostResizePointerCapture = () => {
+    flushPendingSidebarWidth();
+    resizePointerId.current = null;
+    setIsResizingSidebar(false);
+  };
+
+  const handleResizeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setSidebarWidth((width) => Math.max(MIN_SIDEBAR_WIDTH, width - 16));
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setSidebarWidth((width) => Math.min(maxSidebarWidth, width + 16));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setSidebarWidth(MIN_SIDEBAR_WIDTH);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setSidebarWidth(maxSidebarWidth);
+    }
+  };
 
   // Connection and client from Stream provider
   const { client, connectionStatus, error, reconnect } = useStreamChat();
@@ -52,7 +181,9 @@ export function ChatPage() {
   const urlCircleId = searchParams.get("circle");
   const urlMode = searchParams.get("mode");
   const urlTargetMsg = searchParams.get("targetMsg");
-  const activeMode: "circle" | "dms" = urlMode === "dms" || Boolean(urlConvId) ? "dms" : "circle";
+  const activeMode: "circle" | "dms" = !lockedOnly && (
+    urlMode === "circle" || (!urlMode && Boolean(urlCircleId))
+  ) ? "circle" : "dms";
 
   // Modals state
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
@@ -63,36 +194,21 @@ export function ChatPage() {
   const isLocked = useChatPrivacyStore((state) => state.isLocked);
   const isUnlockedInSession = useChatPrivacyStore((state) => state.isUnlockedInSession);
   const unlockedInSessionIds = useChatPrivacyStore((state) => state.unlockedInSessionIds);
+  const lockedConversationIds = useChatPrivacyStore((state) => state.lockedConversationIds);
 
   // Communities state
   const [communities, setCommunities] = useState<Community[]>([]);
-  const [loadingCommunities, setLoadingCommunities] = useState(true);
-  const [directoryPeers, setDirectoryPeers] = useState<PeerSearchResult[]>([]);
 
   // Selected Circle / Community
   const activeCircleId = useMemo(() => {
     if (urlCircleId) return urlCircleId;
-    if (communities.length > 0) return communities[0]._id;
+    if (urlMode === "circle" && communities.length > 0) return communities[0]._id;
     return "";
-  }, [urlCircleId, communities]);
+  }, [urlCircleId, urlMode, communities]);
 
   const activeCommunity = useMemo(() => {
     return communities.find((c) => c._id === activeCircleId) || null;
   }, [communities, activeCircleId]);
-
-  // Use the canonical CommunityGroup collection for modern Circles entries.
-  // The Stream community-channel hook below remains active for legacy channels.
-  const communityGroupsQuery = useQuery({
-    queryKey: ["community-groups", activeCircleId],
-    queryFn: () => communityGroupsApi.list(activeCircleId!),
-    enabled: Boolean(activeCircleId)
-  });
-  const activeCommunityGroups = useMemo(
-    () => (communityGroupsQuery.data || []).filter(
-      (group: CommunityGroup) => group.status === "ACTIVE" && !group.isDeleted
-    ),
-    [communityGroupsQuery.data]
-  );
 
   // Stream DMs hook
   const {
@@ -101,66 +217,51 @@ export function ChatPage() {
     activeConversationId,
     loading: dmsLoading,
     selectConversation,
+    deleteConversation,
     startDm
   } = useStreamDMs(urlConvId);
 
   // Stream Community channels hook
   const {
-    channels: communityChannels,
     activeChannel: activeCommunityStreamChannel,
     activeChannelId: activeCommunityChannelId,
-    loading: communityChannelsLoading,
-    selectChannel: selectCommunityChannel
-  } = useStreamCommunityChannels(activeMode === "circle" ? activeCircleId || null : null);
+  } = useStreamCommunityChannels(!lockedOnly && activeMode === "circle" ? activeCircleId || null : null);
 
   // Load user's communities
   useEffect(() => {
+    if (lockedOnly) {
+      setCommunities([]);
+      return;
+    }
     let isMounted = true;
     async function loadCommunities() {
       try {
-        setLoadingCommunities(true);
         const res = await communitiesApi.list({ limit: 50 });
         if (isMounted) {
           const list = res?.items || [];
           setCommunities(list);
-          if (!urlCircleId && !urlConvId && list.length > 0) {
-            setSearchParams({ circle: list[0]._id }, { replace: true });
-          }
         }
       } catch (err: any) {
         console.error("Failed to load communities:", err);
-      } finally {
-        if (isMounted) setLoadingCommunities(false);
       }
     }
     loadCommunities();
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [lockedOnly]);
 
-  // Load directory peers for starting new chats
   useEffect(() => {
-    async function loadPeers() {
-      try {
-        const users = await usersApi.search("");
-        const mapped: PeerSearchResult[] = (users || [])
-          .filter((u) => u._id !== authUser?._id)
-          .map((u) => ({
-            id: u._id,
-            name: u.fullName,
-            roll: u.rollNumber || "Student",
-            dept: u.department || "Campus",
-            isOnline: Boolean(u.status === "ACTIVE"),
-            avatar: u.profilePicture
-          }));
-        setDirectoryPeers(mapped);
-      } catch (err) {
-        console.warn("Could not load directory peers:", err);
-      }
+    if (lockedOnly && lockedConversationIds.length === 0) {
+      navigate("/chat", { replace: true });
     }
-    loadPeers();
-  }, [authUser?._id]);
+  }, [lockedOnly, lockedConversationIds.length, navigate]);
+
+  useEffect(() => {
+    if (lockedOnly && urlConvId && !lockedConversationIds.includes(urlConvId)) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [lockedOnly, lockedConversationIds, setSearchParams, urlConvId]);
 
   // Selection handlers
   const handleSelectConversation = useCallback(
@@ -169,35 +270,6 @@ export function ChatPage() {
       selectConversation(convId);
     },
     [setSearchParams, selectConversation]
-  );
-
-  const handleSelectCommunity = useCallback(
-    (communityId: string) => {
-      setSearchParams({ mode: "circle", circle: communityId });
-    },
-    [setSearchParams]
-  );
-
-  const handleSelectCommunityChannel = useCallback(
-    (channel: Channel) => {
-      if (activeCircleId) {
-        setSearchParams(
-          channel._id
-            ? { mode: "circle", circle: activeCircleId, channel: channel._id }
-            : { mode: "circle", circle: activeCircleId }
-        );
-      }
-      selectCommunityChannel(channel);
-    },
-    [activeCircleId, setSearchParams, selectCommunityChannel]
-  );
-
-  const handleSelectCommunityGroup = useCallback(
-    (groupId: string) => {
-      if (!activeCircleId) return;
-      navigate(`/communities/${activeCircleId}/groups/${groupId}`);
-    },
-    [activeCircleId, navigate]
   );
 
   const handleStartNewChat = useCallback(
@@ -213,9 +285,35 @@ export function ChatPage() {
     [startDm, setSearchParams, addToast]
   );
 
+  const handleSearchPeers = useCallback(async (query: string) => {
+    const users = await usersApi.search(query);
+    return (users || [])
+      .filter((user) => user._id !== authUser?._id)
+      .map((user) => ({
+        id: user._id,
+        name: user.fullName,
+        roll: user.rollNumber || "Student",
+        dept: user.department || "Campus",
+        isOnline: Boolean(user.status === "ACTIVE"),
+        avatar: user.profilePicture
+      }));
+  }, [authUser?._id]);
+
   const handleBackToConversations = useCallback(() => {
     setSearchParams({}, { replace: true });
   }, [setSearchParams]);
+
+  const handleDeleteConversation = useCallback(async (conversationId: string) => {
+    await deleteConversation(conversationId);
+    useChatOrganizationStore.getState().unpinConversation(conversationId);
+    useChatOrganizationStore.getState().unarchiveConversation(conversationId);
+    useChatPrivacyStore.getState().removeConversationLock(conversationId);
+    useChatPrivacyStore.getState().setDisappearingDuration(conversationId, 0);
+    if (urlConvId === conversationId) {
+      setSearchParams({}, { replace: true });
+    }
+    addToast("Chat removed from your list. The other participant keeps the conversation.", "success");
+  }, [deleteConversation, urlConvId, setSearchParams, addToast]);
 
   // Listen for real-time background Stream messages, chime sound & browser notifications
   useChatNotifications({
@@ -302,6 +400,9 @@ export function ChatPage() {
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Authenticating your StudyConnect credentials and loading realtime channels.
           </p>
+          <button type="button" onClick={handleBack} className="inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5" aria-label="Back to Dashboard" title="Back to Dashboard">
+            Back to Dashboard
+          </button>
         </div>
       </div>
     );
@@ -345,6 +446,11 @@ export function ChatPage() {
             <RefreshCw size={14} />
             <span>Retry Connection</span>
           </button>
+          <div>
+            <button type="button" onClick={handleBack} className="text-xs font-semibold text-[#1E90FF] hover:underline" aria-label="Back to Dashboard" title="Back to Dashboard">
+              Back to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -352,37 +458,25 @@ export function ChatPage() {
 
   // 3. Main Chat Interface backed by Stream React SDK
   return (
-    <div className="flex h-screen w-full bg-slate-100 dark:bg-[#080D1A] overflow-hidden font-sans text-slate-900 dark:text-slate-100">
-      {/* Primary StudyConnect Navigation Sidebar */}
-      <DashboardSidebar currentNav="/chat" />
-
+    <div className={`flex h-full min-h-0 w-full overflow-hidden bg-slate-100 font-sans text-slate-900 dark:bg-[#080D1A] dark:text-slate-100${isResizingSidebar ? " cursor-col-resize select-none" : ""}`}>
       {client ? (
         <Chat client={client} theme="str-chat__theme-light dark:str-chat__theme-dark">
-          <div className="flex flex-1 h-full min-w-0">
+          <div ref={chatLayoutRef} className="flex h-full min-h-0 min-w-0 flex-1">
             {/* Left Column: Unified Conversations & Communities Sidebar */}
             <div
               className={`${
-                hasActiveChannel ? "hidden md:flex" : "flex"
-              } w-full md:w-80 shrink-0 h-full flex-col`}
+                hasActiveChannel ? "hidden lg:flex" : "flex"
+              } h-full min-h-0 w-full shrink-0 flex-col lg:w-[var(--chat-sidebar-width)]`}
+              style={{ "--chat-sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
             >
               <UnifiedChatSidebar
+                viewMode={lockedOnly ? "locked" : "all"}
                 conversations={conversations}
                 activeConversationId={activeConversationId}
                 onSelectConversation={handleSelectConversation}
+                onDeleteConversation={handleDeleteConversation}
                 loadingDMs={dmsLoading}
-                communities={communities}
-                activeCommunityId={activeCircleId}
-                communityChannels={communityChannels}
-                communityGroups={activeCommunityGroups}
-                loadingCommunityGroups={communityGroupsQuery.isLoading}
-                communityGroupsError={communityGroupsQuery.isError}
-                onRetryCommunityGroups={() => communityGroupsQuery.refetch()}
-                activeCommunityChannelId={activeCommunityChannelId}
-                onSelectCommunity={handleSelectCommunity}
-                onSelectCommunityChannel={handleSelectCommunityChannel}
-                onSelectCommunityGroup={handleSelectCommunityGroup}
-                loadingCommunities={loadingCommunities}
-                directoryPeers={directoryPeers}
+                onSearchPeers={handleSearchPeers}
                 onStartDmWithPeer={handleStartNewChat}
                 onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
                 onOpenNotificationSettings={() =>
@@ -391,11 +485,32 @@ export function ChatPage() {
               />
             </div>
 
+            <div
+              ref={resizeHandleRef}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize Chats sidebar"
+              aria-valuemin={MIN_SIDEBAR_WIDTH}
+              aria-valuemax={maxSidebarWidth}
+              aria-valuenow={Math.round(sidebarWidth)}
+              aria-valuetext={`${Math.round(sidebarWidth)} pixels`}
+              tabIndex={0}
+              className="group relative z-10 hidden w-2 shrink-0 cursor-col-resize touch-none select-none items-stretch justify-center rounded-sm outline-none lg:flex"
+              onPointerDown={handleResizePointerDown}
+              onPointerMove={handleResizePointerMove}
+              onPointerUp={handleResizePointerUp}
+              onPointerCancel={handleResizePointerUp}
+              onLostPointerCapture={handleLostResizePointerCapture}
+              onKeyDown={handleResizeKeyDown}
+            >
+              <span className="h-full w-px rounded-full bg-slate-200 dark:bg-slate-800" />
+            </div>
+
             {/* Right Column: Active Channel Message Area */}
             <div
               className={`${
-                hasActiveChannel ? "flex" : "hidden md:flex"
-              } flex-1 min-w-0 h-full flex-col bg-white dark:bg-[#0B1220]`}
+                hasActiveChannel ? "flex" : "hidden lg:flex"
+              } h-full min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-[#0B1220]`}
             >
               {activeMode === "circle" && activeCommunityStreamChannel ? (
                 isLocked(activeCommunityStreamChannel.id) &&
