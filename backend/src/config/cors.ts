@@ -39,8 +39,9 @@ export const corsOptions: CorsOptions = {
     "X-Client-Platform",
     "Accept",
     "Origin",
-    "X-Requested-With"
+    "X-Requested-With",
+    "Range"
   ],
-  exposedHeaders: ["Content-Disposition", "Content-Length"]
+  exposedHeaders: ["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"]
 };
 

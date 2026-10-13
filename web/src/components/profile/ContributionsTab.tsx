@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { motion } from "framer-motion";
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText,
   FileCode,
@@ -8,10 +8,14 @@ import {
   Trash2,
   ExternalLink,
   Pencil,
-  Plus
+  Plus,
+  X,
+  AlertTriangle,
+  Loader2
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useToastStore } from "../../store/toast.store";
+import { resourcesApi } from "../../api/resources.api";
 
 export interface StudentContribution {
   id: string;
@@ -50,20 +54,51 @@ export function ContributionsTab() {
   const navigate = useNavigate();
   const { addToast } = useToastStore();
   const [contributions, setContributions] = useState<StudentContribution[]>(loadSavedContributions);
+  const [resourceToDelete, setResourceToDelete] = useState<StudentContribution | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleDelete = (id: string, title: string) => {
-    setContributions((prev) => {
-      const updated = prev.filter((c) => c.id !== id);
+  // Close delete confirmation dialog on Escape key
+  useEffect(() => {
+    if (!resourceToDelete) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isDeleting) {
+        setResourceToDelete(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [resourceToDelete, isDeleting]);
+
+  const handleConfirmDelete = async () => {
+    if (!resourceToDelete || isDeleting) return;
+    setIsDeleting(true);
+    const { id, title } = resourceToDelete;
+
+    try {
       try {
-        const raw = localStorage.getItem("studyconnect_vault_resources");
-        if (raw) {
-          const parsed = JSON.parse(raw).filter((item: any) => item.id !== id);
-          localStorage.setItem("studyconnect_vault_resources", JSON.stringify(parsed));
-        }
-      } catch {}
-      return updated;
-    });
-    addToast(`Deleted "${title}" from the Vault.`, "info");
+        await resourcesApi.delete(id);
+      } catch {
+        // Fall back gracefully if it was only stored locally
+      }
+
+      setContributions((prev) => {
+        const updated = prev.filter((c) => c.id !== id);
+        try {
+          const raw = localStorage.getItem("studyconnect_vault_resources");
+          if (raw) {
+            const parsed = JSON.parse(raw).filter((item: any) => item.id !== id);
+            localStorage.setItem("studyconnect_vault_resources", JSON.stringify(parsed));
+          }
+        } catch {}
+        return updated;
+      });
+      addToast(`Deleted "${title}" successfully`, "success");
+      setResourceToDelete(null);
+    } catch (err: any) {
+      addToast(err?.response?.data?.message || err?.message || "Failed to delete resource", "error");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -159,7 +194,7 @@ export function ContributionsTab() {
                     <ExternalLink size={13} />
                   </Link>
                   <button
-                    onClick={() => handleDelete(item.id, item.title)}
+                    onClick={() => setResourceToDelete(item)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
                     title="Delete Upload"
                   >
@@ -169,6 +204,74 @@ export function ContributionsTab() {
               </div>
             </motion.div>
           ))}
+        </div>
+      )}
+
+      {/* ── Resource Deletion Confirmation Modal ───────────────────────── */}
+      {resourceToDelete && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeleting) {
+              setResourceToDelete(null);
+            }
+          }}
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+        >
+          <div
+            className="relative w-full max-w-md bg-white dark:bg-[#0F1A30] rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-2xl"
+          >
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={() => setResourceToDelete(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+              aria-label="Close dialog"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-3 text-rose-500 mb-3">
+              <div className="p-2.5 rounded-xl bg-rose-500/10">
+                <AlertTriangle size={22} />
+              </div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                Are you sure you want to delete this resource?
+              </h3>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
+              Are you sure you want to delete "{resourceToDelete.title}"? This action cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setResourceToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Yes, Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

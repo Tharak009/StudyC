@@ -24,6 +24,7 @@ export const errorMiddleware: ErrorRequestHandler = (error, _request, response, 
     message,
     code: normalized instanceof ApiError ? normalized.code : "INTERNAL_SERVER_ERROR",
     errors: normalized instanceof ApiError ? normalized.errors : [],
+    ...(normalized instanceof ApiError && normalized.details && { data: normalized.details }),
     ...(env.NODE_ENV !== "production" && { stack: error?.stack })
   });
 };

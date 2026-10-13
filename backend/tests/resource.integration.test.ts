@@ -293,33 +293,133 @@ describe("Resource Management", () => {
       .expect(403);
   });
 
-  it("allows owner and moderator to delete a resource", async () => {
+  it("allows resource uploader to delete their own resource", async () => {
     const owner = await register(userData);
-    const member = await register(memberData);
     const communityId = await createCommunity(owner.token);
-
-    await CommunityMember.create({
-      communityId,
-      userId: member.userId,
-      role: COMMUNITY_ROLES.MODERATOR
-    });
-    await Community.findByIdAndUpdate(communityId, { $inc: { memberCount: 1 } });
 
     const { body } = await request(app)
       .post(`/api/communities/${communityId}/resources`)
       .set("Authorization", `Bearer ${owner.token}`)
-      .field("title", "Delete Me")
+      .field("title", "Owner Delete Me")
       .field("category", "OTHER")
-      .attach("file", Buffer.from("data"), "delete.pdf");
+      .attach("file", Buffer.from("data 123"), "delete_me.pdf");
+
+    const resourceId = body.data._id;
 
     await request(app)
-      .delete(`/api/resources/${body.data._id}`)
-      .set("Authorization", `Bearer ${member.token}`)
+      .delete(`/api/resources/${resourceId}`)
+      .set("Authorization", `Bearer ${owner.token}`)
       .expect(200);
 
     await request(app)
-      .get(`/api/resources/${body.data._id}`)
+      .get(`/api/resources/${resourceId}`)
       .set("Authorization", `Bearer ${owner.token}`)
       .expect(404);
+  });
+
+  it("rejects non-owner deletion attempt with 403 Forbidden", async () => {
+    const owner = await register(userData);
+    const nonOwner = await register(memberData);
+    const communityId = await createCommunity(owner.token);
+
+    const { body } = await request(app)
+      .post(`/api/communities/${communityId}/resources`)
+      .set("Authorization", `Bearer ${owner.token}`)
+      .field("title", "Protected Resource")
+      .field("category", "OTHER")
+      .attach("file", Buffer.from("data 456"), "protected.pdf");
+
+    const resourceId = body.data._id;
+
+    const res = await request(app)
+      .delete(`/api/resources/${resourceId}`)
+      .set("Authorization", `Bearer ${nonOwner.token}`)
+      .expect(403);
+
+    expect(res.body.code).toBe("RESOURCE_DELETE_FORBIDDEN");
+  });
+
+  it("rejects unauthenticated deletion attempt with 401 Unauthorized", async () => {
+    await request(app)
+      .delete("/api/resources/507f1f77bcf86cd799439011")
+      .expect(401);
+  });
+
+  it("returns 404 Not Found when attempting to delete non-existent resource", async () => {
+    const owner = await register(userData);
+    await request(app)
+      .delete("/api/resources/507f1f77bcf86cd799439011")
+      .set("Authorization", `Bearer ${owner.token}`)
+      .expect(404);
+  });
+});
+
+describe("Platform-Wide Academic Vault & Duplicate Prevention", () => {
+  it("allows any authenticated user to upload and browse platform-wide vault resources without community membership", async () => {
+    const student = await register(memberData);
+
+    const initiateRes = await request(app)
+      .post("/api/resources/upload/initiate")
+      .set("Authorization", `Bearer ${student.token}`)
+      .send({
+        fileName: "physics_lecture_notes.pdf",
+        fileSize: 10240,
+        mimeType: "application/pdf",
+        totalParts: 1,
+        title: "Quantum Physics Chapter 1",
+        description: "Notes on wave-particle duality",
+        category: "NOTES",
+        tags: ["physics", "quantum"],
+        visibility: "COMMUNITY"
+      })
+      .expect(201);
+
+    expect(initiateRes.body.data.sessionId).toBeDefined();
+
+    const uploadRes = await request(app)
+      .post("/api/resources")
+      .set("Authorization", `Bearer ${student.token}`)
+      .field("title", "Chemistry Lab Report")
+      .field("category", "LAB_RECORDS")
+      .attach("file", Buffer.from("unique chemistry report content 12345"), "chem_lab.pdf")
+      .expect(201);
+
+    expect(uploadRes.body.data.title).toBe("Chemistry Lab Report");
+
+    const listRes = await request(app)
+      .get("/api/resources")
+      .set("Authorization", `Bearer ${student.token}`)
+      .expect(200);
+
+    expect(listRes.body.data.items.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("rejects duplicate resource upload with 409 Conflict DUPLICATE_RESOURCE when content hash matches", async () => {
+    const student1 = await register(userData);
+    const student2 = await register(memberData);
+
+    const fileBuffer = Buffer.from("IDENTICAL_ACADEMIC_RESOURCE_CONTENT_998877");
+
+    const firstUpload = await request(app)
+      .post("/api/resources")
+      .set("Authorization", `Bearer ${student1.token}`)
+      .field("title", "Canonical Operating Systems Notes")
+      .field("category", "NOTES")
+      .attach("file", fileBuffer, "os_notes_original.pdf")
+      .expect(201);
+
+    expect(firstUpload.body.data._id).toBeDefined();
+
+    const duplicateUpload = await request(app)
+      .post("/api/resources")
+      .set("Authorization", `Bearer ${student2.token}`)
+      .field("title", "Copy of OS Notes")
+      .field("category", "NOTES")
+      .attach("file", fileBuffer, "os_notes_copy.pdf")
+      .expect(409);
+
+    expect(duplicateUpload.body.code).toBe("DUPLICATE_RESOURCE");
+    expect(duplicateUpload.body.message).toContain("identical file content");
+    expect(duplicateUpload.body.data.existingResource.title).toBe("Canonical Operating Systems Notes");
   });
 });

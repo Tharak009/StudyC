@@ -3,6 +3,8 @@ package com.studyconnect.backend.controller;
 import com.studyconnect.backend.dto.ApiResponse;
 import com.studyconnect.backend.dto.resource.ResourceCreateRequest;
 import com.studyconnect.backend.dto.resource.ResourceUpdateRequest;
+import com.studyconnect.backend.dto.resource.UploadCompleteRequest;
+import com.studyconnect.backend.dto.resource.UploadInitiateRequest;
 import com.studyconnect.backend.service.ResourceService;
 import com.studyconnect.backend.util.SecurityUtil;
 import jakarta.validation.Valid;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -93,5 +96,68 @@ public class ResourceController {
                 resourceService.trackDownload(resourceId, SecurityUtil.currentUserId(authentication)),
                 "Download tracked"
         );
+    }
+
+    // ── Smart Cloud Upload Engine Endpoints ────────────────────────────────────
+
+    @PostMapping("/api/communities/{communityId}/resources/upload/initiate")
+    public ResponseEntity<ApiResponse<?>> initiateUpload(
+            @PathVariable String communityId,
+            @Valid @RequestBody UploadInitiateRequest request,
+            Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(
+                resourceService.initiateUpload(communityId, SecurityUtil.currentUserId(authentication), request),
+                "Upload session initiated"
+        ));
+    }
+
+    @GetMapping("/api/resources/upload/{sessionId}/part-urls")
+    public ApiResponse<?> getPartUrls(
+            @PathVariable String sessionId,
+            @RequestParam List<Integer> parts,
+            Authentication authentication) {
+        return ApiResponse.success(
+                resourceService.getPartUrls(sessionId, SecurityUtil.currentUserId(authentication), parts),
+                "Part URLs retrieved"
+        );
+    }
+
+    @PostMapping("/api/resources/upload/{sessionId}/complete")
+    public ApiResponse<?> completeUpload(
+            @PathVariable String sessionId,
+            @Valid @RequestBody UploadCompleteRequest request,
+            Authentication authentication) {
+        return ApiResponse.success(
+                resourceService.completeUpload(sessionId, SecurityUtil.currentUserId(authentication), request),
+                "Upload completed successfully"
+        );
+    }
+
+    @DeleteMapping("/api/resources/upload/{sessionId}/abort")
+    public ApiResponse<?> abortUpload(
+            @PathVariable String sessionId,
+            Authentication authentication) {
+        resourceService.abortUpload(sessionId, SecurityUtil.currentUserId(authentication));
+        return ApiResponse.success(null, "Upload session aborted");
+    }
+
+    @GetMapping("/api/resources/{resourceId}/download-url")
+    public ApiResponse<?> getDownloadUrl(
+            @PathVariable String resourceId,
+            Authentication authentication) {
+        return ApiResponse.success(
+                resourceService.getDownloadUrl(resourceId, SecurityUtil.currentUserId(authentication)),
+                "Download URL generated"
+        );
+    }
+
+    @PutMapping("/api/resources/upload/local-part-upload")
+    public ResponseEntity<Void> localPartUpload(
+            @RequestParam String key,
+            @RequestParam int partNumber,
+            @RequestParam String uploadId,
+            jakarta.servlet.http.HttpServletRequest request) throws java.io.IOException {
+        String etag = resourceService.saveLocalPart(uploadId, partNumber, request.getInputStream());
+        return ResponseEntity.ok().header("ETag", etag).build();
     }
 }

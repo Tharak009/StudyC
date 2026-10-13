@@ -1,28 +1,25 @@
 import React, { useState, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  UploadCloud,
-  X,
-  FileText,
-  Sparkles,
-  CheckCircle2,
-  AlertCircle,
-  Tag
-} from "lucide-react";
+import { motion } from "framer-motion";
+import { UploadCloud, X, FileText, Sparkles } from "lucide-react";
 import { departments, semesters, categories } from "./ResourceFilterBar";
 import { useToastStore } from "../../store/toast.store";
 import { useAuthStore } from "../../store/auth.store";
+import { useSmartUpload } from "../../hooks/use-smart-upload";
+import { UploadProgressWidget } from "./UploadProgressWidget";
 import { dispatchCampusNotification } from "../../utils/notifications";
 import { recordStudyActivity } from "../../utils/streak";
+import { MAX_FILE_SIZE_BYTES } from "../../services/upload-engine.service";
 
 interface UploadResourceModalProps {
   isOpen: boolean;
+  communityId?: string;
   onClose: () => void;
   onUploadSuccess: (newResource: any) => void;
 }
 
 export function UploadResourceModal({
   isOpen,
+  communityId = "campus-vault",
   onClose,
   onUploadSuccess
 }: UploadResourceModalProps) {
@@ -32,26 +29,43 @@ export function UploadResourceModal({
   const [subjectCode, setSubjectCode] = useState("");
   const [subjectName, setSubjectName] = useState("");
   const [dept, setDept] = useState(departments[1]);
-  const [semester, setSemester] = useState(semesters[6]); // Sem 6 default
+  const [semester, setSemester] = useState(semesters[6]);
   const [category, setCategory] = useState(categories[1].id);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { addToast } = useToastStore();
+
+  const smartUpload = useSmartUpload((newRes) => {
+    recordStudyActivity();
+    dispatchCampusNotification({
+      type: "RESOURCE_UPLOAD",
+      title: `New Material in ${subjectCode.toUpperCase() || "Vault"}`,
+      message: `"${title}" was published to the ${dept} Resource Vault.`,
+      categoryTag: `${subjectCode.toUpperCase() || "Vault"}`,
+      href: "/resources",
+      senderName: user?.fullName || "Student"
+    });
+    addToast("Material successfully published to the Academic Vault!", "success");
+    onUploadSuccess(newRes);
+    onClose();
+  });
 
   if (!isOpen) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
-      if (selected.size > 50 * 1024 * 1024) {
-        addToast("File exceeds 50MB maximum size limit.", "warning");
+      if (selected.size > MAX_FILE_SIZE_BYTES) {
+        addToast(`File exceeds maximum 1 GB size limit (${(selected.size / (1024 * 1024)).toFixed(1)} MB).`, "warning");
         return;
       }
       setFile(selected);
+      if (!title) {
+        const baseName = selected.name.substring(0, selected.name.lastIndexOf(".")) || selected.name;
+        setTitle(baseName);
+      }
     }
   };
 
@@ -70,74 +84,42 @@ export function UploadResourceModal({
     setTags(tags.filter((item) => item !== t));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
       addToast("Please select a file to upload.", "warning");
       return;
     }
-    if (!title.trim() || !subjectCode.trim()) {
-      addToast("Please complete the required title and subject code.", "warning");
+    if (!title.trim()) {
+      addToast("Please enter a document title.", "warning");
       return;
     }
 
-    setIsUploading(true);
-    let progress = 10;
-    const interval = setInterval(() => {
-      progress += 25;
-      setUploadProgress(progress);
-      if (progress >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          setIsUploading(false);
-          setUploadProgress(0);
+    try {
+      const result = await smartUpload.startUpload(communityId, {
+        title: title.trim(),
+        description: `${subjectName || subjectCode} course material shared for ${dept}.`,
+        category: (category || "NOTES") as any,
+        department: dept,
+        semester: semester,
+        subjectCode: subjectCode.toUpperCase(),
+        visibility: "COMMUNITY",
+        tags: [...tags, subjectCode.toUpperCase()].filter(Boolean)
+      }, file);
 
-          const newRes = {
-            id: `res-${Date.now()}`,
-            title,
-            description: `${subjectName || subjectCode} course material and solutions shared for ${dept}.`,
-            subjectCode: subjectCode.toUpperCase(),
-            subjectName: subjectName || "Core Discipline Course",
-            dept,
-            semester,
-            category,
-            format: file.name.endsWith(".ipynb")
-              ? "ipynb"
-              : file.name.endsWith(".zip")
-              ? "zip"
-              : file.name.endsWith(".pptx")
-              ? "pptx"
-              : "pdf",
-            fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-            fileUrl: "#",
-            downloadCount: 1,
-            rating: 5.0,
-            reviewCount: 1,
-            tags,
-            uploader: {
-              name: user?.fullName || "Aarav Sharma",
-              roll: user?.rollNumber || "CS24-104",
-              dept: user?.department || dept,
-              isVerified: true
-            },
-            createdAt: "Just now"
-          };
-
-          onUploadSuccess(newRes);
-          recordStudyActivity();
-          dispatchCampusNotification({
-            type: "RESOURCE_UPLOAD",
-            title: `New Material in ${newRes.subjectCode}`,
-            message: `"${newRes.title}" was published to the ${newRes.dept} Resource Vault.`,
-            categoryTag: `${newRes.subjectCode} Vault`,
-            href: "/resources",
-            senderName: user?.fullName || "Student"
-          });
-          addToast("Material successfully published to the Academic Vault!", "success");
-          onClose();
-        }, 500);
+      if (!result && smartUpload.error) {
+        if (smartUpload.error.includes("identical file content") || smartUpload.error.includes("DUPLICATE")) {
+          addToast("Duplicate content: An identical file already exists in the Academic Vault.", "warning");
+        }
       }
-    }, 200);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to publish resource";
+      if (msg.includes("identical file content") || msg.includes("DUPLICATE")) {
+        addToast("Duplicate content: An identical file already exists in the Academic Vault.", "warning");
+      } else {
+        addToast(msg, "error");
+      }
+    }
   };
 
   return (
@@ -148,15 +130,14 @@ export function UploadResourceModal({
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
         className="relative w-full max-w-xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#0F1A30] p-6 shadow-2xl"
       >
-        {/* Close Button */}
         <button
           onClick={onClose}
+          disabled={smartUpload.isUploading}
           className="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
         >
           <X size={18} />
         </button>
 
-        {/* ── Header ──────────────────────────────────────────────────── */}
         <div className="flex items-center gap-2.5 mb-1">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#1E90FF] text-white">
             <UploadCloud size={16} />
@@ -169,16 +150,27 @@ export function UploadResourceModal({
           Share peer-reviewed study notes, previous year question papers, and code repositories with verified students.
         </p>
 
-        {/* ── Form ────────────────────────────────────────────────────── */}
+        {smartUpload.file && smartUpload.status !== "idle" && (
+          <div className="mb-4">
+            <UploadProgressWidget
+              status={smartUpload.status}
+              progress={smartUpload.progress}
+              fileName={smartUpload.file.name}
+              error={smartUpload.error}
+              onPause={smartUpload.pauseUpload}
+              onResume={smartUpload.resumeUpload}
+              onCancel={smartUpload.cancelUpload}
+            />
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          
-          {/* Drag and Drop Zone */}
           <input
             ref={fileInputRef}
             type="file"
             onChange={handleFileChange}
             className="hidden"
-            accept=".pdf,.doc,.docx,.pptx,.zip,.tar,.gz,.ipynb,.cpp,.java,.py"
+            accept=".pdf,.doc,.docx,.pptx,.zip,.tar,.gz,.ipynb,.cpp,.java,.py,.mp4,.webm"
           />
 
           <div
@@ -202,13 +194,12 @@ export function UploadResourceModal({
                   Click to browse or drag and drop note file
                 </p>
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  Supports PDF, PPTX, Jupyter (.ipynb), ZIP up to 50MB
+                  Supports PDF, PPTX, Jupyter (.ipynb), Source Code, ZIP up to 1 GB
                 </p>
               </>
             )}
           </div>
 
-          {/* Document Title */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               Document Title *
@@ -223,7 +214,6 @@ export function UploadResourceModal({
             />
           </div>
 
-          {/* Subject Code & Name */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -252,7 +242,6 @@ export function UploadResourceModal({
             </div>
           </div>
 
-          {/* Department, Semester & Category */}
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -300,7 +289,6 @@ export function UploadResourceModal({
             </div>
           </div>
 
-          {/* Tags Input */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               Topic Tags (Press Enter to add)
@@ -328,42 +316,24 @@ export function UploadResourceModal({
             </div>
           </div>
 
-          {/* Upload Progress Bar */}
-          {isUploading && (
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-slate-400 tabular-nums">
-                <span>Uploading encrypted chunk...</span>
-                <span>{uploadProgress}%</span>
-              </div>
-              <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                <div
-                  style={{ width: `${uploadProgress}%` }}
-                  className="h-full bg-[#1E90FF] transition-all duration-200"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Modal Actions */}
           <div className="flex items-center justify-end gap-3 pt-3">
             <button
               type="button"
               onClick={onClose}
-              disabled={isUploading}
+              disabled={smartUpload.isUploading}
               className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isUploading}
+              disabled={smartUpload.isUploading}
               className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#1E90FF] hover:bg-[#187bcd] text-white text-xs font-bold shadow-sm shadow-[#1E90FF]/25 hover:brightness-105 transition-all cursor-pointer disabled:opacity-50"
             >
               <Sparkles size={14} />
-              <span>{isUploading ? "Publishing..." : "Publish to Vault"}</span>
+              <span>{smartUpload.isUploading ? "Uploading..." : "Publish to Vault"}</span>
             </button>
           </div>
-
         </form>
       </motion.div>
     </div>

@@ -12,14 +12,21 @@ import { asyncHandler } from "../utils/async-handler.js";
  */
 export const authenticateToken = asyncHandler(
   async (request: Request, _response: Response, next: NextFunction) => {
+    let token: string | undefined;
     const authorization = request.headers.authorization;
-    if (!authorization?.startsWith("Bearer ")) {
+    if (authorization?.startsWith("Bearer ")) {
+      token = authorization.slice(7).trim();
+    } else if (request.cookies?.accessToken) {
+      token = request.cookies.accessToken;
+    }
+
+    if (!token) {
       throw new ApiError(401, "Authentication token is required", [], "AUTH_REQUIRED");
     }
 
     try {
-      const token = authorization.slice(7).trim();
       const payload = verifyAccessToken(token);
+
       if (payload.type !== "access") {
         throw new ApiError(401, "Invalid token type provided", [], "INVALID_TOKEN_TYPE");
       }
