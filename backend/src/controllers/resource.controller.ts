@@ -45,7 +45,8 @@ export class ResourceController {
   async delete(request: Request, response: Response) {
     await resourceService.deleteResource(
       param(request, "resourceId"),
-      request.user!.id
+      request.user!.id,
+      request.user!.role
     );
     response.json(new ApiResponse(200, null, "Resource deleted"));
   }
@@ -57,8 +58,88 @@ export class ResourceController {
     );
     response.json(new ApiResponse(200, resource, "Download tracked"));
   }
+
+  async rate(request: Request, response: Response) {
+    const resource = await resourceService.rateResource(
+      param(request, "resourceId"),
+      request.user!.id,
+      request.body.rating
+    );
+    response.json(new ApiResponse(200, resource, "Resource rated"));
+  }
+
+  // ── Smart Cloud Upload Engine Handlers ────────────────────────────────────
+
+  async initiateUpload(request: Request, response: Response) {
+    const result = await resourceService.initiateUpload(
+      param(request, "communityId"),
+      request.user!.id,
+      request.body
+    );
+    response.status(201).json(new ApiResponse(201, result, "Upload initiated"));
+  }
+
+  async getPartUrls(request: Request, response: Response) {
+    const rawParts = request.query.parts as string;
+    const partNumbers = rawParts
+      ? rawParts.split(",").map((p) => parseInt(p.trim(), 10)).filter((p) => !isNaN(p))
+      : [];
+    const result = await resourceService.getPartUrls(
+      param(request, "sessionId"),
+      request.user!.id,
+      partNumbers
+    );
+    response.json(new ApiResponse(200, result, "Part URLs generated"));
+  }
+
+  async completeUpload(request: Request, response: Response) {
+    const resource = await resourceService.completeUpload(
+      param(request, "sessionId"),
+      request.user!.id,
+      request.body
+    );
+    response.json(new ApiResponse(200, resource, "Upload completed"));
+  }
+
+  async abortUpload(request: Request, response: Response) {
+    await resourceService.abortUpload(
+      param(request, "sessionId"),
+      request.user!.id
+    );
+    response.json(new ApiResponse(200, null, "Upload aborted"));
+  }
+
+  async getDownloadUrl(request: Request, response: Response) {
+    const result = await resourceService.getDownloadUrl(
+      param(request, "resourceId"),
+      request.user!.id
+    );
+    response.json(new ApiResponse(200, result, "Download URL generated"));
+  }
+
+  async getPreviewUrl(request: Request, response: Response) {
+    const result = await resourceService.getPreviewUrl(
+      param(request, "resourceId"),
+      request.user!.id
+    );
+    response.json(new ApiResponse(200, result, "Preview URL generated"));
+  }
+
+  async saveLocalPart(request: Request, response: Response) {
+    const sessionId = (request.query.sessionId || request.query.uploadId) as string;
+    const partNumber = parseInt(request.query.partNumber as string, 10);
+    const etag = await resourceService.saveLocalPart(
+      sessionId,
+      request.user!.id,
+      partNumber,
+      request
+    );
+    response.setHeader("ETag", etag);
+    response.json(new ApiResponse(200, { etag }, "Local part saved"));
+  }
 }
 
 const param = (request: Request, key: string): string => request.params[key] as string;
 
 export const resourceController = new ResourceController();
+

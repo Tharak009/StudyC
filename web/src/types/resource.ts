@@ -14,7 +14,7 @@ export type ResourceCategory = (typeof RESOURCE_CATEGORIES)[number];
 
 export type ResourceVisibility = "COMMUNITY" | "PUBLIC";
 
-export type ResourceSort = "recent" | "downloads" | "name";
+export type ResourceSort = "recent" | "downloads" | "rating" | "name";
 
 export interface Resource {
   _id: string;
@@ -25,8 +25,14 @@ export interface Resource {
   fileSize: number;
   fileType: string;
   category: ResourceCategory;
+  department?: string;
+  semester?: string;
+  subjectCode?: string;
+  format?: string;
+  rating?: number;
+  reviewCount?: number;
   tags: string[];
-  uploadedBy: Pick<User, "_id" | "fullName" | "rollNumber" | "profilePicture">;
+  uploadedBy: Pick<User, "_id" | "fullName" | "rollNumber" | "profilePicture"> & { department?: string };
   communityId: { _id: string; name: string; slug: string };
   downloadCount: number;
   visibility: ResourceVisibility;
@@ -46,6 +52,9 @@ export interface ResourceFormData {
   title: string;
   description: string;
   category: ResourceCategory;
+  department?: string;
+  semester?: string;
+  subjectCode?: string;
   tags: string[];
   visibility: ResourceVisibility;
 }

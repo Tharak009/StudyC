@@ -51,64 +51,95 @@ export const createApp = () => {
     immutable: env.NODE_ENV === "production"
   }));
 
-  // Stream uploads from MongoDB GridFS if missing from local disk, with graceful fallback
-  app.get("/uploads/:namespace/:filename", async (req, res, next) => {
-    const rawNamespace = req.params.namespace;
-    const rawFilename = req.params.filename;
-    const namespace = Array.isArray(rawNamespace) ? rawNamespace[0] : rawNamespace;
-    const filename = Array.isArray(rawFilename) ? rawFilename[0] : rawFilename;
+  // Stream uploads from local disk or MongoDB GridFS with graceful fallbacks
+  app.get("/uploads/*splat", async (req, res, next) => {
+    const rawPath = (req.params as any).splat || (req.params as any)[0] || req.path || "";
+    const cleanPath = decodeURIComponent(rawPath).replace(/\\/g, "/").replace(/^\/+/, "");
 
-    if (!namespace || !/^[a-zA-Z0-9_-]+$/.test(namespace)) {
-      return res.status(400).json({ success: false, message: "Invalid upload namespace", code: "INVALID_PATH" });
-    }
-    if (!filename || filename.includes("..") || filename.includes("/") || filename.includes("\\") || !/^[a-zA-Z0-9_.-]+$/.test(filename)) {
-      return res.status(400).json({ success: false, message: "Invalid file name", code: "INVALID_PATH" });
+    if (!cleanPath || cleanPath.includes("..")) {
+      return res.status(400).json({ success: false, message: "Invalid file path", code: "INVALID_PATH" });
     }
 
-    const uploadsRoot = path.resolve(process.cwd(), env.UPLOAD_DIR);
-    const localPath = path.resolve(uploadsRoot, namespace, filename);
-    if (!localPath.startsWith(uploadsRoot)) {
-      return res.status(403).json({ success: false, message: "Access forbidden", code: "PATH_TRAVERSAL_DETECTED" });
+    const possibleRoots = [
+      path.resolve(process.cwd(), env.UPLOAD_DIR),
+      path.resolve(process.cwd(), "backend", env.UPLOAD_DIR)
+    ];
+    
+    // Check 1: Normal local path across candidate roots (e.g. uploadsRoot/6ac92cf5.../file.docx or uploadsRoot/previews/...)
+    let localPath = "";
+    for (const root of possibleRoots) {
+      const candidate = path.resolve(root, cleanPath);
+      if (candidate.startsWith(root) && fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        localPath = candidate;
+        break;
+      }
     }
 
-    const key = `${namespace}/${filename}`;
+    // Check 2: Nested uploads fallback path (e.g. uploadsRoot/uploads/6ac92cf5.../file.docx)
+    if (!localPath && cleanPath.startsWith("uploads/")) {
+      const strippedPath = cleanPath.slice("uploads/".length);
+      for (const root of possibleRoots) {
+        const candidate = path.resolve(root, strippedPath);
+        if (candidate.startsWith(root) && fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          localPath = candidate;
+          break;
+        }
+      }
+    } else if (!localPath) {
+      for (const root of possibleRoots) {
+        const candidate = path.resolve(root, "uploads", cleanPath);
+        if (candidate.startsWith(root) && fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          localPath = candidate;
+          break;
+        }
+      }
+    }
 
-    // 1. Check if file is already on local disk
-    if (fs.existsSync(localPath)) {
+    // 1. Send file if found on local disk
+    if (localPath && fs.existsSync(localPath) && fs.statSync(localPath).isFile()) {
       return res.sendFile(localPath);
     }
 
     // 2. Stream from MongoDB GridFS (shared database)
+    const gridFsKeys = [
+      cleanPath,
+      cleanPath.startsWith("uploads/") ? cleanPath.slice("uploads/".length) : `uploads/${cleanPath}`
+    ];
+
     try {
       const db = mongoose.connection.db;
       if (db) {
         const bucket = new mongoose.mongo.GridFSBucket(db, { bucketName: "uploads" });
-        const files = await bucket.find({ filename: key }).toArray();
-        const fileDoc = files?.[0];
-        if (fileDoc) {
-          res.setHeader("Content-Type", fileDoc.contentType || "application/octet-stream");
-          res.setHeader("Content-Length", fileDoc.length);
-          res.setHeader("Cache-Control", "public, max-age=86400");
+        for (const key of gridFsKeys) {
+          const files = await bucket.find({ filename: key }).toArray();
+          const fileDoc = files?.[0];
+          if (fileDoc) {
+            res.setHeader("Content-Type", fileDoc.contentType || "application/octet-stream");
+            res.setHeader("Content-Length", fileDoc.length);
+            res.setHeader("Cache-Control", "public, max-age=86400");
 
-          // Non-blocking background caching to local disk
-          try {
-            const dir = path.join(path.resolve(process.cwd(), env.UPLOAD_DIR), namespace);
-            await fs.promises.mkdir(dir, { recursive: true });
-            const localFileStream = fs.createWriteStream(localPath);
-            bucket.openDownloadStreamByName(key).pipe(localFileStream);
-          } catch {
-            // Non-blocking
+            // Non-blocking background caching to local disk
+            try {
+              await fs.promises.mkdir(path.dirname(localPath), { recursive: true });
+              const localFileStream = fs.createWriteStream(localPath);
+              bucket.openDownloadStreamByName(key).pipe(localFileStream);
+            } catch {
+              // Non-blocking
+            }
+
+            return bucket.openDownloadStreamByName(key).pipe(res);
           }
-
-          return bucket.openDownloadStreamByName(key).pipe(res);
         }
       }
     } catch (err) {
-      console.warn(`GridFS retrieval error for ${key}:`, err);
+      console.warn(`GridFS retrieval error for ${cleanPath}:`, err);
     }
 
     // 3. Graceful SVG fallback for missing profile pictures or events
-    if (namespace === "profiles") {
+    const firstSegment = cleanPath.split("/")[0];
+    const filename = path.basename(cleanPath);
+
+    if (firstSegment === "profiles") {
       res.setHeader("Content-Type", "image/svg+xml");
       res.setHeader("Cache-Control", "public, max-age=3600");
       const initials = filename.slice(0, 2).toUpperCase();
@@ -125,7 +156,7 @@ export const createApp = () => {
       return res.status(200).send(svg.trim());
     }
 
-    if (namespace === "events") {
+    if (firstSegment === "events") {
       res.setHeader("Content-Type", "image/svg+xml");
       res.setHeader("Cache-Control", "public, max-age=3600");
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
@@ -144,7 +175,7 @@ export const createApp = () => {
       return res.status(200).send(svg.trim());
     }
 
-    next();
+    return res.status(404).json({ success: false, message: "File not found", code: "FILE_NOT_FOUND" });
   });
 
   app.use("/api", apiLimiter, apiRouter);

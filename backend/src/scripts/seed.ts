@@ -32,21 +32,17 @@ export async function runSeed(): Promise<void> {
   console.log("🌱 Starting StudyConnect Production Database Seeder...");
   console.log("=======================================================\n");
 
-  try {
-    await mongoose.connect(MONGODB_URI);
-    console.log(`✓ Connected to MongoDB at: ${MONGODB_URI.replace(/\/\/.*@/, "//***:***@")}`);
+  const shouldDisconnect = mongoose.connection.readyState === 0;
 
-    // ── 1. Clean Database Slate ──────────────────────────────────────────────
-    console.log("🧹 Wiping previous collections...");
-    await Promise.all([
-      User.deleteMany({}),
-      Community.deleteMany({}),
-      CommunityMember.deleteMany({}),
-      Resource.deleteMany({}),
-      Report.deleteMany({}),
-      Notification.deleteMany({})
-    ]);
-    console.log("✓ Successfully cleared collections for a fresh campus state.\n");
+  try {
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(MONGODB_URI);
+      console.log(`✓ Connected to MongoDB at: ${MONGODB_URI.replace(/\/\/.*@/, "//***:***@")}`);
+    }
+
+    // ── 1. Non-Destructive Database Seeding ─────────────────────────────────
+    console.log("🔍 Checking existing campus data (non-destructive seed mode)...");
+    console.log("✓ Preserving all existing user accounts, resources, and community data.\n");
 
     // ── 2. Seed Campus Users ─────────────────────────────────────────────────
     console.log("👥 Seeding Verified Campus Users...");
@@ -55,7 +51,33 @@ export async function runSeed(): Promise<void> {
     const studentPassword = "Student@2026!";
 
     // Root Administrator
-    const adminUser = await User.create({
+    // Helper upsert functions to ensure idempotency
+    const upsertUser = async (userData: any) => {
+      let user = await User.findOne({ email: userData.email });
+      if (!user) {
+        user = await User.create(userData);
+      }
+      return user;
+    };
+
+    const upsertCommunity = async (commData: any) => {
+      let comm = await Community.findOne({ slug: commData.slug });
+      if (!comm) {
+        comm = await Community.create(commData);
+      }
+      return comm;
+    };
+
+    const upsertMember = async (communityId: any, userId: any, role: string) => {
+      let member = await CommunityMember.findOne({ communityId, userId });
+      if (!member) {
+        member = await CommunityMember.create({ communityId, userId, role });
+      }
+      return member;
+    };
+
+    // Root Administrator
+    const adminUser = await upsertUser({
       fullName: "Dean Rajesh Sharma",
       rollNumber: "ADMIN-2026-001",
       department: "CSE",
@@ -70,7 +92,7 @@ export async function runSeed(): Promise<void> {
     });
 
     // Faculty Moderator
-    const facultyUser = await User.create({
+    const facultyUser = await upsertUser({
       fullName: "Prof. Ananya Sharma",
       rollNumber: "FAC-CSE-012",
       department: "CSE",
@@ -85,7 +107,7 @@ export async function runSeed(): Promise<void> {
     });
 
     // 4 Verified Students
-    const studentAarav = await User.create({
+    const studentAarav = await upsertUser({
       fullName: "Aarav Patel",
       rollNumber: "22BCSE101",
       department: "CSE",
@@ -99,7 +121,7 @@ export async function runSeed(): Promise<void> {
       lastLogin: new Date()
     });
 
-    const studentMeera = await User.create({
+    const studentMeera = await upsertUser({
       fullName: "Meera Nair",
       rollNumber: "22BCSE142",
       department: "CSE",
@@ -113,7 +135,7 @@ export async function runSeed(): Promise<void> {
       lastLogin: new Date()
     });
 
-    const studentRohan = await User.create({
+    const studentRohan = await upsertUser({
       fullName: "Rohan Gupta",
       rollNumber: "23BAIDS024",
       department: "AI & DS",
@@ -127,7 +149,7 @@ export async function runSeed(): Promise<void> {
       lastLogin: new Date()
     });
 
-    const studentAnanya = await User.create({
+    const studentAnanya = await upsertUser({
       fullName: "Ananya Singh",
       rollNumber: "23BAIDS088",
       department: "AI & DS",
@@ -149,7 +171,7 @@ export async function runSeed(): Promise<void> {
     console.log("🏛️  Seeding Official Campus Communities & Study Stages...");
 
     // Community 1: Computer Science 2026 Batch Hub
-    const cseCommunity = await Community.create({
+    const cseCommunity = await upsertCommunity({
       name: "Computer Science 2026 Batch Hub",
       slug: "cs-2026-batch-hub",
       description: "Official batch community for CSE Class of 2026. Real-time announcements, lab submissions, midsem exam prep, and 24/7 drop-in audio study stages (#announcements, #algorithms-lab, #midsem-prep, 🔊 Drop-in Study Stage 1).",
@@ -167,7 +189,7 @@ export async function runSeed(): Promise<void> {
     });
 
     // Community 2: AI & Robotics Circle
-    const aiCommunity = await Community.create({
+    const aiCommunity = await upsertCommunity({
       name: "AI & Robotics Circle",
       slug: "ai-robotics-circle",
       description: "Collaborative research circle for Artificial Intelligence, neural networks, ROS2 robotics, and hardware-accelerated machine learning (#general, #paper-discussions, 🔊 Research Stage).",
@@ -184,93 +206,229 @@ export async function runSeed(): Promise<void> {
       }
     });
 
+    // Community 3: Campus Academic Resource Vault
+    const vaultCommunity = await upsertCommunity({
+      name: "Campus Academic Resource Vault",
+      slug: "campus-vault",
+      description: "Official open repository for peer-reviewed lecture notes, previous exam question papers, lab manuals, and syllabus roadmaps across all departments.",
+      category: "Academic Support",
+      tags: ["vault", "academic-resources", "notes", "previous-papers", "syllabus"],
+      visibility: COMMUNITY_VISIBILITY.PUBLIC,
+      owner: adminUser._id,
+      moderators: [facultyUser._id, adminUser._id],
+      memberCount: 6,
+      extensionPoints: {
+        chatEnabled: true,
+        resourcesEnabled: true,
+        notificationsEnabled: true
+      }
+    });
+
     // Community Memberships
     await Promise.all([
       // CSE Batch Hub Memberships
-      CommunityMember.create({ communityId: cseCommunity._id, userId: adminUser._id, role: "OWNER" }),
-      CommunityMember.create({ communityId: cseCommunity._id, userId: facultyUser._id, role: "MODERATOR" }),
-      CommunityMember.create({ communityId: cseCommunity._id, userId: studentAarav._id, role: "MEMBER" }),
-      CommunityMember.create({ communityId: cseCommunity._id, userId: studentMeera._id, role: "MEMBER" }),
-      CommunityMember.create({ communityId: cseCommunity._id, userId: studentRohan._id, role: "MEMBER" }),
-      CommunityMember.create({ communityId: cseCommunity._id, userId: studentAnanya._id, role: "MEMBER" }),
+      upsertMember(cseCommunity._id, adminUser._id, "OWNER"),
+      upsertMember(cseCommunity._id, facultyUser._id, "MODERATOR"),
+      upsertMember(cseCommunity._id, studentAarav._id, "MEMBER"),
+      upsertMember(cseCommunity._id, studentMeera._id, "MEMBER"),
+      upsertMember(cseCommunity._id, studentRohan._id, "MEMBER"),
+      upsertMember(cseCommunity._id, studentAnanya._id, "MEMBER"),
 
       // AI & Robotics Circle Memberships
-      CommunityMember.create({ communityId: aiCommunity._id, userId: facultyUser._id, role: "OWNER" }),
-      CommunityMember.create({ communityId: aiCommunity._id, userId: studentRohan._id, role: "MEMBER" }),
-      CommunityMember.create({ communityId: aiCommunity._id, userId: studentAnanya._id, role: "MEMBER" }),
-      CommunityMember.create({ communityId: aiCommunity._id, userId: studentAarav._id, role: "MEMBER" })
+      upsertMember(aiCommunity._id, facultyUser._id, "OWNER"),
+      upsertMember(aiCommunity._id, studentRohan._id, "MEMBER"),
+      upsertMember(aiCommunity._id, studentAnanya._id, "MEMBER"),
+      upsertMember(aiCommunity._id, studentAarav._id, "MEMBER"),
+
+      // Campus Vault Memberships
+      upsertMember(vaultCommunity._id, adminUser._id, "OWNER"),
+      upsertMember(vaultCommunity._id, facultyUser._id, "MODERATOR"),
+      upsertMember(vaultCommunity._id, studentAarav._id, "MEMBER"),
+      upsertMember(vaultCommunity._id, studentMeera._id, "MEMBER"),
+      upsertMember(vaultCommunity._id, studentRohan._id, "MEMBER"),
+      upsertMember(vaultCommunity._id, studentAnanya._id, "MEMBER")
     ]);
 
     console.log(`✓ Seeded Community 1: "${cseCommunity.name}" (6 members)`);
-    console.log(`✓ Seeded Community 2: "${aiCommunity.name}" (4 members)\n`);
+    console.log(`✓ Seeded Community 2: "${aiCommunity.name}" (4 members)`);
+    console.log(`✓ Seeded Community 3: "${vaultCommunity.name}" (6 members)\n`);
 
-    // ── 4. Seed Pre-populated Vault Resources ────────────────────────────────
-    console.log("📚 Seeding Pre-populated Vault Academic Resources...");
+    // ── 4. Academic Vault (Only if explicitly enabled via SEED_DEMO_RESOURCES) ───
+    if (process.env.SEED_DEMO_RESOURCES === "true") {
+      console.log("📚 Seeding Campus Academic Vault Resources (SEED_DEMO_RESOURCES enabled)...");
+      const sampleResources = [
+      {
+        title: "Unit 4 & 5 MEFA Lecture Notes",
+        description: "Managerial Economics and Financial Analysis presentation covering capital budgeting, break-even analysis, and financial ratios.",
+        fileName: "Unit-IV & V MEFA.pptx",
+        fileUrl: "/uploads/vault/mefa_unit4.pptx",
+        fileSize: 2450000,
+        fileType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        category: "PPTS",
+        department: "Computer Science & Engineering",
+        semester: "Sem 4",
+        subjectCode: "MEFA-401",
+        format: "pptx",
+        tags: ["mefa", "economics", "finance"],
+        uploadedBy: studentAarav._id,
+        communityId: vaultCommunity._id,
+        downloadCount: 142,
+        rating: 4.9,
+        reviewCount: 18,
+        visibility: RESOURCE_VISIBILITY.PUBLIC
+      },
+      {
+        title: "Distributed Systems & Raft Consensus Manual",
+        description: "Complete guide to Raft state machine replication, leader election, log matching, and network partition safety.",
+        fileName: "unit 4 (2).docx",
+        fileUrl: "/uploads/vault/unit_4_2.docx",
+        fileSize: 185000,
+        fileType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        category: "NOTES",
+        department: "Information Technology",
+        semester: "Sem 6",
+        subjectCode: "IT-602",
+        format: "docx",
+        tags: ["distributed-systems", "raft", "blockchain"],
+        uploadedBy: studentMeera._id,
+        communityId: vaultCommunity._id,
+        downloadCount: 98,
+        rating: 4.8,
+        reviewCount: 12,
+        visibility: RESOURCE_VISIBILITY.PUBLIC
+      },
+      {
+        title: "Deep Learning & PyTorch Notebook Lab",
+        description: "Jupyter notebooks with PyTorch implementations for convolutional neural networks, RESNET-50 transfer learning, and loss curves.",
+        fileName: "pytorch_lab_5.ipynb",
+        fileUrl: "/uploads/vault/pytorch_lab.ipynb",
+        fileSize: 420000,
+        fileType: "application/x-ipynb+json",
+        category: "LAB_RECORDS",
+        department: "Artificial Intelligence & Data Science",
+        semester: "Sem 5",
+        subjectCode: "AI-503",
+        format: "ipynb",
+        tags: ["pytorch", "deep-learning", "python"],
+        uploadedBy: studentRohan._id,
+        communityId: vaultCommunity._id,
+        downloadCount: 215,
+        rating: 5.0,
+        reviewCount: 24,
+        visibility: RESOURCE_VISIBILITY.PUBLIC
+      },
+      {
+        title: "Analog Circuits & Signals Solved Paper 2025",
+        description: "Previous year midsem and endsem question papers with step-by-step circuit derivations and frequency response diagrams.",
+        fileName: "eee_circuits_2025.pdf",
+        fileUrl: "/uploads/vault/circuits_2025.pdf",
+        fileSize: 1200000,
+        fileType: "application/pdf",
+        category: "PREVIOUS_PAPERS",
+        department: "Electrical & Electronics",
+        semester: "Sem 3",
+        subjectCode: "EEE-301",
+        format: "pdf",
+        tags: ["eee", "circuits", "solved-paper"],
+        uploadedBy: facultyUser._id,
+        communityId: vaultCommunity._id,
+        downloadCount: 74,
+        rating: 4.7,
+        reviewCount: 9,
+        visibility: RESOURCE_VISIBILITY.PUBLIC
+      },
+      {
+        title: "Microprocessors & Embedded Systems Lab Code",
+        description: "Assembly language programs and C drivers for 8086 microcontrollers and ARM Cortex M4 embedded peripherals.",
+        fileName: "ece_micro_lab.zip",
+        fileUrl: "/uploads/vault/micro_lab.zip",
+        fileSize: 3100000,
+        fileType: "application/zip",
+        category: "LAB_RECORDS",
+        department: "Electronics & Communication",
+        semester: "Sem 4",
+        subjectCode: "ECE-404",
+        format: "zip",
+        tags: ["ece", "embedded", "arm"],
+        uploadedBy: studentAnanya._id,
+        communityId: vaultCommunity._id,
+        downloadCount: 160,
+        rating: 4.6,
+        reviewCount: 15,
+        visibility: RESOURCE_VISIBILITY.PUBLIC
+      },
+      {
+        title: "Thermodynamics & Heat Transfer Cheat Sheet",
+        description: "Summary formula sheet covering Carnot efficiency, entropy calculations, and conduction/convection heat exchanger equations.",
+        fileName: "thermo_cheat_sheet.pdf",
+        fileUrl: "/uploads/vault/thermo.pdf",
+        fileSize: 950000,
+        fileType: "application/pdf",
+        category: "ASSIGNMENTS",
+        department: "Mechanical Engineering",
+        semester: "Sem 2",
+        subjectCode: "MECH-201",
+        format: "pdf",
+        tags: ["mech", "thermo", "cheat-sheet"],
+        uploadedBy: adminUser._id,
+        communityId: vaultCommunity._id,
+        downloadCount: 88,
+        rating: 4.9,
+        reviewCount: 11,
+        visibility: RESOURCE_VISIBILITY.PUBLIC
+      },
+      {
+        title: "Engineering Mathematics 1 Question Bank",
+        description: "Comprehensive question bank for differential calculus, linear algebra, vector calculus, and infinite series.",
+        fileName: "math1_qbank.pdf",
+        fileUrl: "/uploads/vault/math1_qbank.pdf",
+        fileSize: 1500000,
+        fileType: "application/pdf",
+        category: "QUESTION_BANKS",
+        department: "Computer Science & Engineering",
+        semester: "Sem 1",
+        subjectCode: "MATH-101",
+        format: "pdf",
+        tags: ["math", "calculus", "qbank"],
+        uploadedBy: facultyUser._id,
+        communityId: vaultCommunity._id,
+        downloadCount: 310,
+        rating: 5.0,
+        reviewCount: 35,
+        visibility: RESOURCE_VISIBILITY.PUBLIC
+      },
+      {
+        title: "Blockchain & Smart Contracts Security Code ZIP",
+        description: "Solidity smart contract examples, Hardhat unit test suite, and reentrancy attack mitigation benchmarks.",
+        fileName: "blockchain_code.zip",
+        fileUrl: "/uploads/vault/blockchain_code.zip",
+        fileSize: 4500000,
+        fileType: "application/zip",
+        category: "ASSIGNMENTS",
+        department: "Information Technology",
+        semester: "Sem 8",
+        subjectCode: "IT-801",
+        format: "zip",
+        tags: ["blockchain", "solidity", "crypto"],
+        uploadedBy: studentMeera._id,
+        communityId: vaultCommunity._id,
+        downloadCount: 275,
+        rating: 5.0,
+        reviewCount: 29,
+        visibility: RESOURCE_VISIBILITY.PUBLIC
+      }
+    ];
 
-    const res1 = await Resource.create({
-      title: "Advanced Graph Algorithms & Dynamic Programming Deep Dive",
-      description: "Comprehensive lecture notes covering Tarjan's SCC algorithm, Bellman-Ford, Ford-Fulkerson Max-Flow/Min-Cut, and state-space tree DP optimizations with handwritten proofs.",
-      fileName: "advanced_graph_algorithms_dp_2026.pdf",
-      fileUrl: "https://raw.githubusercontent.com/studyconnect/assets/main/resources/graph_algorithms_dp.pdf",
-      fileSize: 4980736, // 4.75 MB
-      fileType: "application/pdf",
-      category: RESOURCE_CATEGORIES[0], // NOTES
-      tags: ["algorithms", "graphs", "dp", "exam-prep", "cse"],
-      uploadedBy: studentMeera._id,
-      communityId: cseCommunity._id,
-      downloadCount: 142,
-      visibility: RESOURCE_VISIBILITY.PUBLIC
-    });
-
-    const res2 = await Resource.create({
-      title: "Distributed Systems: Raft Consensus & Byzantine Fault Tolerance",
-      description: "In-depth reference notes on distributed state-machine replication, split-brain resolution, gRPC protocol design, and leader election protocols in Go.",
-      fileName: "distributed_systems_raft_paxos.pdf",
-      fileUrl: "https://raw.githubusercontent.com/studyconnect/assets/main/resources/distributed_systems_raft.pdf",
-      fileSize: 6488064, // 6.19 MB
-      fileType: "application/pdf",
-      category: RESOURCE_CATEGORIES[0], // NOTES
-      tags: ["distributed-systems", "consensus", "raft", "cse", "cloud"],
-      uploadedBy: studentAarav._id,
-      communityId: cseCommunity._id,
-      downloadCount: 189,
-      visibility: RESOURCE_VISIBILITY.PUBLIC
-    });
-
-    const res3 = await Resource.create({
-      title: "Transformer Architectures & Self-Attention Implementation",
-      description: "Annotated PyTorch implementation of Multi-Head Attention, Rotary Position Embeddings (RoPE), and KV-Cache for LLM inference from mathematical first principles.",
-      fileName: "transformers_self_attention_scratch.ipynb",
-      fileUrl: "https://raw.githubusercontent.com/studyconnect/assets/main/resources/transformers_attention.ipynb",
-      fileSize: 2202009, // 2.1 MB
-      fileType: "application/x-ipynb+json",
-      category: RESOURCE_CATEGORIES[4], // LAB_RECORDS
-      tags: ["ai", "deep-learning", "transformers", "nlp", "pytorch"],
-      uploadedBy: studentRohan._id,
-      communityId: aiCommunity._id,
-      downloadCount: 215,
-      visibility: RESOURCE_VISIBILITY.PUBLIC
-    });
-
-    const res4 = await Resource.create({
-      title: "Autonomous Mobile Robotics SLAM & LiDAR Navigation Manual",
-      description: "Official laboratory guide on ROS2 Navigation2 (Nav2), Cartographer 2D/3D SLAM, and Kalman filter sensor fusion on differential-drive mobile rovers.",
-      fileName: "ros2_slam_navigation_manual.pdf",
-      fileUrl: "https://raw.githubusercontent.com/studyconnect/assets/main/resources/ros2_slam_manual.pdf",
-      fileSize: 3670016, // 3.5 MB
-      fileType: "application/pdf",
-      category: RESOURCE_CATEGORIES[4], // LAB_RECORDS
-      tags: ["robotics", "ros2", "slam", "lidar", "navigation", "lab"],
-      uploadedBy: studentAnanya._id,
-      communityId: aiCommunity._id,
-      downloadCount: 98,
-      visibility: RESOURCE_VISIBILITY.PUBLIC
-    });
-
-    console.log(`✓ Seeded Vault Resource: "${res1.title}" (142 downloads)`);
-    console.log(`✓ Seeded Vault Resource: "${res2.title}" (189 downloads)`);
-    console.log(`✓ Seeded Vault Resource: "${res3.title}" (215 downloads)`);
-    console.log(`✓ Seeded Vault Resource: "${res4.title}" (98 downloads)\n`);
+    for (const resItem of sampleResources) {
+      const existingRes = await Resource.findOne({ title: resItem.title, fileName: resItem.fileName });
+      if (!existingRes) {
+        await Resource.create(resItem);
+      }
+    }
+      console.log("✓ Seeded Academic Vault resources (demo mode).\n");
+    } else {
+      console.log("ℹ️  Skipping fake demo resource seeding (SEED_DEMO_RESOURCES not enabled).\n");
+    }
 
     // ── 5. Seed Active Campus Events & Countdowns ─────────────────────────────
     console.log("⏰ Seeding Active Campus Events & Notification Countdowns...");
@@ -316,22 +474,30 @@ export async function runSeed(): Promise<void> {
       }
     ];
 
-    await Notification.create(eventNotifications);
+    for (const notif of eventNotifications) {
+      const existingNotif = await Notification.findOne({ userId: notif.userId, title: notif.title });
+      if (!existingNotif) {
+        await Notification.create(notif);
+      }
+    }
     console.log("✓ Seeded Hackathon & Assignment deadline countdown notifications.\n");
 
     // ── 8. Seed Sample Content Report for Admin Moderation Triage ────────────
     console.log("🛡️  Seeding Content Moderation Triage Report (#REP-9402)...");
 
-    const sampleReport = await Report.create({
-      reporterId: studentAarav._id,
-      targetType: REPORT_TARGET_TYPES.RESOURCE,
-      targetId: res1._id,
-      reason: "Suspected Copyright Infringement / Attribution Required",
-      description: "Report #REP-9402: Suspected copyright infringement in course material upload. Please verify academic attribution before midterm exam week.",
-      status: REPORT_STATUS.PENDING,
-      reviewedBy: null,
-      reviewedAt: null
-    });
+    let sampleReport = await Report.findOne({ reporterId: studentAarav._id, targetId: studentMeera._id });
+    if (!sampleReport) {
+      sampleReport = await Report.create({
+        reporterId: studentAarav._id,
+        targetType: REPORT_TARGET_TYPES.USER,
+        targetId: studentMeera._id,
+        reason: "Suspected Copyright Infringement / Attribution Required",
+        description: "Report #REP-9402: Suspected copyright infringement in course material upload. Please verify academic attribution before midterm exam week.",
+        status: REPORT_STATUS.PENDING,
+        reviewedBy: null,
+        reviewedAt: null
+      });
+    }
 
     console.log(`✓ Seeded Pending Report: ${sampleReport.reason} (ID: ${sampleReport._id})\n`);
 
@@ -349,8 +515,10 @@ export async function runSeed(): Promise<void> {
     console.error("❌ Seeding failed with error:", error);
     throw error;
   } finally {
-    await mongoose.disconnect();
-    console.log("✓ Disconnected from database.");
+    if (shouldDisconnect) {
+      await mongoose.disconnect();
+      console.log("✓ Disconnected from database.");
+    }
   }
 }
 

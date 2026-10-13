@@ -10,26 +10,31 @@ import {
   Eye,
   Star,
   ShieldCheck,
-  Tag
+  Tag,
+  Trash2,
+  GraduationCap
 } from "lucide-react";
 
 export interface VaultResource {
   id: string;
   title: string;
+  fileName?: string;
   description: string;
   subjectCode: string;
   subjectName: string;
   dept: string;
   semester: string;
   category: string;
-  format: "pdf" | "ipynb" | "zip" | "pptx";
+  format: "pdf" | "ipynb" | "zip" | "pptx" | "docx";
   fileSize: string;
   fileUrl: string;
   downloadCount: number;
   rating: number;
   reviewCount: number;
   tags: string[];
+  uploaderId?: string;
   uploader: {
+    id?: string;
     name: string;
     roll: string;
     dept: string;
@@ -41,22 +46,27 @@ export interface VaultResource {
 
 interface ResourceCardProps {
   resource: VaultResource;
+  currentUserId?: string;
+  userRole?: string;
   onPreview: (res: VaultResource) => void;
   onDownload: (res: VaultResource) => void;
   onToggleBookmark: (resId: string) => void;
+  onDelete?: (res: VaultResource) => void;
 }
 
 export function ResourceCard({
   resource,
+  currentUserId,
+  userRole,
   onPreview,
   onDownload,
-  onToggleBookmark
+  onToggleBookmark,
+  onDelete
 }: ResourceCardProps) {
-  const [bookmarked, setBookmarked] = useState(resource.isBookmarked || false);
+  const isBookmarked = Boolean(resource.isBookmarked);
 
   const handleBookmarkClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setBookmarked(!bookmarked);
     onToggleBookmark(resource.id);
   };
 
@@ -117,6 +127,15 @@ export function ResourceCard({
       .toUpperCase();
   };
 
+  const isOwner = Boolean(
+    userRole === "ADMIN" ||
+      (currentUserId &&
+        (resource.uploaderId === currentUserId ||
+          (typeof resource.uploader === "object" && (resource.uploader as any)?.id === currentUserId) ||
+          (typeof resource.uploader === "object" && (resource.uploader as any)?._id === currentUserId) ||
+          (typeof resource.uploader === "string" && resource.uploader === currentUserId)))
+  );
+
   return (
     <motion.div
       whileHover={{ y: -4 }}
@@ -124,9 +143,9 @@ export function ResourceCard({
       className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-[#0F1A30]/85 p-5 backdrop-blur-xl shadow-md hover:border-[#1E90FF]/50 hover:shadow-xl dark:hover:shadow-[#1E90FF]/10 transition-all"
     >
       <div>
-        {/* ── Top Header Row: Format Badge, Subject Code, Bookmark ──────── */}
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-1.5 flex-wrap">
+        {/* ── Top Header Row: Format Badge, Subject Code, Semester, Department, Bookmark ──────── */}
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
             <span
               className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${badgeInfo.color}`}
             >
@@ -139,20 +158,46 @@ export function ResourceCard({
             <span className="text-[10px] text-slate-400 tabular-nums">
               {resource.semester}
             </span>
+            {resource.dept ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-medium bg-[#1E90FF]/10 text-[#1E90FF] dark:text-[#60a5fa] border-[#1E90FF]/25">
+                <GraduationCap size={10} className="shrink-0" />
+                <span>{resource.dept}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-normal text-slate-400 bg-slate-100/60 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-800/60 italic">
+                Department unavailable
+              </span>
+            )}
           </div>
 
-          {/* Bookmark Toggle Button */}
-          <button
-            onClick={handleBookmarkClick}
-            className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
-              bookmarked
-                ? "border-amber-400/40 bg-amber-500/10 text-amber-500"
-                : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-            }`}
-            title={bookmarked ? "Remove Bookmark" : "Save to My Bookmarks"}
-          >
-            <Bookmark size={14} className={bookmarked ? "fill-current" : ""} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Owner Delete Button */}
+            {isOwner && onDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(resource);
+                }}
+                className="p-1.5 rounded-xl border border-transparent text-rose-400 hover:text-rose-600 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                title="Delete Resource"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+
+            {/* Bookmark Toggle Button */}
+            <button
+              onClick={handleBookmarkClick}
+              className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
+                isBookmarked
+                  ? "border-amber-400/40 bg-amber-500/10 text-amber-500"
+                  : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              }`}
+              title={isBookmarked ? "Remove Bookmark" : "Save to My Bookmarks"}
+            >
+              <Bookmark size={14} className={isBookmarked ? "fill-current" : ""} />
+            </button>
+          </div>
         </div>
 
         {/* ── Title & Description ──────────────────────────────────────── */}

@@ -10,10 +10,17 @@ export interface IResource {
   fileType: string;
   category: ResourceCategory;
   tags: string[];
+  department?: string;
+  semester?: string;
+  subjectCode?: string;
+  format?: string;
+  rating?: number;
+  reviewCount?: number;
   uploadedBy: Types.ObjectId;
-  communityId: Types.ObjectId;
+  communityId?: Types.ObjectId;
   downloadCount: number;
   visibility: ResourceVisibility;
+  contentHash?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,22 +42,31 @@ const resourceSchema = new Schema<IResource, ResourceModel>(
       default: [],
       validate: [(values: string[]) => values.length <= 10, "A maximum of 10 tags is allowed"]
     },
+    department: { type: String, trim: true, index: true },
+    semester: { type: String, trim: true, index: true },
+    subjectCode: { type: String, trim: true, index: true },
+    format: { type: String, trim: true, index: true },
+    rating: { type: Number, default: 5.0, min: 0, max: 5 },
+    reviewCount: { type: Number, default: 1, min: 0 },
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    communityId: { type: Schema.Types.ObjectId, ref: "Community", required: true, index: true },
+    communityId: { type: Schema.Types.ObjectId, ref: "Community", required: false, index: true },
     downloadCount: { type: Number, default: 0, min: 0 },
     visibility: {
       type: String,
       enum: Object.values(RESOURCE_VISIBILITY),
       default: RESOURCE_VISIBILITY.COMMUNITY
-    }
+    },
+    contentHash: { type: String }
   },
   { timestamps: true, versionKey: false }
 );
 
-resourceSchema.index({ title: "text", description: "text", tags: "text" });
+resourceSchema.index({ title: "text", description: "text", tags: "text", subjectCode: "text" });
 resourceSchema.index({ category: 1, communityId: 1, createdAt: -1 });
+resourceSchema.index({ department: 1, semester: 1, category: 1, downloadCount: -1 });
 resourceSchema.index({ communityId: 1, createdAt: -1 });
 resourceSchema.index({ communityId: 1, downloadCount: -1 });
 resourceSchema.index({ uploadedBy: 1, createdAt: -1 });
+resourceSchema.index({ contentHash: 1 }, { unique: true, sparse: true });
 
 export const Resource = model<IResource, ResourceModel>("Resource", resourceSchema);

@@ -23,5 +23,8 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "stream-chat": "^9.54.0"
   }
 }

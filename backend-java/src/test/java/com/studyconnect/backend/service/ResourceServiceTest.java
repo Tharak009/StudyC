@@ -10,9 +10,11 @@ import static org.mockito.Mockito.when;
 
 import com.studyconnect.backend.dto.resource.ResourceCreateRequest;
 import com.studyconnect.backend.dto.resource.ResourceUpdateRequest;
+import com.studyconnect.backend.dto.resource.UploadInitiateRequest;
 import com.studyconnect.backend.entity.Community;
 import com.studyconnect.backend.entity.CommunityMember;
 import com.studyconnect.backend.entity.Resource;
+import com.studyconnect.backend.entity.UploadSession;
 import com.studyconnect.backend.entity.User;
 import com.studyconnect.backend.entity.enums.CommunityCategory;
 import com.studyconnect.backend.entity.enums.CommunityRole;
@@ -23,6 +25,7 @@ import com.studyconnect.backend.exception.ForbiddenException;
 import com.studyconnect.backend.repository.CommunityMemberRepository;
 import com.studyconnect.backend.repository.CommunityRepository;
 import com.studyconnect.backend.repository.ResourceRepository;
+import com.studyconnect.backend.repository.UploadSessionRepository;
 import com.studyconnect.backend.repository.UserRepository;
 import java.time.Instant;
 import java.util.List;
@@ -44,11 +47,12 @@ class ResourceServiceTest {
     @Mock private UserRepository users;
     @Mock private FileStorageService storageService;
     @Mock private MongoTemplate mongoTemplate;
+    @Mock private UploadSessionRepository uploadSessions;
 
     @Test
     void createResourceStoresFileAndReturnsDto() {
         when(members.findByCommunityIdAndUserId("community-1", "user-1")).thenReturn(Optional.of(membership("community-1", "user-1", CommunityRole.MEMBER)));
-        when(storageService.store(any(MultipartFile.class), eq("resources"), any(), eq(50L * 1024 * 1024))).thenReturn(
+        when(storageService.store(any(MultipartFile.class), eq("resources"), any(), eq(1024L * 1024 * 1024))).thenReturn(
                 new FileStorageService.StoredFile("resources/file.pdf", "/uploads/resources/file.pdf", "file.pdf", "application/pdf", 1024L, Instant.now()));
         when(resources.save(any(Resource.class))).thenAnswer(invocation -> {
             Resource resource = invocation.getArgument(0);
@@ -61,7 +65,7 @@ class ResourceServiceTest {
         when(users.findById("user-1")).thenReturn(Optional.of(baseUser("user-1")));
         when(communities.findById("community-1")).thenReturn(Optional.of(baseCommunity("community-1")));
 
-        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate);
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
         var result = service.createResource(
                 "community-1",
                 "user-1",
@@ -74,13 +78,41 @@ class ResourceServiceTest {
     }
 
     @Test
+    void initiateUploadCreatesSession() {
+        when(members.findByCommunityIdAndUserId("community-1", "user-1")).thenReturn(Optional.of(membership("community-1", "user-1", CommunityRole.MEMBER)));
+        when(storageService.isCloudStorageActive()).thenReturn(true);
+        when(uploadSessions.save(any(UploadSession.class))).thenAnswer(invocation -> {
+            UploadSession session = invocation.getArgument(0);
+            session.setId("session-123");
+            return session;
+        });
+
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
+        var response = service.initiateUpload("community-1", "user-1", new UploadInitiateRequest(
+                "large_file.zip",
+                100 * 1024 * 1024L,
+                "application/zip",
+                13,
+                "Large Dataset",
+                "Description",
+                ResourceCategory.OTHER,
+                ResourceVisibility.COMMUNITY,
+                List.of("dataset")
+        ));
+
+        assertThat(response.sessionId()).isEqualTo("session-123");
+        assertThat(response.totalParts()).isEqualTo(13);
+        assertThat(response.directCloud()).isTrue();
+    }
+
+    @Test
     void deleteResourceAllowsUploader() {
         Resource resource = baseResource("resource-1");
         resource.setUploadedBy("user-1");
         when(resources.findById("resource-1")).thenReturn(Optional.of(resource));
         when(members.findByCommunityIdAndUserId("community-1", "user-1")).thenReturn(Optional.of(membership("community-1", "user-1", CommunityRole.MEMBER)));
 
-        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate);
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
         service.deleteResource("resource-1", "user-1");
 
         verify(resources).deleteById("resource-1");
@@ -92,7 +124,7 @@ class ResourceServiceTest {
         resource.setUploadedBy("user-1");
         when(resources.findById("resource-1")).thenReturn(Optional.of(resource));
 
-        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate);
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
         assertThrows(ForbiddenException.class, () -> service.updateResource(
                 "resource-1",
                 "user-2",
@@ -110,10 +142,115 @@ class ResourceServiceTest {
         when(users.findById("user-1")).thenReturn(Optional.of(baseUser("user-1")));
         when(communities.findById("community-1")).thenReturn(Optional.of(baseCommunity("community-1")));
 
-        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate);
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
         var result = service.trackDownload("resource-1", "user-1");
 
         assertThat(result.downloadCount()).isEqualTo(1L);
+    }
+
+    @Test
+    void completeUploadFailsForExpiredSession() {
+        UploadSession session = new UploadSession();
+        session.setId("session-expired");
+        session.setUserId("user-1");
+        session.setExpiresAt(Instant.now().minusSeconds(3600)); // expired 1 hour ago
+
+        when(uploadSessions.findByIdAndUserId("session-expired", "user-1")).thenReturn(Optional.of(session));
+
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
+        assertThrows(com.studyconnect.backend.exception.BadRequestException.class, () ->
+                service.completeUpload("session-expired", "user-1", new com.studyconnect.backend.dto.resource.UploadCompleteRequest(List.of()))
+        );
+    }
+
+    @Test
+    void completeUploadFailsForDuplicateCompletion() {
+        UploadSession session = new UploadSession();
+        session.setId("session-completed");
+        session.setUserId("user-1");
+        session.setExpiresAt(Instant.now().plusSeconds(3600));
+        session.setStatus(UploadSession.SessionStatus.COMPLETED);
+
+        when(uploadSessions.findByIdAndUserId("session-completed", "user-1")).thenReturn(Optional.of(session));
+
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
+        assertThrows(com.studyconnect.backend.exception.BadRequestException.class, () ->
+                service.completeUpload("session-completed", "user-1", new com.studyconnect.backend.dto.resource.UploadCompleteRequest(List.of()))
+        );
+    }
+
+    @Test
+    void completeUploadRejectsInvalidPartNumbers() {
+        UploadSession session = new UploadSession();
+        session.setId("session-invalid-part");
+        session.setUserId("user-1");
+        session.setTotalParts(2);
+        session.setExpiresAt(Instant.now().plusSeconds(3600));
+
+        when(uploadSessions.findByIdAndUserId("session-invalid-part", "user-1")).thenReturn(Optional.of(session));
+
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
+        assertThrows(com.studyconnect.backend.exception.BadRequestException.class, () ->
+                service.completeUpload("session-invalid-part", "user-1", new com.studyconnect.backend.dto.resource.UploadCompleteRequest(List.of(
+                        new UploadSession.PartInfo(1, "\"etag-1\""),
+                        new UploadSession.PartInfo(99, "\"etag-99\"") // 99 exceeds totalParts (2)
+                )))
+        );
+    }
+
+    @Test
+    void completeUploadRejectsDuplicatePartNumbers() {
+        UploadSession session = new UploadSession();
+        session.setId("session-duplicate-part");
+        session.setUserId("user-1");
+        session.setTotalParts(2);
+        session.setExpiresAt(Instant.now().plusSeconds(3600));
+
+        when(uploadSessions.findByIdAndUserId("session-duplicate-part", "user-1")).thenReturn(Optional.of(session));
+
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
+        assertThrows(com.studyconnect.backend.exception.BadRequestException.class, () ->
+                service.completeUpload("session-duplicate-part", "user-1", new com.studyconnect.backend.dto.resource.UploadCompleteRequest(List.of(
+                        new UploadSession.PartInfo(1, "\"etag-1\""),
+                        new UploadSession.PartInfo(1, "\"etag-duplicate\"")
+                )))
+        );
+    }
+
+    @Test
+    void completeUploadRejectsMissingETag() {
+        UploadSession session = new UploadSession();
+        session.setId("session-missing-etag");
+        session.setUserId("user-1");
+        session.setTotalParts(1);
+        session.setExpiresAt(Instant.now().plusSeconds(3600));
+
+        when(uploadSessions.findByIdAndUserId("session-missing-etag", "user-1")).thenReturn(Optional.of(session));
+
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
+        assertThrows(com.studyconnect.backend.exception.BadRequestException.class, () ->
+                service.completeUpload("session-missing-etag", "user-1", new com.studyconnect.backend.dto.resource.UploadCompleteRequest(List.of(
+                        new UploadSession.PartInfo(1, "   ") // blank ETag
+                )))
+        );
+    }
+
+    @Test
+    void abortUploadUpdatesStatusAndCallsStorage() {
+        UploadSession session = new UploadSession();
+        session.setId("session-abort");
+        session.setUserId("user-1");
+        session.setS3Key("resources/test.pdf");
+        session.setUploadId("upload-id-99");
+        session.setStatus(UploadSession.SessionStatus.IN_PROGRESS);
+
+        when(uploadSessions.findByIdAndUserId("session-abort", "user-1")).thenReturn(Optional.of(session));
+
+        ResourceService service = new ResourceService(resources, members, communities, users, storageService, mongoTemplate, uploadSessions);
+        service.abortUpload("session-abort", "user-1");
+
+        verify(storageService).abortMultipartUpload("resources/test.pdf", "upload-id-99");
+        assertThat(session.getStatus()).isEqualTo(UploadSession.SessionStatus.ABORTED);
     }
 
     private CommunityMember membership(String communityId, String userId, CommunityRole role) {

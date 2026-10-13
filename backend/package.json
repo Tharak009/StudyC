@@ -28,9 +28,11 @@
     "morgan": "^1.10.0",
     "multer": "^2.0.1",
     "socket.io": "^4.8.3",
-    "stream-chat": "^9.52.1",
+    "stream-chat": "^9.54.0",
     "stream-chat-react": "^14.12.0",
-    "zod": "^3.25.48"
+    "zod": "^3.25.48",
+    "@aws-sdk/client-s3": "^3.750.0",
+    "@aws-sdk/s3-request-presigner": "^3.750.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",

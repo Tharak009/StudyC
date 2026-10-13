@@ -74,11 +74,24 @@ export function LoginPage() {
       navigate("/dashboard");
     } catch (err: any) {
       const status = err.response?.status;
-      const msg =
-        err.response?.data?.message ||
-        (status === 429
-          ? "Too many login attempts. Please slow down and try again in a few moments."
-          : "Invalid credentials. Please verify your college email and password.");
+      let msg = err.response?.data?.message;
+
+      if (!msg) {
+        if (status === 429) {
+          msg = "Too many login attempts. Please slow down and try again in a few moments.";
+        } else if (status === 401) {
+          msg = "Invalid email or password. Please verify your college credentials.";
+        } else if (status === 403) {
+          msg = "This account is inactive or restricted. Please contact campus support.";
+        } else if (status && status >= 500) {
+          msg = "Campus authentication server error. Please try again shortly or contact support.";
+        } else if (!status) {
+          msg = "Unable to connect to campus authentication server. Please check your network connection.";
+        } else {
+          msg = "Authentication failed. Please verify your institutional email and password.";
+        }
+      }
+
       setError(msg);
       addToast(msg, "error");
     }

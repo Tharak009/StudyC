@@ -1,16 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { communitiesApi } from "../api/communities.api";
 import { resourcesApi } from "../api/resources.api";
 import { UploadForm } from "../components/upload-form";
-import { useCreateResource, useUpdateResource } from "../hooks/use-resource";
+import { UploadProgressWidget } from "../components/resources/UploadProgressWidget";
+import { useSmartUpload } from "../hooks/use-smart-upload";
+import { useUpdateResource } from "../hooks/use-resource";
 import type { ResourceFormData } from "../types/resource";
 import { getErrorMessage } from "../utils/errors";
 
 export function UploadResourcePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get("edit");
 
@@ -26,8 +29,11 @@ export function UploadResourcePage() {
     enabled: Boolean(editId)
   });
 
-  const createMutation = useCreateResource(id);
   const updateMutation = useUpdateResource();
+  const smartUpload = useSmartUpload((newResource) => {
+    queryClient.invalidateQueries({ queryKey: ["resources", id] });
+    navigate(`/communities/${id}/resources`);
+  });
 
   const isEdit = Boolean(editId && existingResource.data);
 
@@ -35,17 +41,17 @@ export function UploadResourcePage() {
     try {
       if (isEdit && editId) {
         await updateMutation.mutateAsync({ resourceId: editId, data, file });
+        navigate(`/communities/${id}/resources`);
       } else {
-        await createMutation.mutateAsync({ data, file });
+        await smartUpload.startUpload(id!, data, file);
       }
-      navigate(`/communities/${id}/resources`);
     } catch {
-      // error displayed via mutation state
+      // error displayed via state
     }
   };
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
-  const error = createMutation.error || updateMutation.error;
+  const isPending = smartUpload.isUploading || updateMutation.isPending;
+  const error = smartUpload.error || (updateMutation.error ? getErrorMessage(updateMutation.error) : null);
 
   const initialData = isEdit && existingResource.data ? {
     title: existingResource.data.title,
@@ -85,8 +91,22 @@ export function UploadResourcePage() {
 
       {error && (
         <p className="mb-4 rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">
-          {getErrorMessage(error)}
+          {error}
         </p>
+      )}
+
+      {smartUpload.file && smartUpload.status !== "idle" && (
+        <div className="mb-6">
+          <UploadProgressWidget
+            status={smartUpload.status}
+            progress={smartUpload.progress}
+            fileName={smartUpload.file.name}
+            error={smartUpload.error}
+            onPause={smartUpload.pauseUpload}
+            onResume={smartUpload.resumeUpload}
+            onCancel={smartUpload.cancelUpload}
+          />
+        </div>
       )}
 
       {isEdit && existingResource.isLoading ? (
