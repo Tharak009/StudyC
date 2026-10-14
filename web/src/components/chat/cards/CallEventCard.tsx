@@ -90,9 +90,9 @@ export const CallEventCard: React.FC<CallEventCardProps> = ({
           <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-white truncate">
             <span>{isVideo ? "Video Call" : "Voice Call"}</span>
             {isMine ? (
-              <ArrowUpRight size={13} className="text-slate-400 shrink-0" title="Outgoing call" />
+              <ArrowUpRight size={13} className="text-slate-400 shrink-0" aria-label="Outgoing call" />
             ) : (
-              <ArrowDownLeft size={13} className="text-slate-400 shrink-0" title="Incoming call" />
+              <ArrowDownLeft size={13} className="text-slate-400 shrink-0" aria-label="Incoming call" />
             )}
           </div>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{statusText}</span>

@@ -74,15 +74,17 @@ export class StreamService {
 
   /** Verify membership through Stream's authoritative channel state. */
   public async isChannelMember(channelId: string, userId: string): Promise<boolean> {
-    if (!channelId || !userId || !this.isConfigured()) return false;
+    if (!channelId || !userId) throw new Error("A Stream channel and user are required for membership checks");
+    if (!this.isConfigured()) throw new Error("Stream Chat is not configured for membership checks");
     try {
       const channel = this.getClient().channel("messaging", channelId);
       const state = await channel.query({ state: true, watch: false });
       const streamUserId = toStreamUserId(fromStreamUserId(userId));
       return Boolean(state.members?.some((member) => member.user_id === streamUserId));
     } catch (error) {
-      console.warn("[StreamService] Channel membership lookup failed:", error);
-      return false;
+      // Membership checks are used before access revocation as well as grants.
+      // Treat provider lookup failure as unknown, never as proof of no access.
+      throw error;
     }
   }
 

@@ -21,6 +21,7 @@ import {
 import { useCallStore } from "../../../store/call.store";
 import { useAuthStore } from "../../../store/auth.store";
 import { callSignalingService } from "../../../services/call-signaling.service";
+import { socketService } from "../../../services/socket.service";
 import { ParticipantTile } from "./ParticipantTile";
 import { ScreenShareView } from "./ScreenShareView";
 import { StageParticipantsList } from "./StageParticipantsList";
@@ -72,10 +73,15 @@ export function CallOverlay() {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Initialize call signaling listeners on mount
+  // The overlay is also mounted on public routes before a user signs in.
+  // Initialize/re-authenticate signaling whenever the authenticated identity changes.
   useEffect(() => {
+    if (!user?._id) {
+      socketService.disconnect();
+      return;
+    }
     callSignalingService.init();
-  }, []);
+  }, [user?._id]);
 
   // Attach local stream to local video tag
   useEffect(() => {

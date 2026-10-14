@@ -10,11 +10,11 @@ export interface DirectVoiceMediaCallbacks {
   refreshAuthorization: () => Promise<{ url: string; token: string }>;
 }
 
-/** LiveKit transport for one-to-one audio. Direct video continues to use its existing transport. */
+/** LiveKit transport for one-to-one voice and video calls. */
 export class DirectLiveKitAudioService {
   private room: Room | null = null;
   private remoteStream: MediaStream | null = null;
-  private localTrack: MediaStreamTrack | null = null;
+  private localTracks: MediaStreamTrack[] = [];
   private localPublished = false;
   private mediaReady = false;
   private tokenRecoveryAttempts = 0;
@@ -22,23 +22,26 @@ export class DirectLiveKitAudioService {
   private callbacks: DirectVoiceMediaCallbacks | null = null;
 
   public async connect(url: string, token: string, localStream: MediaStream, callbacks: DirectVoiceMediaCallbacks): Promise<void> {
-    if (this.room) throw new Error("A voice call media connection is already active");
+    if (this.room) throw new Error("A direct call media connection is already active");
     const microphone = localStream.getAudioTracks().find((track) => track.readyState === "live");
-    if (!microphone) throw new Error("A working microphone is required to join this voice call");
-    if (!url || !token) throw new Error("Voice call authorization is missing. Please try again.");
+    if (!microphone) throw new Error("A working microphone is required to join this call");
+    if (!url || !token) throw new Error("Call media authorization is missing. Please try again.");
 
     const room = new Room({ adaptiveStream: true, dynacast: true, stopLocalTrackOnUnpublish: false });
     this.room = room;
     if (this.callbacks !== callbacks) this.tokenRecoveryAttempts = 0;
     this.callbacks = callbacks;
-    this.localTrack = microphone;
+    this.localTracks = localStream.getTracks().filter((track) => track.readyState === "live");
     this.localPublished = false;
     this.mediaReady = false;
     this.remoteStream = null;
     callbacks.onConnectionState("connecting");
 
     room.on(RoomEvent.TrackSubscribed, (track, publication) => {
-      if (this.room !== room || track.kind !== Track.Kind.Audio || publication.source !== Track.Source.Microphone) return;
+      const supportedSource = publication.source === Track.Source.Microphone ||
+        publication.source === Track.Source.Camera ||
+        publication.source === Track.Source.ScreenShare;
+      if (this.room !== room || !supportedSource || (track.kind !== Track.Kind.Audio && track.kind !== Track.Kind.Video)) return;
       let stream = this.remoteStream;
       if (!stream) stream = this.remoteStream = new MediaStream();
       if (!stream.getTracks().some((existing) => existing.id === track.mediaStreamTrack.id)) {
@@ -49,9 +52,9 @@ export class DirectLiveKitAudioService {
     });
 
     room.on(RoomEvent.TrackUnsubscribed, (track) => {
-      if (this.room !== room || track.kind !== Track.Kind.Audio || !this.remoteStream) return;
+      if (this.room !== room || !this.remoteStream) return;
       this.remoteStream.getTracks().filter((item) => item.id === track.mediaStreamTrack.id).forEach((item) => this.remoteStream?.removeTrack(item));
-      if (this.remoteStream.getAudioTracks().length === 0) {
+      if (this.remoteStream.getTracks().length === 0) {
         this.remoteStream = null;
         this.mediaReady = false;
         callbacks.onRemoteStreamRemoved();
@@ -75,21 +78,28 @@ export class DirectLiveKitAudioService {
       if (participant.isLocal) callbacks.onNetworkQuality(this.mapQuality(quality));
     });
     room.on(RoomEvent.TrackSubscriptionFailed, (_trackSid, participant) => {
-      if (this.room === room) console.warn("[DirectLiveKitAudio] Could not subscribe to remote audio", participant.identity);
+      if (this.room === room) console.warn("[DirectLiveKitAudio] Could not subscribe to remote call media", participant.identity);
     });
 
     try {
       await room.connect(url, token, { autoSubscribe: true });
       if (this.room !== room) return;
-      const activeMicrophone = this.localTrack?.readyState === "live" ? this.localTrack : microphone;
-      const publication = await room.localParticipant.publishTrack(activeMicrophone, { source: Track.Source.Microphone });
-      if (this.room !== room) {
-        await room.localParticipant.unpublishTrack(microphone, false).catch(() => undefined);
-        return;
+      const activeTracks = this.localTracks.filter((track) => track.readyState === "live");
+      if (!activeTracks.some((track) => track.kind === "audio")) activeTracks.unshift(microphone);
+      for (const track of activeTracks) {
+        if (this.room !== room) {
+          await room.localParticipant.unpublishTrack(track, false).catch(() => undefined);
+          return;
+        }
+        const source = track.kind === "video" ? Track.Source.Camera : Track.Source.Microphone;
+        const publication = await room.localParticipant.publishTrack(track, { source });
+        if (source === Track.Source.Microphone) {
+          this.localPublished = Boolean(publication);
+          if (!track.enabled) await publication.track?.mute();
+        } else if (!track.enabled) {
+          await publication.track?.mute();
+        }
       }
-      this.localPublished = Boolean(publication);
-      this.localTrack = activeMicrophone;
-      if (!activeMicrophone.enabled) await publication.track?.mute();
       callbacks.onConnectionState("connected");
       this.notifyMediaReady();
     } catch (error) {
@@ -107,7 +117,8 @@ export class DirectLiveKitAudioService {
 
   private async recoverWithFreshAuthorization(room: Room, callbacks: DirectVoiceMediaCallbacks): Promise<void> {
     if (this.room !== room || this.recovering) return;
-    if (this.tokenRecoveryAttempts >= 2 || !this.localTrack || this.localTrack.readyState !== "live") {
+    const liveTracks = this.localTracks.filter((track) => track.readyState === "live");
+    if (this.tokenRecoveryAttempts >= 2 || !liveTracks.some((track) => track.kind === "audio")) {
       callbacks.onConnectionState("failed");
       return;
     }
@@ -127,8 +138,9 @@ export class DirectLiveKitAudioService {
     try {
       await room.disconnect(false);
       const credentials = await callbacks.refreshAuthorization();
-      if (!this.callbacks || this.localTrack?.readyState !== "live") return;
-      await this.connect(credentials.url, credentials.token, new MediaStream([this.localTrack]), callbacks);
+      const tracksToRestore = this.localTracks.filter((track) => track.readyState === "live");
+      if (!this.callbacks || !tracksToRestore.some((track) => track.kind === "audio")) return;
+      await this.connect(credentials.url, credentials.token, new MediaStream(tracksToRestore), callbacks);
     } catch (error) {
       console.warn("[DirectLiveKitAudio] Could not restore the voice session:", error);
       callbacks.onConnectionState("failed");
@@ -148,21 +160,55 @@ export class DirectLiveKitAudioService {
     else await publication.track.mute();
   }
 
+  public async setCameraEnabled(enabled: boolean): Promise<void> {
+    const publication = this.room?.localParticipant.getTrackPublication(Track.Source.Camera);
+    if (!publication?.track) return;
+    if (enabled) await publication.track.unmute();
+    else await publication.track.mute();
+  }
+
   public async replaceMicrophoneTrack(track: MediaStreamTrack): Promise<void> {
     const room = this.room;
     if (track.readyState !== "live") return;
     if (!room || room.state !== "connected") {
-      this.localTrack = track;
+      this.localTracks = [...this.localTracks.filter((item) => item.kind !== "audio"), track];
       return;
     }
-    const previous = this.localTrack;
+    const previous = this.localTracks.find((item) => item.kind === "audio");
     if (previous) await room.localParticipant.unpublishTrack(previous, false);
     const publication = await room.localParticipant.publishTrack(track, { source: Track.Source.Microphone });
     if (!track.enabled) await publication.track?.mute();
-    this.localTrack = track;
+    this.localTracks = [...this.localTracks.filter((item) => item.kind !== "audio"), track];
     this.localPublished = true;
     this.mediaReady = false;
     this.notifyMediaReady();
+  }
+
+  public async replaceCameraTrack(track: MediaStreamTrack | null): Promise<void> {
+    const room = this.room;
+    const previous = this.localTracks.find((item) => item.kind === "video");
+    if (previous && room?.state === "connected") await room.localParticipant.unpublishTrack(previous, false);
+    this.localTracks = this.localTracks.filter((item) => item.kind !== "video");
+    if (!track || track.readyState !== "live") return;
+    this.localTracks.push(track);
+    if (!room || room.state !== "connected") return;
+    const publication = await room.localParticipant.publishTrack(track, { source: Track.Source.Camera });
+    if (!track.enabled) await publication.track?.mute();
+  }
+
+  public async publishScreenShare(track: MediaStreamTrack): Promise<void> {
+    if (track.readyState !== "live") throw new Error("The screen-share track is no longer active");
+    const room = this.room;
+    if (!room || room.state !== "connected") throw new Error("The call media connection is not ready");
+    await room.localParticipant.publishTrack(track, { source: Track.Source.ScreenShare });
+  }
+
+  public async unpublishScreenShare(track?: MediaStreamTrack | null): Promise<void> {
+    const room = this.room;
+    if (!room || room.state !== "connected") return;
+    const screenPublication = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+    const trackToUnpublish = track || screenPublication?.track?.mediaStreamTrack;
+    if (trackToUnpublish) await room.localParticipant.unpublishTrack(trackToUnpublish, false).catch(() => undefined);
   }
 
   public close(): void {
@@ -171,7 +217,7 @@ export class DirectLiveKitAudioService {
     const remote = this.remoteStream;
     this.remoteStream = null;
     remote?.getTracks().forEach((track) => { track.onended = null; track.stop(); });
-    this.localTrack = null;
+    this.localTracks = [];
     this.localPublished = false;
     this.mediaReady = false;
     this.tokenRecoveryAttempts = 0;

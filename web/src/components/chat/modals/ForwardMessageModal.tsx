@@ -64,7 +64,8 @@ export function ForwardMessageModal({
 
         if (!isMounted) return;
 
-        const items: DestinationItem[] = channels.map((chan) => {
+        const items: DestinationItem[] = channels.flatMap((chan) => {
+          if (!chan.id) return [];
           const isDM = chan.type === "messaging";
           let name = (chan.data as any)?.name as string;
           let avatar: string | undefined = undefined;
@@ -81,7 +82,7 @@ export function ForwardMessageModal({
             subtitle = ((chan.data as any)?.communityName as string) || "Community Channel";
           }
 
-          return {
+          return [{
             id: chan.id,
             cid: chan.cid,
             name,
@@ -89,7 +90,7 @@ export function ForwardMessageModal({
             type: isDM ? "dm" : "community",
             subtitle,
             channel: chan
-          };
+          }];
         });
 
         setDestinations(items);

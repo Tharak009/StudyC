@@ -14,6 +14,7 @@ import { callHistoryService } from "./call-history.service.js";
 import { notificationRepository } from "../repositories/notification.repository.js";
 
 export interface InitiateSessionParams {
+  requestId?: string;
   callerId: string;
   callerSocketId: string;
   callerName: string;
@@ -124,6 +125,12 @@ export class CallSessionService {
     return this.callSessions.get(callId);
   }
 
+  /** Returns an unanswered call invitation for a user whose call socket just connected. */
+  public getPendingIncomingCall(userId: string): CallSession | undefined {
+    const session = this.getUserActiveCall(userId);
+    return session?.calleeId === userId && session.status === "RINGING" ? session : undefined;
+  }
+
   /**
    * Central state transition validator
    */
@@ -144,7 +151,7 @@ export class CallSessionService {
    */
   public createSession(params: InitiateSessionParams): { session: CallSession } | { error: string; code: string } {
     const {
-      callerId, callerSocketId, callerName, callerAvatar, calleeId, calleeName, calleeAvatar,
+      requestId, callerId, callerSocketId, callerName, callerAvatar, calleeId, calleeName, calleeAvatar,
       calleeSocketId, channelId, type
     } = params;
 
@@ -168,11 +175,12 @@ export class CallSessionService {
 
     // Set ring timeout
     const ringTimer = setTimeout(() => {
-      this.handleRingTimeout(callId);
+      void this.handleRingTimeout(callId);
     }, RING_TIMEOUT_MS);
 
     const session: CallSession = {
       callId,
+      requestId,
       type,
       callerId,
       callerSocketId,
@@ -426,9 +434,9 @@ export class CallSessionService {
 
     const peerSocketId = isCaller ? session.calleeSocketId : session.callerSocketId;
 
-    // If call is actively connected or reconnecting, provide a 15-second grace period
-    // so momentary WebSocket reconnection does not immediately terminate active WebRTC media
-    if (session.status === "CONNECTED" || session.status === "RECONNECTING" || (session.type === "voice" && session.status === "CONNECTING")) {
+    // If a call is connecting, connected, or reconnecting, allow the signaling
+    // socket to recover instead of treating its temporary loss as call failure.
+    if (session.status === "CONNECTING" || session.status === "CONNECTED" || session.status === "RECONNECTING") {
       if (session.status !== "RECONNECTING") this.markReconnecting(callId, userId);
       this.clearGraceTimer(session);
 
@@ -457,7 +465,7 @@ export class CallSessionService {
   /**
    * 30s ring timeout fired without answer
    */
-  private handleRingTimeout(callId: string): void {
+  private async handleRingTimeout(callId: string): Promise<void> {
     const session = this.callSessions.get(callId);
     if (!session) return;
 
@@ -473,7 +481,9 @@ export class CallSessionService {
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
 
-    callHistoryService.recordDirectCall(session, "missed");
+    // Persist the terminal outcome before emitting call:missed. The Calls page
+    // refreshes from that event and must not race a still-ringing database row.
+    await callHistoryService.recordDirectCall(session, "missed");
 
     if (session.calleeId) {
       notificationRepository

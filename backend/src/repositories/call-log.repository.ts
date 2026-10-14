@@ -41,6 +41,7 @@ export interface CallLogListOptions {
   limit?: number;
   status?: CallLogStatus;
   type?: CallLogType;
+  search?: string;
 }
 
 export class CallLogRepository {
@@ -99,13 +100,14 @@ export class CallLogRepository {
       return { items: [], total: 0, page, limit, pages: 1 };
     }
 
-    const filter: FilterQuery<ICallLog> = {
+    const userMatch: FilterQuery<ICallLog> = {
       $or: [
         { callerId: userObjectId },
         { calleeId: userObjectId },
         { "participants.userId": userObjectId }
       ]
     };
+    const filter: FilterQuery<ICallLog> = { ...userMatch };
 
     if (options.status) {
       filter.status = options.status;
@@ -114,6 +116,20 @@ export class CallLogRepository {
     }
     if (options.type) {
       filter.type = options.type;
+    }
+
+    const search = options.search?.trim().slice(0, 100);
+    if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const nameMatch = { $regex: escapedSearch, $options: "i" };
+      filter.$and = [
+        userMatch,
+        { $or: [
+          { callerName: nameMatch },
+          { calleeName: nameMatch },
+          { communityName: nameMatch }
+        ] }
+      ];
     }
 
     const [items, total] = await Promise.all([

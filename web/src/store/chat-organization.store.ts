@@ -159,7 +159,7 @@ export const useChatOrganizationStore = create<ChatOrganizationState>()(
         channel?: StreamChannel | null,
         userId?: string
       ) => {
-        const uid = userId || channel?.client?.userID || "default";
+        const uid = userId || channel?._client?.userID || "default";
         set((state) => {
           const userList = state.starredMessagesByUser[uid] || [];
           if (userList.some((m) => m.messageId === record.messageId)) {
@@ -190,7 +190,7 @@ export const useChatOrganizationStore = create<ChatOrganizationState>()(
         channel?: StreamChannel | null,
         userId?: string
       ) => {
-        const uid = userId || channel?.client?.userID || "default";
+        const uid = userId || channel?._client?.userID || "default";
         set((state) => {
           const userList = state.starredMessagesByUser[uid] || state.starredMessages || [];
           const updatedUserList = userList.filter((m) => m.messageId !== messageId);

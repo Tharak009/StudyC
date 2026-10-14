@@ -4,6 +4,8 @@ coverage/
 target/
 backend-java/target/
 mongodb-data/
+mongodb_data/
+tmp/
 *.tsbuildinfo
 .env
 .env.local

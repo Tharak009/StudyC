@@ -1,218 +1,222 @@
 # StudyConnect
 
-StudyConnect is a production-oriented foundation for a college-exclusive collaboration platform. Phase 1 delivered identity and profiles, Phase 2 activated academic communities, and Phase 3 adds community-scoped real-time chat with persisted messages and member-only participation.
+StudyConnect is a collaborative learning and academic networking platform designed for college campuses. It brings together academic communities, real-time messaging, resource sharing, 1:1 voice/video calls, and collaborative study meetings with waiting room admission, screen sharing, and persistent meeting chat.
 
-## 1. Architecture
+---
 
-The repository is an npm workspace with two deployable applications:
+## 1. System Requirements & Prerequisites (Windows)
 
-- `backend`: TypeScript, Node.js, Express, MongoDB, Mongoose, and Socket.IO.
-- `web`: TypeScript, React, Vite, Tailwind CSS, React Router, Axios, Zustand, TanStack Query, and Socket.IO Client.
+Before cloning and running StudyConnect on Windows, ensure the following tools are installed:
 
-The backend follows route → controller → service → repository → model boundaries. Business rules live in services. The browser stores access tokens only in memory and persists authentication through rotating `httpOnly` refresh cookies. Future React Native clients can use the same API and request refresh credentials in JSON with `X-Client-Platform: mobile`.
+1. **Node.js (LTS v20.x or v22.x)**:
+   - Download the Windows Installer (.msi) from [nodejs.org](https://nodejs.org/).
+   - During installation, ensure the option to **Add to PATH** is checked.
+   - Verify in PowerShell:
+     ```powershell
+     node -v
+     npm -v
+     ```
+2. **Git for Windows**:
+   - Download from [git-scm.com](https://git-scm.com/).
+   - Verify in PowerShell:
+     ```powershell
+     git --version
+     ```
+3. **MongoDB**:
+   - **Option A (Local)**: Install [MongoDB Community Server](https://www.mongodb.com/try/download/community) and optionally [MongoDB Compass](https://www.mongodb.com/products/tools/compass) GUI.
+     Ensure the MongoDB service is running (default port: `27017`).
+   - **Option B (Cloud)**: Create a free M0 cluster on [MongoDB Atlas](https://www.mongodb.com/atlas) and get your connection string (`mongodb+srv://...`).
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for diagrams and trust boundaries.
+---
 
-## 2. Folder Structure
+## 2. Quick Start Guide for Windows
 
-```text
-studyconnect/
-├── backend/
-│   ├── src/
-│   │   ├── config/ constants/ controllers/ services/
-│   │   ├── repositories/ routes/ validators/ middlewares/
-│   │   ├── models/ sockets/ uploads/ utils/ types/
-│   │   ├── app.ts
-│   │   └── server.ts
-│   └── tests/
-├── web/
-│   └── src/
-│       ├── api/ components/ pages/ layouts/ routes/
-│       ├── hooks/ store/ services/ utils/ styles/ types/
-│       ├── app.tsx
-│       └── main.tsx
-└── docs/
-```
+### Step 1: Clone the Repository
 
-## 3. Database Design
-
-### Active Collections
-
-`users`
-
-- Unique `email` and `rollNumber`
-- Profile fields, role, status, last login, password reset metadata
-- Password and reset hashes are excluded from normal queries
-
-`refreshtokens`
-
-- Unique JWT ID and SHA-256 token hash
-- User reference, expiry, revocation, rotation replacement, client metadata
-- MongoDB TTL index removes expired records
-
-`communities`
-
-- Unique `name` and generated unique `slug`
-- Description, category, tags, visibility, banner image, owner, moderators, and member count
-- `extensionPoints` reserves future chat, resources, and notifications attachment flags
-
-`communitymembers`
-
-- Unique community/user membership pair
-- Role-based membership: `OWNER`, `MODERATOR`, `MEMBER`
-- `joinedAt` tracks membership history start
-
-`messages`
-
-- Community/user linked persisted chat messages
-- `TEXT`, `IMAGE`, `PDF`, and `DOCUMENT` message types
-- Attachment metadata, replies, edit state, and soft-delete state
-- Indexed by community and creation time for paginated history
-
-### Placeholder Collections
-
-`messages`, `directmessages`, `resources`, `notifications`, and `reports` define future relationships only. No Phase 2 service, controller, or behavior uses them.
-
-## 4. API Design
-
-All responses use `{ success, data, message }`. Errors add `{ code, errors }`.
-
-| Method | Endpoint | Access | Purpose |
-|---|---|---|---|
-| POST | `/api/auth/register` | Public | Register approved college email |
-| POST | `/api/auth/login` | Public | Authenticate and create session |
-| POST | `/api/auth/logout` | Public/idempotent | Revoke refresh session |
-| POST | `/api/auth/refresh-token` | Refresh credential | Rotate session |
-| POST | `/api/auth/change-password` | Access token | Change password and revoke sessions |
-| POST | `/api/auth/forgot-password` | Public | Generate reset workflow |
-| POST | `/api/auth/reset-password` | Reset token | Set a new password |
-| GET | `/api/users/profile` | Access token | Read own profile |
-| PUT | `/api/users/profile` | Access token | Update allowed profile fields |
-| POST | `/api/users/profile-picture` | Access token | Upload JPEG, PNG, or WebP |
-| POST | `/api/communities` | Access token | Create a community |
-| GET | `/api/communities` | Access token | Search, filter, and paginate communities |
-| GET | `/api/communities/:id` | Access token | View community details |
-| PUT | `/api/communities/:id` | Owner | Edit community |
-| DELETE | `/api/communities/:id` | Owner | Delete community |
-| POST | `/api/communities/:id/join` | Access token | Join community |
-| POST | `/api/communities/:id/leave` | Member | Leave community |
-| GET | `/api/communities/:id/members` | Member | View members |
-| POST | `/api/communities/:id/moderators` | Owner | Add moderator |
-| DELETE | `/api/communities/:id/moderators/:userId` | Owner | Remove moderator |
-| DELETE | `/api/communities/:id/members/:userId` | Owner/moderator | Remove member |
-| GET | `/api/communities/:communityId/messages` | Member | Paginated message history |
-| POST | `/api/communities/:communityId/messages` | Member | Create attachment message |
-| GET | `/health` | Public | Health probe |
-
-Use `Authorization: Bearer <accessToken>` for protected endpoints. The web refresh token is read from `studyconnect_refresh`; mobile may send `{ "refreshToken": "..." }`.
-
-See [docs/COMMUNITIES_API.md](docs/COMMUNITIES_API.md) for the Phase 2 community API contract.
-See [docs/COMMUNITY_CHAT.md](docs/COMMUNITY_CHAT.md) for the Phase 3 chat architecture and socket event contract.
-
-Socket.IO client events:
-
-- `joinCommunity`
-- `leaveCommunity`
-- `sendMessage`
-- `editMessage`
-- `deleteMessage`
-- `typingStart`
-- `typingStop`
-
-Socket.IO server events:
-
-- `messageCreated`
-- `messageUpdated`
-- `messageDeleted`
-- `userTyping`
-- `userStoppedTyping`
-- `userJoined`
-- `userLeft`
-
-## 5. Backend Code
-
-The API includes:
-
-- Environment validation with Zod
-- Helmet, strict CORS, request limits, rate limiting, HPP, and input sanitization
-- Strong password validation and bcrypt hashing
-- JWT access/refresh separation and refresh-token rotation
-- Status-aware authentication and reusable RBAC middleware
-- Multer memory uploads through `StorageService`
-- Working `LocalStorageProvider` and Cloudinary/AWS provider interfaces
-- Community creation, discovery, join/leave, member list, owner edits, moderator promotion, and member removal
-- Community chat history, Socket.IO rooms, message persistence, edits, soft deletes, typing, presence, and attachment messages
-- Generic forgot-password responses to prevent account enumeration
-- Central `ApiResponse`, `ApiError`, `asyncHandler`, and error middleware
-
-The default email service logs reset tokens only outside production. Replace it with a transactional email provider before deploying password reset publicly.
-
-## 6. Frontend Code
-
-The web app includes:
-
-- Login, registration, dashboard, and editable profile pages
-- Communities list, details, create, edit, and members pages
-- Community chat page with real-time updates, message actions, replies, attachment preview, typing, and online members
-- Protected/public route gates and refresh-cookie bootstrap
-- A single-flight Axios refresh interceptor
-- Zustand session and persisted dark-mode state
-- TanStack Query mutations and cache integration
-- Profile-picture upload, responsive navigation, loading, empty, and error states
-- Community search, pagination, category filters, join/leave controls, banner uploads, and moderation actions
-- Socket connection status, infinite-style older-message loading, and member-only chat controls
-- Accessible inputs, visible focus states, reduced-motion support, and mobile layouts
-
-## 7. Testing Setup
-
-Backend tests use Vitest, Supertest, Socket.IO Client, and MongoDB Memory Server. Web tests use Vitest, Testing Library, and JSDOM. Community integration tests cover creation, unique names, joining, member listing, and owner-only moderator promotion. Chat integration tests cover REST persistence/history, service membership enforcement, and Socket.IO broadcast.
-
-```bash
-npm test
-npm run build
-npm run lint
-```
-
-MongoDB Memory Server may download a MongoDB binary on its first run.
-
-## 8. Environment
-
-Copy the templates:
-
-```bash
-cp backend/.env.example backend/.env
-cp web/.env.example web/.env
-```
-
-On PowerShell:
+Open PowerShell or Command Prompt in your preferred projects directory:
 
 ```powershell
-Copy-Item backend/.env.example backend/.env
-Copy-Item web/.env.example web/.env
+git clone https://github.com/Tharak009/StudyC.git
+cd StudyC
 ```
 
-Use independent, random JWT secrets in production and set `COOKIE_SECURE=true` behind HTTPS. `APPROVED_EMAIL_DOMAINS` accepts a comma-separated allowlist.
+### Step 2: Install Dependencies
 
-For local web development, leave `VITE_API_URL` and `VITE_SOCKET_URL` empty so Vite proxies `/api`, `/uploads`, and `/socket.io` to `http://localhost:5000`. In production, set both values to the deployed API origin unless your reverse proxy serves the API and Socket.IO from the same origin as the web app.
+StudyConnect is structured as an npm workspace. Installing dependencies from the root directory installs packages for the root, backend, and frontend:
 
-## 9. Runbook
-
-Prerequisites: Node.js 20+ and MongoDB 7+.
-
-```bash
+```powershell
 npm install
+```
+
+### Step 3: Configure Environment Variables
+
+Create `.env` files for both the backend and frontend from their templates:
+
+```powershell
+Copy-Item backend\.env.example backend\.env
+Copy-Item web\.env.example web\.env
+```
+
+Now open each file in your code editor:
+
+#### A. Backend Configuration (`backend/.env`)
+- `MONGODB_URI`: Point to your local database (`mongodb://127.0.0.1:27017/studyconnect`) or Atlas cluster.
+- `APPROVED_EMAIL_DOMAINS`: Lower-case college email domains allowed to register (default: `campus.edu,college.edu,students.college.edu`). Any user registering must have an email ending with one of these domains (e.g., `student@college.edu`).
+- `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET`: Keep defaults for local development or set random strings.
+- `STREAM_API_KEY` & `STREAM_API_SECRET`: Required for chat messaging and meeting chat (see [External Services](#3-external-services-configuration)).
+- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`: Required for 1:1 voice/video calls and Study Meetings (see [External Services](#3-external-services-configuration)).
+
+#### B. Frontend Configuration (`web/.env`)
+- `VITE_STREAM_API_KEY`: Must match `STREAM_API_KEY` from `backend/.env`.
+- `VITE_API_URL` & `VITE_SOCKET_URL`: **Leave empty for local development.** The Vite development server automatically proxies `/api`, `/uploads`, and `/socket.io` to `http://localhost:5000`.
+
+---
+
+## 3. External Services Configuration
+
+StudyConnect uses cloud services for real-time media and messaging. Free developer tiers are available for both:
+
+### A. Stream Chat (Messaging & Meeting Text Chat)
+1. Sign up for a free account at [getstream.io](https://getstream.io/).
+2. Create an App in the dashboard (select **Chat Messaging**).
+3. Copy the **Key** and **Secret**:
+   - Set `STREAM_API_KEY=<Key>` and `STREAM_API_SECRET=<Secret>` in `backend/.env`.
+   - Set `VITE_STREAM_API_KEY=<Key>` in `web/.env`.
+
+### B. LiveKit Cloud (1:1 Calls & Group Study Meetings)
+1. Sign up for a free account at [cloud.livekit.io](https://cloud.livekit.io/).
+2. Create a project.
+3. In Project Settings → Keys, generate an API Key.
+4. Copy the credentials:
+   - `LIVEKIT_URL`: Your WebSocket URL (e.g., `wss://your-project.livekit.cloud`).
+   - `LIVEKIT_API_URL`: Your HTTPS API URL (e.g., `https://your-project.livekit.cloud`).
+   - `LIVEKIT_API_KEY`: Your project API key.
+   - `LIVEKIT_API_SECRET`: Your project API secret.
+5. Place these values into `backend/.env`.
+
+> **Note:** If LiveKit or Stream credentials are omitted, general platform features (authentication, profiles, academic resources, community browsing) will still work. However, attempting to join calls or open chat channels will return an informative `503 Service Unavailable` error until the respective provider is configured.
+
+---
+
+## 4. Database Seeding (Optional)
+
+To populate sample campus users, academic communities, and shared resources for quick testing, run the seeder:
+
+```powershell
+npm run seed
+```
+
+This creates verified accounts you can use immediately:
+- **Admin**: `admin@college.edu` / `Admin@2026!`
+- **Faculty**: `dr.smith@college.edu` / `Faculty@2026!`
+- **Students**: `alex.kumar@college.edu` / `Student@2026!`
+
+---
+
+## 5. Running the Application
+
+### Option 1: Run Both Apps Together (Recommended)
+
+From the project root:
+
+```powershell
 npm run dev
 ```
 
-- Web: `http://localhost:5173`
-- API: `http://localhost:5000`
-- Health: `http://localhost:5000/health`
+This concurrently launches:
+- **Backend API**: `http://localhost:5000`
+- **Frontend Web UI**: `http://localhost:5173`
 
-For production:
+### Option 2: Run in Separate PowerShell Terminals
 
-```bash
-npm run build
-npm run start -w backend
+If you prefer dedicated console output for each process:
+
+- **Terminal 1 (Backend)**:
+  ```powershell
+  npm run dev -w backend
+  ```
+- **Terminal 2 (Frontend)**:
+  ```powershell
+  npm run dev -w web
+  ```
+
+Open your browser and navigate to **`http://localhost:5173`**.
+
+Health check endpoint: **`http://localhost:5000/health`**.
+
+---
+
+## 6. Environment Variables Reference
+
+| Variable | Scope | Required | Purpose |
+|---|---|---|---|
+| `PORT` | Backend | Optional (Default: 5000) | Local HTTP port for Express |
+| `MONGODB_URI` | Backend | **Required** | Connection string for MongoDB |
+| `CLIENT_URL` | Backend | Optional (Default: `http://localhost:5173`) | CORS allowed origin |
+| `APPROVED_EMAIL_DOMAINS` | Backend | **Required** | Allowlist of student email domains |
+| `JWT_ACCESS_SECRET` | Backend | **Required** | Signs short-lived access JWTs |
+| `JWT_REFRESH_SECRET` | Backend | **Required** | Signs persistent refresh JWTs |
+| `STREAM_API_KEY` | Backend | **Required for Chat** | Stream Chat application key |
+| `STREAM_API_SECRET` | Backend | **Required for Chat** | Stream Chat server-side signing secret |
+| `LIVEKIT_URL` | Backend | **Required for Calls/Meetings** | LiveKit SFU WebSocket gateway (`wss://...`) |
+| `LIVEKIT_API_KEY` | Backend | **Required for Calls/Meetings** | LiveKit credentials generator key |
+| `LIVEKIT_API_SECRET` | Backend | **Required for Calls/Meetings** | LiveKit token signing secret |
+| `LIVEKIT_TOKEN_TTL_SECONDS` | Backend | Optional (Default: 3600) | Lifetime of media room tokens |
+| `STORAGE_MODE` | Backend | Optional (Default: `LOCAL`) | `LOCAL` saves to disk; `CLOUD` uses S3/B2 |
+| `VITE_STREAM_API_KEY` | Frontend | **Required for Chat** | Stream Chat public key (must match backend) |
+| `VITE_API_URL` | Frontend | Optional | Custom backend URL (leave blank in dev) |
+| `VITE_SOCKET_URL` | Frontend | Optional | Custom socket URL (leave blank in dev) |
+
+---
+
+## 7. Troubleshooting Common Windows Issues
+
+### 1. PowerShell Script Execution Disabled
+**Symptom**: `File ... cannot be loaded because running scripts is disabled on this system.`
+**Solution**: Open PowerShell as Administrator or run in your user scope:
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
 
-Serve `web/dist` from a static host and route `/api` and `/uploads` to the backend. Local disk uploads are suitable for single-instance development; select an object-storage provider before horizontal deployment.
+### 2. MongoDB Connection Refused (`ECONNREFUSED 127.0.0.1:27017`)
+**Symptom**: Backend crashes on startup with `MongoServerSelectionError`.
+**Solution**:
+- Ensure the MongoDB Windows service is running:
+  ```powershell
+  Get-Service -Name MongoDB
+  Start-Service -Name MongoDB
+  ```
+- If using MongoDB Atlas, check that your IP address is whitelisted in Atlas Network Access (`0.0.0.0/0` for development).
+
+### 3. Registration Error: "Email domain not approved"
+**Symptom**: Attempting to register an account returns a `403 Forbidden` error.
+**Solution**: Registration is restricted to verified campus emails. Ensure your email domain matches one of the entries in `APPROVED_EMAIL_DOMAINS` in `backend/.env` (e.g., `user@college.edu`).
+
+### 4. Port Conflict (`EADDRINUSE: address already in use :::5000`)
+**Symptom**: Backend fails to bind to port 5000.
+**Solution**: Identify and terminate the process holding the port:
+```powershell
+netstat -ano | findstr :5000
+Stop-Process -Id <PID> -Force
+```
+Alternatively, change `PORT=5001` in `backend/.env`.
+
+### 5. Media Devices / Camera Permissions in Browser
+**Symptom**: Camera or microphone is blocked or not detected in Meetings.
+**Solution**:
+- Modern browsers require HTTPS or `localhost` to access camera/microphone APIs. When testing locally, always access via `http://localhost:5173` (not raw IP addresses).
+- Check browser site settings to grant Camera and Microphone access.
+
+---
+
+## 8. Available Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Runs backend API and frontend Vite dev server concurrently |
+| `npm run dev -w backend` | Runs only backend with hot reload (`tsx watch`) |
+| `npm run dev -w web` | Runs only frontend Vite dev server |
+| `npm run build` | Compiles backend TypeScript and builds frontend production assets |
+| `npm run seed` | Seeds database with initial campus roles, communities, and resources |
+| `npm run test` | Runs unit and integration test suites |
+| `npm run lint` | Lints entire codebase with ESLint |

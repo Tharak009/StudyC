@@ -30,7 +30,7 @@ callRouter.get(
   "/history",
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = String((req as any).user?._id || "");
+    const userId = req.user?.id || "";
     if (!userId) {
       throw new ApiError(401, "User context missing from request");
     }
@@ -39,12 +39,14 @@ callRouter.get(
     const limit = parseInt(String(req.query.limit || "20"), 10);
     const status = req.query.status as CallLogStatus | undefined;
     const type = req.query.type as CallLogType | undefined;
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 100) : undefined;
 
     const history = await callHistoryService.getUserCallHistory(userId, {
       page: Number.isNaN(page) ? 1 : page,
       limit: Number.isNaN(limit) ? 20 : limit,
       status,
-      type
+      type,
+      search
     });
 
     res.json(new ApiResponse(200, history, "Call history retrieved successfully"));
@@ -59,7 +61,7 @@ callRouter.get(
   "/history/:callId",
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = String((req as any).user?._id || "");
+    const userId = req.user?.id || "";
     const callId = String(req.params.callId || "");
 
     if (!callId) {

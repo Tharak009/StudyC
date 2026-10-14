@@ -10,6 +10,7 @@ declare global {
         role: Role;
         department?: string;
         rollNumber?: string;
+        profilePicture?: string;
         name?: string;
         fullName?: string;
         status?: UserStatus;

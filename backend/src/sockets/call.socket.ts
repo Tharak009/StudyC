@@ -16,6 +16,7 @@ import type { SocketRegistry } from "./presence.socket.js";
 const blockRepository = new BlockRepository();
 
 interface InitiateCallPayload {
+  requestId?: string;
   targetUserId: string;
   channelId?: string;
   isVideo?: boolean;
@@ -64,6 +65,30 @@ export const registerCallHandlers = (
   const currentUserAvatar =
     (socket.data.user as any)?.avatar || (socket.data.user as any)?.profilePicture;
 
+  // The chat provider's online presence and the StudyConnect call socket can
+  // connect at slightly different times. Deliver an unanswered invite when a
+  // recipient's authenticated call socket becomes available.
+  const emitPendingIncomingCall = () => {
+    const pendingIncomingCall = callSessionService.getPendingIncomingCall(currentUserId);
+    if (!pendingIncomingCall) return false;
+    socket.emit("call:incoming", {
+      callId: pendingIncomingCall.callId,
+      callerId: pendingIncomingCall.callerId,
+      callerName: pendingIncomingCall.callerName,
+      callerAvatar: pendingIncomingCall.callerAvatar,
+      callerSocketId: pendingIncomingCall.callerSocketId,
+      channelId: pendingIncomingCall.channelId,
+      isVideo: pendingIncomingCall.type === "video"
+    });
+    return true;
+  };
+
+  emitPendingIncomingCall();
+  socket.on("call:sync_pending", (acknowledge?: (res: unknown) => void) => {
+    const delivered = emitPendingIncomingCall();
+    acknowledge?.({ success: true, delivered });
+  });
+
   // Initialize global callbacks once
   if (!isGlobalListenersInitialized) {
     isGlobalListenersInitialized = true;
@@ -98,7 +123,7 @@ export const registerCallHandlers = (
     });
 
     callSessionService.onSessionEnded((session) => {
-      if (session.type === "voice") void liveKitService.endDirectVoiceCall(session.callId);
+      void liveKitService.endDirectCall(session.callId, session.type);
     });
 
     // Group Call Participant Left broadcast
@@ -140,9 +165,13 @@ export const registerCallHandlers = (
     "call:initiate",
     async (payload: InitiateCallPayload, acknowledge?: (res: unknown) => void) => {
       try {
-        const { targetUserId, channelId, isVideo = false } = payload;
+        const { requestId, targetUserId, channelId, isVideo = false } = payload;
         if (!targetUserId) {
           throw new Error("targetUserId is required");
+        }
+        if (requestId !== undefined && (typeof requestId !== "string" || requestId.length < 1 || requestId.length > 100)) {
+          acknowledge?.({ success: false, reason: "INVALID_REQUEST", message: "Invalid call request" });
+          return;
         }
 
         const cleanCallerId = fromStreamUserId(currentUserId);
@@ -174,14 +203,6 @@ export const registerCallHandlers = (
           return;
         }
 
-        const targetSockets = registry.onlineUsersMap.get(cleanTargetId);
-        if (!targetSockets || targetSockets.size === 0) {
-          if (typeof acknowledge === "function") {
-            acknowledge({ success: false, reason: "OFFLINE", message: "User is currently offline" });
-          }
-          return;
-        }
-
         if (groupCallSessionService.getUserActiveCall(cleanCallerId)) {
           acknowledge?.({ success: false, reason: "ALREADY_IN_CALL", message: "You are already in a call" });
           return;
@@ -198,16 +219,17 @@ export const registerCallHandlers = (
         }
 
         const callType: CallType = isVideo ? "video" : "voice";
-        if (callType === "voice" && !liveKitService.isConfigured()) {
+        if (!liveKitService.isConfigured()) {
           acknowledge?.({
             success: false,
             reason: "MEDIA_UNAVAILABLE",
-            message: "Voice calling is not configured on this server. The administrator must configure LiveKit."
+            message: "Calling is not configured on this server. The administrator must configure LiveKit."
           });
           return;
         }
 
         const result = callSessionService.createSession({
+          requestId,
           callerId: cleanCallerId,
           callerSocketId: socket.id,
           callerName: currentUserName,
@@ -236,6 +258,10 @@ export const registerCallHandlers = (
           return;
         }
 
+        // Acknowledge the caller first so it records the session ID before a fast
+        // recipient can accept and trigger call:accepted on the caller's socket.
+        acknowledge?.({ success: true, callId: session.callId, status: session.status });
+
         io.to(`user:${cleanTargetId}`).emit("call:incoming", {
           callId: session.callId,
           callerId: cleanCallerId,
@@ -246,9 +272,6 @@ export const registerCallHandlers = (
           callerSocketId: socket.id
         });
 
-        if (typeof acknowledge === "function") {
-          acknowledge({ success: true, callId: session.callId, status: session.status });
-        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to initiate call";
         if (typeof acknowledge === "function") {
@@ -308,32 +331,30 @@ export const registerCallHandlers = (
       return;
     }
 
-    let callerMedia: Awaited<ReturnType<typeof liveKitService.issueDirectVoiceToken>> | undefined;
-    let calleeMedia: Awaited<ReturnType<typeof liveKitService.issueDirectVoiceToken>> | undefined;
-    if (session.type === "voice") {
-      try {
-        [callerMedia, calleeMedia] = await Promise.all([
-          liveKitService.issueDirectVoiceToken(session, session.callerId),
-          liveKitService.issueDirectVoiceToken(session, session.calleeId)
-        ]);
-        const latest = callSessionService.getSession(callId);
-        if (!latest || latest.status !== "CONNECTING" ||
-            !callSessionService.isCurrentParticipantSocket(callId, session.callerId, session.callerSocketId) ||
-            !callSessionService.isCurrentParticipantSocket(callId, session.calleeId, socket.id)) {
-          acknowledge?.({ success: false, message: "This call is no longer available." });
-          return;
-        }
-      } catch (error) {
-        const failed = callSessionService.failCall(callId, "media_authorization_failed");
-        if (failed) {
-          const event = { callId, reason: "Voice media could not be authorized. Please try again.", failed: true };
-          io.to(failed.callerSocketId).emit("call:ended", event);
-          if (failed.calleeSocketId) io.to(failed.calleeSocketId).emit("call:ended", event);
-        }
-        console.error("[CallSocket] Could not issue direct voice credentials:", error);
-          acknowledge?.({ success: false, message: "Voice media could not be authorized. Check the server's LiveKit configuration and try again." });
+    let callerMedia: Awaited<ReturnType<typeof liveKitService.issueDirectCallToken>>;
+    let calleeMedia: Awaited<ReturnType<typeof liveKitService.issueDirectCallToken>>;
+    try {
+      [callerMedia, calleeMedia] = await Promise.all([
+        liveKitService.issueDirectCallToken(session, session.callerId),
+        liveKitService.issueDirectCallToken(session, session.calleeId)
+      ]);
+      const latest = callSessionService.getSession(callId);
+      if (!latest || latest.status !== "CONNECTING" ||
+          !callSessionService.isCurrentParticipantSocket(callId, session.callerId, session.callerSocketId) ||
+          !callSessionService.isCurrentParticipantSocket(callId, session.calleeId, socket.id)) {
+        acknowledge?.({ success: false, message: "This call is no longer available." });
         return;
       }
+    } catch (error) {
+      const failed = callSessionService.failCall(callId, "media_authorization_failed");
+      if (failed) {
+        const event = { callId, reason: "Call media could not be authorized. Please try again.", failed: true };
+        io.to(failed.callerSocketId).emit("call:ended", event);
+        if (failed.calleeSocketId) io.to(failed.calleeSocketId).emit("call:ended", event);
+      }
+      console.error("[CallSocket] Could not issue direct call credentials:", error);
+      acknowledge?.({ success: false, message: "Call media could not be authorized. Check the server's LiveKit configuration and try again." });
+      return;
     }
 
     try {
@@ -349,8 +370,13 @@ export const registerCallHandlers = (
       return;
     }
 
+    // All tabs for the recipient receive the ring event. Once one tab accepts,
+    // silence and dismiss the still-ringing copies on that user's other tabs.
+    socket.to(`user:${session.calleeId}`).emit("call:answered_elsewhere", { callId });
+
     io.to(session.callerSocketId).emit("call:accepted", {
       callId,
+      requestId: session.requestId,
       responderSocketId: socket.id,
       responderId: currentUserId,
       media: callerMedia
@@ -538,13 +564,13 @@ export const registerCallHandlers = (
     }
 
     const session = callSessionService.getSession(callId);
-    if (!session || session.type !== "voice" || !["CONNECTING", "CONNECTED", "RECONNECTING"].includes(session.status)) {
-      acknowledge?.({ success: false, message: "This voice call has ended." });
+    if (!session || !["CONNECTING", "CONNECTED", "RECONNECTING"].includes(session.status)) {
+      acknowledge?.({ success: false, message: "This call has ended." });
       return;
     }
 
     try {
-      const media = await liveKitService.issueDirectVoiceToken(session, cleanUserId);
+      const media = await liveKitService.issueDirectCallToken(session, cleanUserId);
       // Recheck after the asynchronous signing operation; the call or socket may have
       // ended while the credential was being prepared.
       if (!callSessionService.isCurrentParticipantSocket(callId, cleanUserId, socket.id) ||

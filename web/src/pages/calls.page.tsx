@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useDeferredValue, useState } from "react";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, RefreshCw, Search, Video, Users } from "lucide-react";
 import { callHistoryApi } from "../api/call-history.api";
 import { callSignalingService } from "../services/call-signaling.service";
+import { socketService } from "../services/socket.service";
 import type { CallHistoryItem } from "../types/call.types";
 
 type CallFilter = "all" | "missed" | "voice" | "video";
@@ -20,26 +22,38 @@ function directionIcon(item: CallHistoryItem) {
 }
 
 export function CallsPage() {
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<CallFilter>("all");
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search.trim());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
   const [page, setPage] = useState(1);
   const historyQuery = useQuery({
-    queryKey: ["call-history", filter, page],
+    queryKey: ["call-history", filter, page, deferredSearch],
     queryFn: () => callHistoryApi.getHistory({
       page,
       limit: 20,
+      ...(deferredSearch ? { search: deferredSearch } : {}),
       ...(filter === "missed" ? { status: "missed" } : {}),
       ...(filter === "voice" || filter === "video" ? { type: filter } : {})
     })
   });
   const items = historyQuery.data?.items || [];
-  const visibleItems = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return query ? items.filter((item) => item.peer.name.toLowerCase().includes(query)) : items;
-  }, [items, search]);
   const selected = items.find((item) => item._id === selectedId) || null;
+
+  useEffect(() => {
+    const socket = socketService.get() || socketService.connect();
+    if (!socket) return;
+
+    const refreshMissedCalls = () => {
+      void queryClient.invalidateQueries({ queryKey: ["call-history"] });
+    };
+    socket.on("call:missed", refreshMissedCalls);
+    return () => {
+      socket.off("call:missed", refreshMissedCalls);
+    };
+  }, [queryClient]);
 
   const redial = (item: CallHistoryItem) => {
     if (item.mode !== "direct" || !item.peer.userId) return;
@@ -62,7 +76,7 @@ export function CallsPage() {
         <div className="shrink-0 space-y-3 border-b border-slate-100 p-3 dark:border-white/5">
           <label className="relative block">
             <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or username" aria-label="Search call history" className="w-full rounded-xl bg-slate-100 py-2.5 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#1E90FF]/30 dark:bg-[#080D1A]" />
+            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); setSelectedId(null); }} placeholder="Search call history" aria-label="Search call history" className="w-full rounded-xl bg-slate-100 py-2.5 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#1E90FF]/30 dark:bg-[#080D1A]" />
           </label>
           <div className="flex gap-1 overflow-x-auto scrollbar-none" role="tablist" aria-label="Call history filters">
             {(["all", "missed", "voice", "video"] as const).map((value) => (
@@ -73,7 +87,7 @@ export function CallsPage() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           {historyQuery.isLoading ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((key) => <div key={key} className="h-16 animate-pulse rounded-xl bg-slate-100 dark:bg-white/5" />)}</div> : historyQuery.isError ? (
             <div className="p-6 text-center"><p className="text-sm text-rose-500">Could not load call history.</p><button type="button" onClick={() => void historyQuery.refetch()} className="mt-3 text-sm font-semibold text-[#1E90FF]">Try again</button></div>
-          ) : visibleItems.length === 0 ? <p className="px-6 py-12 text-center text-sm text-slate-500 dark:text-slate-400">{search ? "No calls match your search." : "Your recent calls will appear here."}</p> : visibleItems.map((item) => {
+          ) : items.length === 0 ? <p className="px-6 py-12 text-center text-sm text-slate-500 dark:text-slate-400">{deferredSearch ? "No calls match your search." : "Your recent calls will appear here."}</p> : items.map((item) => {
             const Direction = directionIcon(item);
             const isActive = selected?._id === item._id;
             return <div key={item._id} className={`group flex items-center gap-3 px-4 py-3 transition-colors ${isActive ? "bg-[#1E90FF]/8 dark:bg-[#1E90FF]/10" : "hover:bg-slate-50 dark:hover:bg-white/[0.035]"}`}>

@@ -43,6 +43,7 @@ export interface IceServerConfig {
 
 export interface CallSession {
   callId: string;
+  requestId?: string;
   type: CallType;
   callerId: string;
   callerSocketId: string;

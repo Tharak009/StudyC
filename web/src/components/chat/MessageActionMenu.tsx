@@ -80,7 +80,7 @@ export function MessageActionMenu({
 
   const actions = resolveMessageActions({
     message,
-    currentUserId: channel?.client?.userID || "",
+    currentUserId: channel?._client?.userID || "",
     channel,
     isDM,
     channelRole,

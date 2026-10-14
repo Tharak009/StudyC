@@ -553,8 +553,8 @@ function StudyConnectMessageItem(props: Partial<MessageContextValue>) {
                 poll={(pollAttachment as any).poll_data || (pollAttachment as any)}
                 messageId={message.id}
                 channel={channel}
-                reactionCounts={message.reaction_counts}
-                ownReactions={message.own_reactions}
+                reactionCounts={message.reaction_counts ?? undefined}
+                ownReactions={message.own_reactions ?? undefined}
                 isMine={isMine}
               />
             </div>
@@ -595,9 +595,9 @@ function StudyConnectMessageItem(props: Partial<MessageContextValue>) {
             onTogglePin={async (msg) => {
               try {
                 if (msg.pinned) {
-                  await channel.unpinMessage(msg.id);
+                  await client.unpinMessage(msg.id);
                 } else {
-                  await channel.pinMessage(msg.id);
+                  await client.pinMessage(msg.id);
                 }
               } catch (err) {
                 console.error("Failed to toggle pin:", err);
@@ -1193,8 +1193,10 @@ function StreamChannelInner({
               <button
                 type="button"
                 onClick={() => {
+                  const channelId = channel.id;
+                  if (!channelId) return;
                   callSignalingService.initiateGroupCall({
-                    channelId: channel.id,
+                    channelId,
                     communityName: communityName || channelName,
                     isVideo: false
                   });
@@ -1208,8 +1210,10 @@ function StreamChannelInner({
               <button
                 type="button"
                 onClick={() => {
+                  const channelId = channel.id;
+                  if (!channelId) return;
                   callSignalingService.initiateGroupCall({
-                    channelId: channel.id,
+                    channelId,
                     communityName: communityName || channelName,
                     isVideo: true
                   });
@@ -1223,8 +1227,10 @@ function StreamChannelInner({
               <button
                 type="button"
                 onClick={() => {
+                  const channelId = channel.id;
+                  if (!channelId) return;
                   callSignalingService.initiateGroupCall({
-                    channelId: channel.id,
+                    channelId,
                     communityName: communityName || channelName,
                     isVideo: false,
                     mode: "stage"
@@ -1308,7 +1314,7 @@ function StreamChannelInner({
         onJumpToMessage={jumpToMessage}
         onUnpinMessage={async (msg) => {
           try {
-            await channel.unpinMessage(msg.id);
+            await client.unpinMessage(msg.id);
           } catch (err) {
             console.error("Failed to unpin message:", err);
           }

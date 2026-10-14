@@ -44,7 +44,7 @@ export function resolveMessageActions({
   const isMine = Boolean(
     currentUserId &&
       (authorId === currentUserId ||
-        (channel?.client?.userID && authorId === channel.client.userID))
+        (channel?._client?.userID && authorId === channel._client.userID))
   );
 
   const hasContent = Boolean(

@@ -4,9 +4,11 @@ import { connectDatabase, disconnectDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
 import { initializeSockets } from "./sockets/index.js";
 import { callHistoryService } from "./services/call-history.service.js";
+import { studyMeetingService } from "./services/study-meeting.service.js";
 
 const start = async (): Promise<void> => {
   await connectDatabase();
+  await studyMeetingService.initialize();
   await callHistoryService.markInterruptedDirectCalls();
   await callHistoryService.markInterruptedGroupCalls();
   const server = createServer(app);
@@ -21,6 +23,7 @@ const start = async (): Promise<void> => {
 
   const shutdown = (signal: string) => {
     console.info(`${signal} received. Closing StudyConnect API.`);
+    studyMeetingService.stopReconciliation();
     server.close(async () => {
       await disconnectDatabase();
       process.exit(0);

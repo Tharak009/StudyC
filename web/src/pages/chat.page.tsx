@@ -354,7 +354,7 @@ export function ChatPage({ lockedOnly = false }: { lockedOnly?: boolean }) {
 
   // Active DM Peer details
   const activeDmPeer: ActivePeer | null = useMemo(() => {
-    if (!activeDmStreamChannel) return null;
+    if (!activeDmStreamChannel?.id) return null;
     const members = Object.values(activeDmStreamChannel.state.members || {});
     const myId = client?.userID || "";
     const peerMember = members.find((m) => m.user_id !== myId) || members[0];
@@ -512,7 +512,7 @@ export function ChatPage({ lockedOnly = false }: { lockedOnly?: boolean }) {
                 hasActiveChannel ? "flex" : "hidden lg:flex"
               } h-full min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-[#0B1220]`}
             >
-              {activeMode === "circle" && activeCommunityStreamChannel ? (
+              {activeMode === "circle" && activeCommunityStreamChannel?.id ? (
                 isLocked(activeCommunityStreamChannel.id) &&
                 !isUnlockedInSession(activeCommunityStreamChannel.id) ? (
                   <ChatLockChallenge
@@ -540,7 +540,7 @@ export function ChatPage({ lockedOnly = false }: { lockedOnly?: boolean }) {
                     onBack={handleBackToConversations}
                   />
                 )
-              ) : activeMode === "dms" && activeDmStreamChannel ? (
+              ) : activeMode === "dms" && activeDmStreamChannel?.id ? (
                 isLocked(activeDmStreamChannel.id) &&
                 !isUnlockedInSession(activeDmStreamChannel.id) ? (
                   <ChatLockChallenge

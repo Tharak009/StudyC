@@ -1,0 +1,21 @@
+[1] StudyConnect Development Team, “StudyConnect Phase 3 Community Chat,” internal project documentation, 2026.
+[2] StudyConnect Development Team, “StudyConnect Backend Source Code and Package Manifest,” internal project repository, 2026.
+[3] StudyConnect Development Team, “StudyConnect Backend Test Suite,” internal project repository, 2026.
+[4] StudyConnect Development Team, “StudyConnect Web and React Native Client Source,” internal project repository, 2026.
+[5] Node.js Project, “Node.js v20 API Documentation,” OpenJS Foundation, accessed Oct. 12, 2026.
+[6] Express.js, “Routing,” Express 5.x Documentation, accessed Oct. 12, 2026.
+[7] Microsoft, “The TypeScript Handbook,” TypeScript Documentation, accessed Oct. 12, 2026.
+[8] Meta Open Source, “Quick Start,” React Documentation, accessed Oct. 12, 2026.
+[9] Meta Open Source, “Getting Started,” React Native 0.86 Documentation, accessed Oct. 12, 2026.
+[10] MongoDB, Inc., “MongoDB Manual,” MongoDB Documentation, accessed Oct. 12, 2026.
+[11] Automattic, “Schemas,” Mongoose 8.x Documentation, accessed Oct. 12, 2026.
+[12] Socket.IO, “Introduction,” Socket.IO 4.x Documentation, accessed Oct. 12, 2026.
+[13] Zod Project, “Basic Usage,” Zod 3 Documentation, accessed Oct. 12, 2026.
+[14] Vite Project, “Getting Started,” Vite Documentation, accessed Oct. 12, 2026.
+[15] Vitest Project, “Getting Started,” Vitest Documentation, accessed Oct. 12, 2026.
+[16] Forward Email and contributors, “Supertest: Testing Node.js HTTP Servers,” Supertest Project, accessed Oct. 12, 2026.
+[17] M. Jones, J. Bradley, and N. Sakimura, “JSON Web Token (JWT),” Internet Engineering Task Force, RFC 7519, 2015.
+[18] OWASP Foundation, “Password Storage Cheat Sheet,” OWASP Cheat Sheet Series, accessed Oct. 12, 2026.
+[19] Object Management Group, “Unified Modeling Language (UML), Version 2.5.1,” OMG, 2017.
+[20] “Guidelines to Prepare B.Tech Project Documentation,” user-supplied format reference, 2016–2017.
+[21] N. Abhinav, P. Anunaya, P. M. Krishna, and Greeshmanth, “Federated Hyper Dimensional Computing: Comprehensive Analysis and Robust Communication,” Mini Project Report, Department of Computer Science and Engineering, Anurag University, 2025–2026.

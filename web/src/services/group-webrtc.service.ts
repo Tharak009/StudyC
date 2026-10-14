@@ -19,8 +19,9 @@ export interface GroupMediaTransportCallbacks {
   onParticipantDisconnected?: (participantId: string, reason?: DisconnectReason) => void;
   onNetworkQualityChange?: (quality: NetworkQuality) => void;
   onConnectionStateChange?: (state: "connecting" | "connected" | "reconnecting" | "failed") => void;
-  onActiveSpeakerChange?: (participantId: string | null) => void;
+  onActiveSpeakerChange?: (participantIds: string[]) => void;
   onScreenShareChanged?: (participantId: string, participantName: string, stream: MediaStream | null, local: boolean) => void;
+  onScreenShareError?: (participantId: string, participantName: string) => void;
 }
 
 export interface GroupMediaTransport {
@@ -82,13 +83,14 @@ export class LiveKitGroupMediaManager implements GroupMediaTransport {
     try {
       await room.connect(url, token, { autoSubscribe: false });
       if (this.room !== room) return;
-      this.callbacks?.onConnectionStateChange?.("connected");
       room.remoteParticipants.forEach((participant) => this.callbacks?.onParticipantConnected?.(
         participant.identity,
         participant.name || "StudyConnect member",
         participant.attributes?.role
       ));
+      room.remoteParticipants.forEach((participant) => this.emitParticipantMediaState(participant));
       await this.publishInitialTracks();
+      if (this.room === room) this.callbacks?.onConnectionStateChange?.("connected");
       this.refreshVideoSubscriptions();
     } catch (error) {
       if (this.room === room) this.close();
@@ -129,6 +131,11 @@ export class LiveKitGroupMediaManager implements GroupMediaTransport {
         contentHint: "detail",
         surfaceSwitching: "include"
       });
+      const publication = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      if (!publication?.track || publication.track.mediaStreamTrack.readyState !== "live") {
+        await room.localParticipant.setScreenShareEnabled(false).catch(() => undefined);
+        throw new Error("The screen share track was not published. Try sharing again.");
+      }
       // The user may keep the native picker open while leaving the meeting.
       // If capture resolves after that connection has closed, immediately unpublish
       // and stop the newly acquired track instead of leaking desktop capture.
@@ -170,6 +177,15 @@ export class LiveKitGroupMediaManager implements GroupMediaTransport {
     if (!publication?.track) return;
     if (enabled) await publication.track.unmute();
     else await publication.track.mute();
+  }
+
+  /** State reported by the connected LiveKit local participant after track operations complete. */
+  public getLocalMediaState(): { audioEnabled: boolean; videoEnabled: boolean } {
+    const participant = this.room?.localParticipant;
+    return {
+      audioEnabled: Boolean(participant?.isMicrophoneEnabled),
+      videoEnabled: Boolean(participant?.isCameraEnabled)
+    };
   }
 
   private bindRoomEvents(room: Room): void {
@@ -230,6 +246,7 @@ export class LiveKitGroupMediaManager implements GroupMediaTransport {
 
     room.on(RoomEvent.ParticipantConnected, (participant) => {
       this.callbacks?.onParticipantConnected?.(participant.identity, participant.name || "StudyConnect member", participant.attributes?.role);
+      this.emitParticipantMediaState(participant);
       this.refreshVideoSubscriptions();
     });
     room.on(RoomEvent.ParticipantDisconnected, (participant, reason) => {
@@ -238,23 +255,44 @@ export class LiveKitGroupMediaManager implements GroupMediaTransport {
       this.refreshVideoSubscriptions();
     });
 
-    room.on(RoomEvent.TrackPublished, () => this.refreshVideoSubscriptions());
-    room.on(RoomEvent.TrackUnpublished, () => this.refreshVideoSubscriptions());
+    room.on(RoomEvent.TrackPublished, (publication, participant) => {
+      this.emitParticipantMediaState(participant);
+      this.refreshVideoSubscriptions();
+    });
+    room.on(RoomEvent.TrackUnpublished, (publication, participant) => {
+      if (publication.source === Track.Source.ScreenShare && !participant.isLocal) {
+        const stream = this.remoteScreenStreams.get(participant.identity);
+        stream?.getTracks().forEach((track) => this.removeRemoteScreenTrack(participant.identity, track));
+      }
+      this.emitParticipantMediaState(participant);
+      this.refreshVideoSubscriptions();
+    });
+    room.on(RoomEvent.TrackSubscriptionFailed, (trackSid, participant) => {
+      const failedPublication = participant.getTrackPublications().find((publication) => publication.trackSid === trackSid);
+      if (failedPublication?.source === Track.Source.ScreenShare) {
+        this.callbacks?.onScreenShareError?.(participant.identity, participant.name || "StudyConnect member");
+      }
+    });
     room.on(RoomEvent.TrackMuted, (_publication, participant) => this.emitParticipantMediaState(participant));
     room.on(RoomEvent.TrackUnmuted, (_publication, participant) => this.emitParticipantMediaState(participant));
 
     room.on(RoomEvent.Reconnecting, () => this.callbacks?.onConnectionStateChange?.("reconnecting"));
     room.on(RoomEvent.Reconnected, () => {
-      this.callbacks?.onConnectionStateChange?.("connected");
-      this.refreshVideoSubscriptions();
+      void this.publishInitialTracks().then(() => {
+        if (this.room === room) this.callbacks?.onConnectionStateChange?.("connected");
+        this.refreshVideoSubscriptions();
+      }).catch((error) => {
+        console.warn("[LiveKitGroupMedia] Could not restore local tracks after reconnect:", error);
+        if (this.room === room) this.callbacks?.onConnectionStateChange?.("failed");
+      });
     });
     room.on(RoomEvent.Disconnected, () => {
       if (this.room === room) this.callbacks?.onConnectionStateChange?.("failed");
     });
     room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-      const remoteSpeaker = speakers.find((speaker) => !speaker.isLocal);
-      this.callbacks?.onActiveSpeakerChange?.(remoteSpeaker?.identity || null);
-      this.refreshVideoSubscriptions(remoteSpeaker?.identity);
+      const participantIds = speakers.map((speaker) => speaker.identity);
+      this.callbacks?.onActiveSpeakerChange?.(participantIds);
+      this.refreshVideoSubscriptions(participantIds.find((participantId) => participantId !== room.localParticipant.identity));
     });
     room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
       if (participant.isLocal) this.callbacks?.onNetworkQualityChange?.(this.mapQuality(quality));
@@ -427,10 +465,12 @@ export class LiveKitGroupMediaManager implements GroupMediaTransport {
         room.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track?.mediaStreamTrack,
         room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)?.track?.mediaStreamTrack
       ].filter((track): track is MediaStreamTrack => Boolean(track));
+      // Remove all listeners first so that in-flight room events do not invoke
+      // callbacks on the already-cleared manager state during async teardown.
+      room.removeAllListeners();
       void (async () => {
         try { await room.localParticipant.setScreenShareEnabled(false); } catch { /* Screen capture may already have ended. */ }
         screenCaptureTracks.forEach((track) => { if (track.readyState !== "ended") track.stop(); });
-        room.removeAllListeners();
         await room.disconnect(false);
       })().catch((error) => {
         console.warn("[LiveKitGroupMedia] Error disconnecting room:", error);

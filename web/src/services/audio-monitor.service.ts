@@ -5,7 +5,7 @@ interface MonitoredNode {
   stream: MediaStream;
   source: MediaStreamAudioSourceNode;
   analyser: AnalyserNode;
-  dataArray: Uint8Array;
+  dataArray: Uint8Array<ArrayBuffer>;
 }
 
 export type ActiveSpeakerListener = (speakerId: string | null) => void;

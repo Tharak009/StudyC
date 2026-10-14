@@ -448,9 +448,10 @@ export function StreamMessageComposer({
   const handleSend = async () => {
     const trimmed = text.trim();
     const hasAttachments = pendingAttachments.length > 0;
+    const channelId = channel?.id;
 
     // Check if anything to send
-    if ((!trimmed && !hasAttachments) || sending || disabled || !channel) return;
+    if ((!trimmed && !hasAttachments) || sending || disabled || !channel || !channelId) return;
 
     // Disallow sending if timed out
     if (timeoutExpiry && Date.now() < timeoutExpiry) {
@@ -470,7 +471,7 @@ export function StreamMessageComposer({
         academicContextTags: chanData.academicContextTags,
         strictnessThreshold: chanData.strictnessThreshold ?? 0.40,
         allowCodeSnippetsOnly: chanData.allowCodeSnippetsOnly,
-        channelName: channel.id
+        channelName: channelId
       });
 
       if (!evaluation.isAllowed) {
@@ -484,7 +485,7 @@ export function StreamMessageComposer({
           setSecondsLeft(timeoutSeconds);
           setRejectionData({
             originalContent: trimmed,
-            channelId: channel.id,
+            channelId,
             reason: evaluation.reason,
             confidence: evaluation.confidence,
             matchedKeywords: evaluation.matchedKeywords,
@@ -497,7 +498,7 @@ export function StreamMessageComposer({
         } else {
           setRejectionData({
             originalContent: trimmed,
-            channelId: channel.id,
+            channelId,
             reason: evaluation.reason,
             confidence: evaluation.confidence,
             matchedKeywords: evaluation.matchedKeywords,

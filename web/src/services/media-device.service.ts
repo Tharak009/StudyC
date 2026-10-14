@@ -3,6 +3,10 @@ import type { AcquireMediaResult, MediaDeviceInfo } from "../types/call.types";
 export type VideoUnavailableCallback = () => void;
 export type AudioRecoveredCallback = (newTrack: MediaStreamTrack) => void;
 export type AudioUnavailableCallback = () => void;
+export interface MediaCaptureOptions {
+  audioDeviceId?: string;
+  videoDeviceId?: string;
+}
 
 /**
  * MediaDeviceManager
@@ -37,7 +41,7 @@ export class MediaDeviceManager {
    * If video is requested but fails (no webcam or permission denied), degrades gracefully to audio-only.
    * Attaches track lifecycle monitoring for unplug/device failures.
    */
-  public async acquireMedia(audio = true, video = false): Promise<AcquireMediaResult> {
+  public async acquireMedia(audio = true, video = false, options: MediaCaptureOptions = {}): Promise<AcquireMediaResult> {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       throw new Error("WebRTC media devices are not supported by this browser");
     }
@@ -51,12 +55,14 @@ export class MediaDeviceManager {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: audio
             ? {
+                ...(options.audioDeviceId ? { deviceId: { exact: options.audioDeviceId } } : {}),
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true
               }
             : false,
           video: {
+            ...(options.videoDeviceId ? { deviceId: { exact: options.videoDeviceId } } : {}),
             width: { ideal: 1280, max: 1920 },
             height: { ideal: 720, max: 1080 },
             frameRate: { ideal: 30, max: 30 },
@@ -73,6 +79,7 @@ export class MediaDeviceManager {
         try {
           const audioStream = await navigator.mediaDevices.getUserMedia({
             audio: {
+              ...(options.audioDeviceId ? { deviceId: { exact: options.audioDeviceId } } : {}),
               echoCancellation: true,
               noiseSuppression: true,
               autoGainControl: true
@@ -100,6 +107,7 @@ export class MediaDeviceManager {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
+          ...(options.audioDeviceId ? { deviceId: { exact: options.audioDeviceId } } : {}),
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true

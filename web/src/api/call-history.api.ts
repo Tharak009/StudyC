@@ -6,6 +6,7 @@ export interface CallHistoryParams {
   limit?: number;
   status?: string;
   type?: string;
+  search?: string;
 }
 
 export const callHistoryApi = {

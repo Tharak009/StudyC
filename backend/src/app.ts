@@ -29,6 +29,19 @@ export const createApp = () => {
   app.use(cookieParser());
   app.use(sanitizeInput);
   app.use(hpp());
+  // Invitation URLs are bearer credentials. Keep the existing request logger,
+  // but redact invitation query values in every Morgan format that uses :url.
+  morgan.token("url", (request) => {
+    const expressRequest = request as express.Request;
+    const raw = expressRequest.originalUrl || expressRequest.url || "/";
+    try {
+      const parsed = new URL(raw, "http://studyconnect.local");
+      for (const key of ["invite", "inviteCode"]) if (parsed.searchParams.has(key)) parsed.searchParams.set(key, "[REDACTED]");
+      return `${parsed.pathname}${parsed.search}`;
+    } catch {
+      return "/[redacted-url]";
+    }
+  });
   if (env.NODE_ENV !== "test") app.use(morgan(env.LOG_LEVEL));
 
   // Render Health Check Endpoint

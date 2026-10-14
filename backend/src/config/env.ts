@@ -55,7 +55,7 @@ const schema = z.object({
   LIVEKIT_API_URL: z.string().optional().default(""),
   LIVEKIT_API_KEY: z.string().optional().default(""),
   LIVEKIT_API_SECRET: z.string().optional().default(""),
-  LIVEKIT_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
+  LIVEKIT_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(7200).default(3600),
   GROUP_CALL_MAX_PARTICIPANTS: z.coerce.number().int().min(2).max(100).default(100),
   B2_BUCKET: z.string().optional().default(""),
   B2_REGION: z.string().optional().default("auto"),

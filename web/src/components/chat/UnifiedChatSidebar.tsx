@@ -13,7 +13,9 @@ import {
   MoreVertical,
   CheckCheck,
   Lock,
-  Trash2
+  Trash2,
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 import { ConfirmationDialog } from "../confirmation-dialog";
 import { useToastStore } from "../../store/toast.store";
@@ -257,7 +259,7 @@ export function UnifiedChatSidebar({
                 {conv.peer.name}
               </button>
               {isLocked && (
-                <Lock size={11} className="text-amber-500 shrink-0" title="Locked conversation" />
+                <Lock size={11} className="text-amber-500 shrink-0" aria-label="Locked conversation" />
               )}
               {isPinned && !isPinnedSection && (
                 <Pin size={10} className="text-[#1E90FF] shrink-0 fill-[#1E90FF]" />

@@ -10,11 +10,15 @@ const identity = (request: Request) => ({
 
 export class StudyMeetingController {
   async list(request: Request, response: Response) {
-    response.json(new ApiResponse(200, await studyMeetingService.list(request.user!.id), "Study meetings retrieved"));
+    response.json(new ApiResponse(200, await studyMeetingService.list(request.user!.id, (request.validated?.query || request.query) as any), "Study meetings retrieved"));
+  }
+
+  async history(request: Request, response: Response) {
+    response.json(new ApiResponse(200, await studyMeetingService.history(request.user!.id, (request.validated?.query || request.query) as any), "Study meeting history retrieved"));
   }
 
   async details(request: Request, response: Response) {
-    const code = typeof request.query.inviteCode === "string" ? request.query.inviteCode : undefined;
+    const code = (request.validated?.query as { inviteCode?: string } | undefined)?.inviteCode;
     response.json(new ApiResponse(200, await studyMeetingService.get(request.params.id as string, request.user!.id, code), "Study meeting retrieved"));
   }
 
@@ -23,19 +27,61 @@ export class StudyMeetingController {
     response.status(201).json(new ApiResponse(201, result, "Study meeting created"));
   }
 
+  async update(request: Request, response: Response) {
+    const result = await studyMeetingService.update(request.params.id as string, request.user!.id, request.body);
+    response.json(new ApiResponse(200, result, "Scheduled meeting updated"));
+  }
+
+  async cancel(request: Request, response: Response) {
+    const result = await studyMeetingService.cancel(request.params.id as string, request.user!.id);
+    response.json(new ApiResponse(200, result, "Study meeting cancelled"));
+  }
+
   async join(request: Request, response: Response) {
     const result = await studyMeetingService.join(request.params.id as string, identity(request), request.body.inviteCode);
     response.json(new ApiResponse(200, result, "Study meeting joined"));
   }
 
+  async resolveInvitation(request: Request, response: Response) {
+    const result = await studyMeetingService.resolveInvitation(request.body.code, identity(request));
+    response.json(new ApiResponse(200, result, "Invitation resolved"));
+  }
+
+  async admissionRequests(request: Request, response: Response) {
+    response.json(new ApiResponse(200, await studyMeetingService.admissionRequests(request.params.id as string, request.user!.id), "Admission requests retrieved"));
+  }
+
+  async admissionStatus(request: Request, response: Response) {
+    response.json(new ApiResponse(200, await studyMeetingService.admissionStatus(request.params.id as string, request.user!.id), "Admission status retrieved"));
+  }
+
+  async decideAdmission(request: Request, response: Response) {
+    const result = await studyMeetingService.decideAdmission(request.params.id as string, request.user!.id, request.params.userId as string, request.body.decision);
+    response.json(new ApiResponse(200, result, "Admission request updated"));
+  }
+
+  async cancelAdmissionRequest(request: Request, response: Response) {
+    response.json(new ApiResponse(200, await studyMeetingService.cancelAdmissionRequest(request.params.id as string, request.user!.id), "Admission request cancelled"));
+  }
+
   async connected(request: Request, response: Response) {
     const meeting = await studyMeetingService.markConnected(request.params.id as string, request.user!.id);
-    response.json(new ApiResponse(200, meeting, "Media connection established"));
+    response.json(new ApiResponse(200, meeting, "LiveKit participant presence confirmed"));
   }
 
   async connectionState(request: Request, response: Response) {
     const meeting = await studyMeetingService.setConnectionState(request.params.id as string, request.user!.id, request.body.state);
     response.json(new ApiResponse(200, meeting, "Meeting connection state updated"));
+  }
+
+  async heartbeat(request: Request, response: Response) {
+    const result = await studyMeetingService.heartbeat(request.params.id as string, request.user!.id);
+    response.json(new ApiResponse(200, result, "Meeting presence refreshed"));
+  }
+
+  async mediaState(request: Request, response: Response) {
+    const meeting = await studyMeetingService.updateMediaState(request.params.id as string, request.user!.id, request.body);
+    response.json(new ApiResponse(200, meeting, "Meeting media state synchronized"));
   }
 
   async leave(request: Request, response: Response) {
