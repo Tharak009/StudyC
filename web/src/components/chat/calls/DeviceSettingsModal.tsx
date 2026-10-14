@@ -8,9 +8,10 @@ import type { MediaDeviceInfo } from "../../../types/call.types";
 interface DeviceSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  audioOnly?: boolean;
 }
 
-export function DeviceSettingsModal({ isOpen, onClose }: DeviceSettingsModalProps) {
+export function DeviceSettingsModal({ isOpen, onClose, audioOnly = false }: DeviceSettingsModalProps) {
   const localStream = useCallStore((s) => s.localStream);
   const isCameraOff = useCallStore((s) => s.isCameraOff);
 
@@ -267,7 +268,7 @@ export function DeviceSettingsModal({ isOpen, onClose }: DeviceSettingsModalProp
         </div>
 
         {/* Section 2: Camera & Preview */}
-        <div className="flex flex-col gap-2">
+        {!audioOnly && <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <label htmlFor="camera-select" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
               <Video size={14} className="text-sky-400" />
@@ -313,7 +314,7 @@ export function DeviceSettingsModal({ isOpen, onClose }: DeviceSettingsModalProp
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
         {/* Section 3: Speaker / Output */}
         <div className="flex flex-col gap-2">

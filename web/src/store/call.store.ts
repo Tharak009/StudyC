@@ -30,6 +30,7 @@ export interface CallStoreState {
   duration: number;
   connectedAt: number | null;
   errorMessage: string | null;
+  audioPlaybackBlocked: boolean;
   networkQuality: NetworkQuality;
 
   // Group call specific states
@@ -134,6 +135,7 @@ export interface CallStoreState {
   toggleCamera: (enabled?: boolean) => void;
   setRemoteCameraOff: (isOff: boolean) => void;
   setNetworkQuality: (quality: NetworkQuality) => void;
+  setAudioPlaybackBlocked: (blocked: boolean) => void;
   tickDuration: () => void;
 }
 
@@ -156,6 +158,7 @@ export const useCallStore = create<CallStoreState>((set) => ({
   duration: 0,
   connectedAt: null,
   errorMessage: null,
+  audioPlaybackBlocked: false,
   networkQuality: "good",
 
   // Group states
@@ -208,6 +211,7 @@ export const useCallStore = create<CallStoreState>((set) => ({
         duration: 0,
         connectedAt: null,
         errorMessage: null,
+        audioPlaybackBlocked: false,
         networkQuality: "good"
       };
     }),
@@ -235,6 +239,7 @@ export const useCallStore = create<CallStoreState>((set) => ({
         duration: 0,
         connectedAt: null,
         errorMessage: null,
+        audioPlaybackBlocked: false,
         networkQuality: "good"
       };
     }),
@@ -373,6 +378,7 @@ export const useCallStore = create<CallStoreState>((set) => ({
       duration: 0,
       connectedAt: null,
       errorMessage: null,
+      audioPlaybackBlocked: false,
       networkQuality: "good",
       isInitiating: false,
       isAccepting: false,
@@ -554,6 +560,7 @@ export const useCallStore = create<CallStoreState>((set) => ({
 
   setRemoteCameraOff: (isOff) => set({ remoteCameraOff: isOff }),
   setNetworkQuality: (networkQuality) => set({ networkQuality }),
+  setAudioPlaybackBlocked: (audioPlaybackBlocked) => set({ audioPlaybackBlocked }),
 
   tickDuration: () =>
     set((state) => {

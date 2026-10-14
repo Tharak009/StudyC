@@ -55,6 +55,7 @@ export interface CallSession {
   channelId?: string;
   status: CallStatus;
   connectedUserIds: Set<string>;
+  reconnectingUserId?: string;
   startedAt: number;
   stateChangedAt?: number;
   connectedAt?: number;

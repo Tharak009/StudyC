@@ -2,9 +2,11 @@ import { socketService } from "./socket.service";
 import { mediaDeviceManager } from "./media-device.service";
 import { webrtcService } from "./webrtc.service";
 import { groupWebRTCManager } from "./group-webrtc.service";
+import { directLiveKitAudioService } from "./direct-livekit-audio.service";
 import { audioMonitorService } from "./audio-monitor.service";
 import { useCallStore } from "../store/call.store";
 import { useAuthStore } from "../store/auth.store";
+import { useToastStore } from "../store/toast.store";
 import { apiClient } from "../api/client";
 import { streamChatService } from "./stream-chat.service";
 import type { CallSummary, CallType, CallParticipant, RoomSessionMode, ParticipantRole } from "../types/call.types";
@@ -85,16 +87,16 @@ class CallSignalingService {
     // ── 0. Transport Disconnect & Reconnect (Decoupled from WebRTC Media) ─────
     socket.on("disconnect", () => {
       const store = useCallStore.getState();
-      // If WebRTC is active and media is flowing, keep media alive!
+      // Signaling and media are separate; preserve a live media session while signaling recovers.
       if (store.status === "CONNECTED") {
-        console.warn("[CallSignalingService] Signaling socket dropped, but WebRTC media remains active.");
+        console.warn("[CallSignalingService] Signaling socket dropped; active media remains in place.");
         store.setNetworkQuality("fair");
       }
     });
 
     socket.on("connect", () => {
       const store = useCallStore.getState();
-      // If we are in an active 1-to-1 direct call, re-associate with backend session
+      // Re-associate an active direct call after the socket transport recovers.
       if (store.callMode === "direct" && store.callId && (store.status === "CONNECTED" || store.status === "RECONNECTING")) {
         console.log("[CallSignalingService] Socket reconnected. Re-syncing active direct call session:", store.callId);
         socket.emit(
@@ -105,8 +107,11 @@ class CallSignalingService {
               if (res.peerSocketId) {
                 useCallStore.setState({ peerSocketId: res.peerSocketId });
               }
-              // If we were waiting to restore media, trigger ICE restart now that signaling is back
-              if (store.status === "RECONNECTING") {
+              if (store.type === "voice" && directLiveKitAudioService.isConnected()) {
+                socket.emit("call:peer_connected", { callId: store.callId });
+              }
+              // Direct voice media reconnects through LiveKit. Video retains the existing WebRTC ICE recovery.
+              if (store.status === "RECONNECTING" && store.type === "video") {
                 await this.triggerIceRestart();
               }
             } else {
@@ -162,7 +167,7 @@ class CallSignalingService {
     // ── 2. Call Accepted (Caller receives this) ──────────────────────────────
     socket.on(
       "call:accepted",
-      async (data: { callId: string; responderSocketId: string; responderId: string }) => {
+      async (data: { callId: string; responderSocketId: string; responderId: string; media?: { url: string; token: string } }) => {
         const store = useCallStore.getState();
         if (store.callId !== data.callId || !store.isCaller || store.status !== "CALLING") return;
 
@@ -171,6 +176,12 @@ class CallSignalingService {
         this.startConnectingTimer();
 
         try {
+          if (store.type === "voice") {
+            const localStream = mediaDeviceManager.getLocalStream();
+            if (!data.media || !localStream) throw new Error("Voice media authorization was not received. Please try again.");
+            await this.connectDirectVoiceMedia(data.callId, data.media, localStream);
+            return;
+          }
           const iceServers = await this.fetchIceServers();
           webrtcService.initializeConnection(
             iceServers,
@@ -220,9 +231,13 @@ class CallSignalingService {
     socket.on("call:connected", (data: { callId: string; connectedAt?: number }) => {
       const store = useCallStore.getState();
       if (store.callMode !== "direct" || store.callId !== data.callId) return;
-      const connectionState = webrtcService.getConnectionState();
-      const iceState = webrtcService.getIceConnectionState();
-      if (connectionState !== "connected" || (iceState !== "connected" && iceState !== "completed")) return;
+      if (store.type === "voice") {
+        if (!directLiveKitAudioService.isConnected()) return;
+      } else {
+        const connectionState = webrtcService.getConnectionState();
+        const iceState = webrtcService.getIceConnectionState();
+        if (connectionState !== "connected" || (iceState !== "connected" && iceState !== "completed")) return;
+      }
       this.stopConnectingTimer();
       this.stopReconnectingTimer();
       useCallStore.getState().setConnected(data.connectedAt);
@@ -327,6 +342,7 @@ class CallSignalingService {
       "call:signal",
       async (data: { callId: string; fromSocketId: string; signalData: any }) => {
         const store = useCallStore.getState();
+        if (store.type === "voice") return;
         if (store.callId !== data.callId || !["CALLING", "RINGING", "ACCEPTED", "CONNECTING", "CONNECTED", "RECONNECTING"].includes(store.status)) return;
 
         const { signalData } = data;
@@ -364,6 +380,9 @@ class CallSignalingService {
       if (store.callId === data.callId) {
         store.setReconnecting();
         this.startReconnectingTimer();
+        if (store.type === "voice" && directLiveKitAudioService.isConnected()) {
+          socket.emit("call:peer_connected", { callId: data.callId });
+        }
       }
     });
 
@@ -372,7 +391,9 @@ class CallSignalingService {
       const store = useCallStore.getState();
       if (store.callId === data.callId) {
         useCallStore.setState({ peerSocketId: data.newSocketId });
-        if (store.status === "RECONNECTING") {
+        if (store.type === "voice" && directLiveKitAudioService.isConnected()) {
+          socket.emit("call:peer_connected", { callId: data.callId });
+        } else if (store.status === "RECONNECTING" && store.type === "video") {
           this.triggerIceRestart();
         }
       }
@@ -532,9 +553,14 @@ class CallSignalingService {
 
     window.addEventListener("online", () => {
       const store = useCallStore.getState();
-      if (store.status === "RECONNECTING" || store.status === "CONNECTED") {
-        console.log("[CallSignalingService] Browser returned online. Checking connection & triggering recovery.");
-        this.triggerIceRestart();
+      if (store.status === "RECONNECTING") {
+        console.log("[CallSignalingService] Browser returned online. Checking the active media connection.");
+        if (store.type === "voice") {
+          if (store.callId) socketService.get()?.emit("call:peer_reconnecting", { callId: store.callId });
+          if (directLiveKitAudioService.isConnected() && store.callId) this.reportDirectVoiceMediaReady(store.callId);
+        } else {
+          this.triggerIceRestart();
+        }
       }
     });
 
@@ -600,16 +626,31 @@ class CallSignalingService {
         groupWebRTCManager.replaceAudioTrack(newTrack);
         return;
       }
-      if (store.status === "CONNECTED") {
-        console.log("[CallSignalingService] Microphone recovered, updating WebRTC sender.");
-        webrtcService.replaceAudioTrack(newTrack);
+      if (store.status === "CONNECTED" || store.status === "CONNECTING" || store.status === "RECONNECTING") {
+        console.log("[CallSignalingService] Microphone recovered, updating active media sender.");
+        newTrack.enabled = !store.isMuted;
+        if (store.type === "voice") {
+          void directLiveKitAudioService.replaceMicrophoneTrack(newTrack).catch((error) => {
+            console.warn("[CallSignalingService] Could not publish recovered microphone:", error);
+            useToastStore.getState().addToast("Your microphone was found, but could not be reconnected. Try selecting it again.", "warning");
+          });
+        } else {
+          void webrtcService.replaceAudioTrack(newTrack);
+        }
       }
     });
 
     mediaDeviceManager.onAudioUnavailable(() => {
       const store = useCallStore.getState();
       if (store.callMode === "direct" && store.status !== "IDLE" && store.status !== "ENDED" && store.status !== "FAILED") {
-        this.failCall("Microphone disconnected. The call has ended.");
+        if (store.type === "voice" && (store.status === "CONNECTED" || store.status === "RECONNECTING")) {
+          mediaDeviceManager.toggleAudio(false);
+          void directLiveKitAudioService.setMicrophoneEnabled(false).catch(() => undefined);
+          useCallStore.getState().toggleMute(false);
+          useToastStore.getState().addToast("Your microphone disconnected. You can still hear the call; reconnect a microphone to speak.", "warning");
+        } else {
+          this.failCall("Microphone unavailable. Connect a microphone and try again.");
+        }
       }
     });
   }
@@ -640,7 +681,7 @@ class CallSignalingService {
     useCallStore.setState({ isInitiating: true });
 
     try {
-      // 1. Acquire local media with graceful video-to-audio degradation
+      // Voice calls request the microphone only. Camera access is reserved for the existing video flow.
       const mediaResult = await mediaDeviceManager.acquireMedia(true, params.isVideo);
       const isVideoActual = params.isVideo && mediaResult.videoAvailable;
 
@@ -653,15 +694,22 @@ class CallSignalingService {
 
       // 2. Emit call initiation to backend
       return new Promise((resolve) => {
-        socket.emit(
+        socket.timeout(12000).emit(
           "call:initiate",
           {
             targetUserId: params.targetUserId,
             channelId: params.channelId,
             isVideo: isVideoActual
           },
-          (response: any) => {
+          (ackError: Error | null, response: any) => {
             useCallStore.setState({ isInitiating: false });
+            if (ackError) {
+              this.cleanupHardware();
+              useCallStore.getState().setFailed("The call service did not respond. Check your connection and try again.");
+              this.scheduleAutoReset();
+              resolve({ success: false, reason: "Call service timed out" });
+              return;
+            }
             if (response?.success && response?.callId) {
               useCallStore.getState().setCallId(response.callId);
               resolve({ success: true });
@@ -699,18 +747,36 @@ class CallSignalingService {
 
     useCallStore.setState({ isAccepting: true });
     this.stopRingtone();
-    this.startConnectingTimer();
-
     const shouldVideo = isVideo !== undefined ? isVideo : store.type === "video";
 
     try {
-      store.setConnecting();
       const mediaResult = await mediaDeviceManager.acquireMedia(true, shouldVideo);
       if (shouldVideo && !mediaResult.videoAvailable) {
         store.toggleCamera(false);
       }
       store.setLocalStream(mediaResult.stream);
       audioMonitorService.trackStream("local", mediaResult.stream);
+
+      if (!shouldVideo) {
+        this.startConnectingTimer();
+        const accepted = await new Promise<any>((resolve, reject) => {
+          socket.timeout(12000).emit("call:accept", { callId: store.callId }, (ackError: Error | null, result: any) => {
+            if (ackError) reject(new Error("The call service did not respond. Check your connection and try again."));
+            else resolve(result);
+          });
+        });
+        if (!accepted?.success || !accepted.media?.url || !accepted.media?.token) {
+          throw new Error(accepted?.message || "Voice media authorization was not received. Please try again.");
+        }
+        const current = useCallStore.getState();
+        if (current.callId !== store.callId || current.status === "ENDED" || current.status === "FAILED" || current.status === "REJECTED" || current.status === "CANCELLED" || current.status === "MISSED" || current.status === "IDLE") return;
+        useCallStore.getState().setConnecting(store.peerSocketId || undefined);
+        await this.connectDirectVoiceMedia(store.callId!, accepted.media, mediaResult.stream);
+        return;
+      }
+
+      store.setConnecting();
+      this.startConnectingTimer();
 
       const iceServers = await this.fetchIceServers();
       webrtcService.initializeConnection(
@@ -747,7 +813,16 @@ class CallSignalingService {
       });
     } catch (err: any) {
       console.error("[CallSignalingService] Error accepting call:", err);
-      this.rejectCall("Failed to acquire media devices");
+      const reason = err?.message || "Could not join the voice call";
+      const current = useCallStore.getState();
+      if (current.status === "RINGING") {
+        socket.emit("call:reject", { callId: current.callId, reason: "media_unavailable" });
+        this.stopRingtone();
+        this.clearAllTimers();
+        this.cleanupHardware();
+        useCallStore.getState().setFailed(reason);
+        this.scheduleAutoReset();
+      } else this.failCall(reason);
     } finally {
       useCallStore.setState({ isAccepting: false });
     }
@@ -848,6 +923,12 @@ class CallSignalingService {
    */
   public toggleMute(): void {
     const newState = mediaDeviceManager.toggleAudio();
+    const store = useCallStore.getState();
+    if (store.callMode === "direct" && store.type === "voice") {
+      void directLiveKitAudioService.setMicrophoneEnabled(newState).catch((error) => {
+        console.warn("[CallSignalingService] Could not update LiveKit microphone state:", error);
+      });
+    }
     useCallStore.getState().toggleMute(newState);
   }
 
@@ -1153,6 +1234,7 @@ class CallSignalingService {
     if (!newTrack) return false;
 
     const store = useCallStore.getState();
+    newTrack.enabled = !store.isMuted;
     const localStream = mediaDeviceManager.getLocalStream();
     if (localStream) {
       store.setLocalStream(localStream);
@@ -1161,6 +1243,8 @@ class CallSignalingService {
 
     if (store.callMode === "group") {
       await groupWebRTCManager.replaceAudioTrack(newTrack);
+    } else if (store.type === "voice" && (store.status === "CONNECTED" || store.status === "CONNECTING" || store.status === "RECONNECTING")) {
+      await directLiveKitAudioService.replaceMicrophoneTrack(newTrack);
     } else if (store.status === "CONNECTED" || store.status === "CONNECTING") {
       await webrtcService.replaceAudioTrack(newTrack);
     }
@@ -1192,7 +1276,12 @@ class CallSignalingService {
    * Switch audio output (speaker) where supported
    */
   public async switchAudioOutput(element: HTMLMediaElement, sinkId: string): Promise<boolean> {
-    return mediaDeviceManager.switchAudioOutputDevice(element, sinkId);
+    const previewApplied = await mediaDeviceManager.switchAudioOutputDevice(element, sinkId);
+    const store = useCallStore.getState();
+    if (store.callMode === "direct" && store.type === "voice" && this.remoteAudioElement) {
+      return (await mediaDeviceManager.switchAudioOutputDevice(this.remoteAudioElement, sinkId)) || previewApplied;
+    }
+    return previewApplied;
   }
 
   /**
@@ -1387,6 +1476,7 @@ class CallSignalingService {
    */
   private async triggerIceRestart(): Promise<void> {
     const store = useCallStore.getState();
+    if (store.type === "voice") return;
     const socket = socketService.get();
     if (!socket || !store.callId || !store.peerSocketId) return;
     if (webrtcService.getIsNegotiating()) return;
@@ -1418,9 +1508,76 @@ class CallSignalingService {
       this.remoteAudioElement.autoplay = true;
     }
     this.remoteAudioElement.srcObject = remoteStream;
-    this.remoteAudioElement.play().catch((err) => {
+    this.remoteAudioElement.play().then(() => {
+      useCallStore.getState().setAudioPlaybackBlocked(false);
+    }).catch((err) => {
       console.warn("[CallSignalingService] Audio autoplay blocked until user gesture:", err);
+      useCallStore.getState().setAudioPlaybackBlocked(true);
     });
+  }
+
+  public async resumeRemoteAudio(): Promise<void> {
+    if (!this.remoteAudioElement) return;
+    try {
+      await this.remoteAudioElement.play();
+      useCallStore.getState().setAudioPlaybackBlocked(false);
+    } catch {
+      useCallStore.getState().setAudioPlaybackBlocked(true);
+    }
+  }
+
+  private async connectDirectVoiceMedia(callId: string, credentials: { url: string; token: string }, localStream: MediaStream): Promise<void> {
+    await directLiveKitAudioService.connect(credentials.url, credentials.token, localStream, {
+      onRemoteStream: (stream) => this.handleRemoteStreamAttached(stream),
+      onRemoteStreamRemoved: () => {
+        useCallStore.getState().setRemoteStream(null);
+        audioMonitorService.untrackStream("remote");
+        if (this.remoteAudioElement) {
+          this.remoteAudioElement.pause();
+          this.remoteAudioElement.srcObject = null;
+        }
+      },
+      onConnectionState: (state) => {
+        const current = useCallStore.getState();
+        if (current.callId !== callId) return;
+        if (state === "reconnecting") {
+          if (current.status === "CONNECTED" || current.status === "CONNECTING") current.setReconnecting();
+          this.startReconnectingTimer();
+          socketService.get()?.emit("call:peer_reconnecting", { callId });
+        } else if (state === "connected") {
+          this.stopReconnectingTimer();
+        } else if (state === "failed" && current.status !== "ENDED" && current.status !== "FAILED") {
+          this.failCall("The voice connection was lost. Please call again.");
+        }
+      },
+      onNetworkQuality: (quality) => useCallStore.getState().setNetworkQuality(quality),
+      refreshAuthorization: () => new Promise((resolve, reject) => {
+        const activeSocket = socketService.get();
+        if (!activeSocket?.connected) {
+          reject(new Error("Signaling connection is unavailable"));
+          return;
+        }
+        activeSocket.timeout(10000).emit("call:refreshVoiceMedia", { callId }, (ackError: Error | null, result: any) => {
+          if (ackError) {
+            reject(new Error("Could not refresh voice authorization"));
+          } else if (result?.success && result.media?.url && result.media?.token) {
+            resolve(result.media);
+          } else {
+            reject(new Error(result?.message || "Voice authorization expired"));
+          }
+        });
+      }),
+      onMediaReady: () => {
+        if (useCallStore.getState().callId === callId) {
+          this.reportDirectVoiceMediaReady(callId);
+        }
+      }
+    });
+  }
+
+  private reportDirectVoiceMediaReady(callId: string): void {
+    if (!directLiveKitAudioService.isConnected()) return;
+    socketService.get()?.emit("call:peer_connected", { callId });
   }
 
   private handleConnectionHealthChange(health: "connecting" | "connected" | "reconnecting" | "failed" | "closed"): void {
@@ -1531,6 +1688,7 @@ class CallSignalingService {
     useCallStore.getState().setLocalScreenStream(null);
     useCallStore.getState().setScreenSharerId(null);
     mediaDeviceManager.stopLocalMedia();
+    directLiveKitAudioService.close();
     webrtcService.close();
     groupWebRTCManager.close();
 

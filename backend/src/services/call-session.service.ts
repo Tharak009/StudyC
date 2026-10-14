@@ -28,6 +28,7 @@ export interface InitiateSessionParams {
 
 export type RingTimeoutCallback = (session: CallSession, summary: CallSummary) => void;
 export type GracePeriodExpiredCallback = (session: CallSession, summary: CallSummary, peerSocketId?: string) => void;
+export type CallSessionEndedCallback = (session: CallSession) => void;
 
 /**
  * Centralized in-memory session and signaling state coordinator for 1-to-1 WebRTC calls.
@@ -39,6 +40,7 @@ export class CallSessionService {
   private userActiveCallMap = new Map<string, string>(); // userId -> callId
   private ringTimeoutCallbacks: RingTimeoutCallback[] = [];
   private graceExpiredCallbacks: GracePeriodExpiredCallback[] = [];
+  private sessionEndedCallbacks: CallSessionEndedCallback[] = [];
   private sweepTimer?: NodeJS.Timeout;
 
   constructor() {
@@ -85,6 +87,17 @@ export class CallSessionService {
    */
   public onGracePeriodExpired(callback: GracePeriodExpiredCallback): void {
     this.graceExpiredCallbacks.push(callback);
+  }
+
+  public onSessionEnded(callback: CallSessionEndedCallback): void {
+    this.sessionEndedCallbacks.push(callback);
+  }
+
+  private notifySessionEnded(session: CallSession): void {
+    this.sessionEndedCallbacks.forEach((callback) => {
+      try { callback(session); }
+      catch (error) { console.error("[CallSessionService] Error in call cleanup callback:", error); }
+    });
   }
 
   /**
@@ -255,9 +268,13 @@ export class CallSessionService {
   public markReconnecting(callId: string, userId: string): CallSession | null {
     const session = this.callSessions.get(callId);
     if (!session || (session.callerId !== userId && session.calleeId !== userId)) return null;
-    if (session.status === "RECONNECTING") return session;
+    if (session.status === "RECONNECTING") {
+      session.reconnectingUserId = userId;
+      return session;
+    }
     if (!this.transition(session, "RECONNECTING")) return null;
     session.connectedUserIds.clear();
+    session.reconnectingUserId = userId;
     return session;
   }
 
@@ -296,6 +313,7 @@ export class CallSessionService {
     } else {
       session.calleeSocketId = newSocketId;
     }
+    if (session.reconnectingUserId === userId) session.reconnectingUserId = undefined;
 
     const peerSocketId = isCaller ? session.calleeSocketId : session.callerSocketId;
     return { session, peerSocketId };
@@ -316,6 +334,7 @@ export class CallSessionService {
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
     callHistoryService.recordDirectCall(session, "declined");
+    this.notifySessionEnded(session);
     return session;
   }
 
@@ -338,6 +357,7 @@ export class CallSessionService {
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
     callHistoryService.recordDirectCall(session, "cancelled");
+    this.notifySessionEnded(session);
     return session;
   }
 
@@ -356,6 +376,7 @@ export class CallSessionService {
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
     callHistoryService.recordDirectCall(session, session.connectedAt ? "completed" : "failed");
+    this.notifySessionEnded(session);
     return session;
   }
 
@@ -374,6 +395,7 @@ export class CallSessionService {
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
     callHistoryService.recordDirectCall(session, "failed");
+    this.notifySessionEnded(session);
     return session;
   }
 
@@ -406,8 +428,8 @@ export class CallSessionService {
 
     // If call is actively connected or reconnecting, provide a 15-second grace period
     // so momentary WebSocket reconnection does not immediately terminate active WebRTC media
-    if (session.status === "CONNECTED" || session.status === "RECONNECTING") {
-      this.markReconnecting(callId, userId);
+    if (session.status === "CONNECTED" || session.status === "RECONNECTING" || (session.type === "voice" && session.status === "CONNECTING")) {
+      if (session.status !== "RECONNECTING") this.markReconnecting(callId, userId);
       this.clearGraceTimer(session);
 
       session.reconnectGraceTimer = setTimeout(() => {
@@ -427,6 +449,7 @@ export class CallSessionService {
     this.callSessions.delete(callId);
 
     callHistoryService.recordDirectCall(session, "cancelled");
+    this.notifySessionEnded(session);
 
     return { session, peerSocketId, isCaller, graceStarted: false };
   }
@@ -473,6 +496,7 @@ export class CallSessionService {
         console.error("[CallSessionService] Error in ring timeout callback:", err);
       }
     }
+    this.notifySessionEnded(session);
   }
 
   /**
@@ -487,7 +511,9 @@ export class CallSessionService {
     session.endedAt = Date.now();
     session.endReason = "reconnect_timeout";
 
-    const peerSocketId = session.calleeSocketId;
+    const peerSocketId = session.reconnectingUserId === session.callerId
+      ? session.calleeSocketId
+      : session.callerSocketId;
     this.clearUserMappings(session);
     this.callSessions.delete(callId);
 
@@ -501,6 +527,7 @@ export class CallSessionService {
         console.error("[CallSessionService] Error in grace period callback:", err);
       }
     }
+    this.notifySessionEnded(session);
   }
 
   private cleanupTimers(session: CallSession): void {

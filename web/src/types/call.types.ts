@@ -28,7 +28,7 @@ export type CallEndReason =
   | "peer_disconnected";
 
 export const VALID_CALL_TRANSITIONS: Record<CallStatus, readonly CallStatus[]> = {
-  IDLE: ["CALLING", "RINGING"],
+  IDLE: ["CALLING", "RINGING", "FAILED"],
   CALLING: ["CONNECTING", "CANCELLED", "MISSED", "FAILED", "ENDED"],
   RINGING: ["ACCEPTED", "CONNECTING", "REJECTED", "MISSED", "CANCELLED", "FAILED", "ENDED"],
   ACCEPTED: ["CONNECTING", "FAILED", "ENDED"],

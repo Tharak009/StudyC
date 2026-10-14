@@ -49,6 +49,7 @@ export function CallOverlay() {
     remoteStream,
     duration,
     errorMessage,
+    audioPlaybackBlocked,
     networkQuality,
     groupCommunityName,
     groupParticipants,
@@ -908,6 +909,16 @@ export function CallOverlay() {
                   : "Connecting audio line..."}
               </p>
 
+              {audioPlaybackBlocked && (
+                <button
+                  type="button"
+                  onClick={() => void callSignalingService.resumeRemoteAudio()}
+                  className="mb-3 rounded-lg border border-sky-400/40 bg-sky-500/15 px-3 py-2 text-sm font-medium text-sky-200 hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                >
+                  Tap to enable call audio
+                </button>
+              )}
+
               {status === "CONNECTED" && (
                 <div className="flex items-center gap-1.5 mt-1" aria-hidden="true">
                   <span className="w-1.5 h-4 rounded-full bg-sky-400 animate-pulse" />
@@ -956,7 +967,7 @@ export function CallOverlay() {
           )}
 
           {/* Screen Share Button */}
-          {status === "CONNECTED" && (
+          {status === "CONNECTED" && isVideoMode && (
             <button
               type="button"
               onClick={() =>
@@ -1015,6 +1026,7 @@ export function CallOverlay() {
         <DeviceSettingsModal
           isOpen={isDeviceSettingsOpen}
           onClose={() => setIsDeviceSettingsOpen(false)}
+          audioOnly={!isVideoMode}
         />
       </div>
     </div>

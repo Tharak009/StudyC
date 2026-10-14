@@ -97,6 +97,10 @@ export const registerCallHandlers = (
       }
     });
 
+    callSessionService.onSessionEnded((session) => {
+      if (session.type === "voice") void liveKitService.endDirectVoiceCall(session.callId);
+    });
+
     // Group Call Participant Left broadcast
     groupCallSessionService.onParticipantLeft((callId, userId, reason, remaining) => {
       const activeSession = groupCallSessionService.getSession(callId);
@@ -194,6 +198,14 @@ export const registerCallHandlers = (
         }
 
         const callType: CallType = isVideo ? "video" : "voice";
+        if (callType === "voice" && !liveKitService.isConfigured()) {
+          acknowledge?.({
+            success: false,
+            reason: "MEDIA_UNAVAILABLE",
+            message: "Voice calling is not configured on this server. The administrator must configure LiveKit."
+          });
+          return;
+        }
 
         const result = callSessionService.createSession({
           callerId: cleanCallerId,
@@ -254,6 +266,33 @@ export const registerCallHandlers = (
       return;
     }
     const cleanUserId = fromStreamUserId(currentUserId);
+    const pendingSession = callSessionService.getSession(callId);
+    if (!pendingSession || pendingSession.calleeId !== cleanUserId || pendingSession.status !== "RINGING") {
+      acknowledge?.({ success: false, message: "This call is no longer available." });
+      return;
+    }
+    let stillConnected: Awaited<ReturnType<typeof friendshipRepository.findBetweenUsers>>;
+    let blockedSinceRinging: boolean;
+    try {
+      stillConnected = await friendshipRepository.findBetweenUsers(pendingSession.callerId, pendingSession.calleeId);
+      blockedSinceRinging = await blockRepository.isBlocked(pendingSession.callerId, pendingSession.calleeId);
+    } catch (error) {
+      console.error("[CallSocket] Could not revalidate call eligibility:", error);
+      acknowledge?.({ success: false, message: "Could not verify call permissions. Please try again." });
+      return;
+    }
+    if (stillConnected?.status !== FRIENDSHIP_STATUS.ACCEPTED || blockedSinceRinging) {
+      const rejected = callSessionService.rejectCall(callId, cleanUserId, blockedSinceRinging ? "blocked" : "not_connected");
+      if (rejected) {
+        io.to(rejected.callerSocketId).emit("call:rejected", {
+          callId,
+          reason: rejected.endReason,
+          summary: getCallSummary(rejected)
+        });
+      }
+      acknowledge?.({ success: false, message: "This contact is no longer eligible for calls." });
+      return;
+    }
     const session = callSessionService.acceptCall(callId, socket.id, cleanUserId);
 
     if (!session) {
@@ -263,7 +302,39 @@ export const registerCallHandlers = (
       return;
     }
 
-    callSessionService.setConnecting(callId);
+    const connectingSession = callSessionService.setConnecting(callId);
+    if (!connectingSession) {
+      acknowledge?.({ success: false, message: "This call is no longer available." });
+      return;
+    }
+
+    let callerMedia: Awaited<ReturnType<typeof liveKitService.issueDirectVoiceToken>> | undefined;
+    let calleeMedia: Awaited<ReturnType<typeof liveKitService.issueDirectVoiceToken>> | undefined;
+    if (session.type === "voice") {
+      try {
+        [callerMedia, calleeMedia] = await Promise.all([
+          liveKitService.issueDirectVoiceToken(session, session.callerId),
+          liveKitService.issueDirectVoiceToken(session, session.calleeId)
+        ]);
+        const latest = callSessionService.getSession(callId);
+        if (!latest || latest.status !== "CONNECTING" ||
+            !callSessionService.isCurrentParticipantSocket(callId, session.callerId, session.callerSocketId) ||
+            !callSessionService.isCurrentParticipantSocket(callId, session.calleeId, socket.id)) {
+          acknowledge?.({ success: false, message: "This call is no longer available." });
+          return;
+        }
+      } catch (error) {
+        const failed = callSessionService.failCall(callId, "media_authorization_failed");
+        if (failed) {
+          const event = { callId, reason: "Voice media could not be authorized. Please try again.", failed: true };
+          io.to(failed.callerSocketId).emit("call:ended", event);
+          if (failed.calleeSocketId) io.to(failed.calleeSocketId).emit("call:ended", event);
+        }
+        console.error("[CallSocket] Could not issue direct voice credentials:", error);
+          acknowledge?.({ success: false, message: "Voice media could not be authorized. Check the server's LiveKit configuration and try again." });
+        return;
+      }
+    }
 
     try {
       await callHistoryService.recordDirectProgress(session, "connecting");
@@ -281,11 +352,12 @@ export const registerCallHandlers = (
     io.to(session.callerSocketId).emit("call:accepted", {
       callId,
       responderSocketId: socket.id,
-      responderId: currentUserId
+      responderId: currentUserId,
+      media: callerMedia
     });
 
     if (typeof acknowledge === "function") {
-      acknowledge({ success: true, callId, callerSocketId: session.callerSocketId });
+      acknowledge({ success: true, callId, callerSocketId: session.callerSocketId, media: calleeMedia });
     }
   });
 
@@ -452,6 +524,39 @@ export const registerCallHandlers = (
     await callHistoryService.recordDirectProgress(session, "reconnecting").catch(() => undefined);
     const peerSocketId = session.callerId === cleanUserId ? session.calleeSocketId : session.callerSocketId;
     if (peerSocketId) io.to(peerSocketId).emit("call:peer_reconnecting", { callId: session.callId });
+  });
+
+  // Refresh a short-lived LiveKit credential only for the authenticated participant's
+  // currently bound socket. The client cannot choose a room or LiveKit identity.
+  socket.on("call:refreshVoiceMedia", async (payload: { callId: string }, acknowledge?: (res: unknown) => void) => {
+    const callId = payload?.callId;
+    const cleanUserId = fromStreamUserId(currentUserId);
+    if (typeof callId !== "string" || callId.length > 100 ||
+        !callSessionService.isCurrentParticipantSocket(callId, cleanUserId, socket.id)) {
+      acknowledge?.({ success: false, message: "This voice call is no longer available." });
+      return;
+    }
+
+    const session = callSessionService.getSession(callId);
+    if (!session || session.type !== "voice" || !["CONNECTING", "CONNECTED", "RECONNECTING"].includes(session.status)) {
+      acknowledge?.({ success: false, message: "This voice call has ended." });
+      return;
+    }
+
+    try {
+      const media = await liveKitService.issueDirectVoiceToken(session, cleanUserId);
+      // Recheck after the asynchronous signing operation; the call or socket may have
+      // ended while the credential was being prepared.
+      if (!callSessionService.isCurrentParticipantSocket(callId, cleanUserId, socket.id) ||
+          !["CONNECTING", "CONNECTED", "RECONNECTING"].includes(session.status)) {
+        acknowledge?.({ success: false, message: "This voice call is no longer available." });
+        return;
+      }
+      acknowledge?.({ success: true, media });
+    } catch (error) {
+      console.error("[CallSocket] Could not refresh direct voice credentials:", error);
+      acknowledge?.({ success: false, message: "Could not restore voice access. Please call again." });
+    }
   });
 
   // ── 7. Reconnect Socket to Active 1-to-1 Call ──────────────────────────────
